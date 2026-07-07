@@ -1,0 +1,302 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\role.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\role.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\user.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\user.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\parkingspot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\parkingspot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\iotstatuslog.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\iotstatuslog.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\accesslog.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\accesslog.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\transaction.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\transaction.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\wallet.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\wallet.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\property.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\property.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\iotdevice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\iotdevice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\booking.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\booking.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\vehicle.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\vehicle.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\models\\review.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\review.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\readme.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\readme.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\parkjomv2.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\parkjomv2.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\source\\repos\\parkjomv2\\parkjomv2\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 100,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 132,
+          "SelectedChildIndex": 9,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "ParkingSpot.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\ParkingSpot.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\ParkingSpot.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\ParkingSpot.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\ParkingSpot.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:50:02.992Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "IOTStatusLog.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\IOTStatusLog.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\IOTStatusLog.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\IOTStatusLog.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\IOTStatusLog.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:49:54.148Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "AccessLog.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\AccessLog.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\AccessLog.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\AccessLog.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\AccessLog.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:49:47.048Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "Transaction.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Transaction.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Transaction.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Transaction.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Transaction.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:49:40.599Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "Wallet.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Wallet.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Wallet.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Wallet.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Wallet.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:49:34.714Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "Property.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Property.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Property.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Property.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Property.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:49:28.565Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "IOTDevice.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\IOTDevice.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\IOTDevice.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\IOTDevice.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\IOTDevice.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:49:18.284Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "Booking.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Booking.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Booking.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Booking.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Booking.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:49:04.061Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "Vehicle.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Vehicle.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Vehicle.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Vehicle.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Vehicle.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:48:55.95Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Role.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Role.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Role.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Role.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Role.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:48:48.525Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "Review.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Review.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Review.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\Review.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Review.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:48:32.787Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "README.md",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\README.md",
+              "RelativeDocumentMoniker": "ParkJomV2\\README.md",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\README.md",
+              "RelativeToolTip": "ParkJomV2\\README.md",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-07-07T06:43:57.13Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "User.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\User.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\User.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Models\\User.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\User.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAAaAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:39:13.803Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "ParkJomV2",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\ParkJomV2.csproj",
+              "RelativeDocumentMoniker": "ParkJomV2\\ParkJomV2.csproj",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\ParkJomV2.csproj",
+              "RelativeToolTip": "ParkJomV2\\ParkJomV2.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABYAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-07-07T06:36:01.112Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\appsettings.json",
+              "RelativeDocumentMoniker": "ParkJomV2\\appsettings.json",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\appsettings.json",
+              "RelativeToolTip": "ParkJomV2\\appsettings.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-07-07T06:26:56.847Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Program.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Program.cs",
+              "ToolTip": "C:\\Users\\junka\\source\\repos\\ParkJomV2\\ParkJomV2\\Program.cs",
+              "RelativeToolTip": "ParkJomV2\\Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAAKAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T06:14:25.344Z",
+              "EditorCaption": ""
+            }
+          ]
+        },
+        {
+          "DockedWidth": 152,
+          "SelectedChildIndex": -1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{40ea2e6b-2121-4bb8-a43e-c83c04b51041}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
