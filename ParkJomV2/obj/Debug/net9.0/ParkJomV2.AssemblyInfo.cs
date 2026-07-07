@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ParkJomV2")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3c81ec46da9a0dcfd3106bbbd6ba161de62760b5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d8e2b048ea7b43fe1c45d60e0ffa0bf20e312289")]
 [assembly: System.Reflection.AssemblyProductAttribute("ParkJomV2")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ParkJomV2")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
