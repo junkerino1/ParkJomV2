@@ -1,0 +1,22 @@
+# Build artifacts
+[Bb]in/
+[Oo]bj/
+
+# Local database files
+*.db
+*.mdf
+*.ldf
+*.sqlite
+
+# User-specific configuration (Secrets)
+appsettings.Development.json
+appsettings.Local.json
+.user
+.vs/
+.vscode/
+
+# NuGet packages
+packages/
+
+# Environment files
+.env
