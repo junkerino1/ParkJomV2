@@ -1,6 +1,52 @@
-﻿namespace ParkJomV2.Models
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using ParkJomV2.Models.Enums;
+
+namespace ParkJomV2.Models;
+
+public class ParkingSpot
 {
-    public class ParkingSpot
-    {
-    }
+    [Key]
+    public int ParkingSpotId { get; set; }
+
+    [Required]
+    public int PropertyId { get; set; }
+
+    [Required]
+    public int OwnerId { get; set; }
+
+    [StringLength(50)]
+    public string? ParkingLabel { get; set; }
+
+    [Required]
+    public AvailabilityStatus AvailabilityStatus { get; set; }
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal MonthlyPrice { get; set; }
+
+    public bool IsPublished { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+
+    // Navigation Properties
+
+    [ForeignKey(nameof(PropertyId))]
+    public Property Property { get; set; } = null!;
+
+    [ForeignKey(nameof(OwnerId))]
+    public User Owner { get; set; } = null!;
+
+    public IoTDevice? IoTDevice { get; set; }
+
+    public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
+
+    public ICollection<ParkingSpotImage> ParkingSpotImages { get; set; } = new List<ParkingSpotImage>();
+
+    public ICollection<ParkingVerificationRequest> VerificationRequests { get; set; } = new List<ParkingVerificationRequest>();
+
+    public ICollection<Review> Reviews { get; set; } = new List<Review>();
+
+    public ICollection<Favorite> Favorites { get; set; } = new List<Favorite>();
 }

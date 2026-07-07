@@ -1,6 +1,44 @@
-﻿namespace ParkJomV2.Models
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using ParkJomV2.Models.Enums;
+namespace ParkJomV2.Models;
+
+public class Property
 {
-    public class Property
-    {
-    }
+    [Key]
+    public int PropertyId { get; set; }
+
+    [Required]
+    [StringLength(100)]
+    public string PropertyName { get; set; } = string.Empty;
+
+    [Required]
+    public PropertyType PropertyType { get; set; }
+
+    [Required]
+    [StringLength(255)]
+    public string Address { get; set; } = string.Empty;
+
+    [Column(TypeName = "decimal(9,6)")]
+    public decimal Latitude { get; set; }
+
+    [Column(TypeName = "decimal(9,6)")]
+    public decimal Longitude { get; set; }
+
+    [StringLength(100)]
+    public string? NearestStation { get; set; }
+
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal DistanceToStation { get; set; }
+
+    [StringLength(1000)]
+    public string? Description { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+
+    public DateTime UpdatedAt { get; set; }
+
+    // Navigation Properties
+
+    public ICollection<ParkingSpot> ParkingSpots { get; set; } = new List<ParkingSpot>();
 }
