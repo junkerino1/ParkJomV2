@@ -22,3 +22,11 @@ packages/
 
 # Environment files
 .env
+
+# Vite build output (generated from frontend/)
+src/ParkJomV2.Web/wwwroot/
+**/wwwroot/assets/
+
+# Node.js
+**/node_modules/
+**/package-lock.json
