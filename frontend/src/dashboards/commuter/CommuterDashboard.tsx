@@ -46,12 +46,18 @@ import { useAuth } from '../../contexts/AuthContext';
 export default function CommuterDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  type StationCoordinates = { lat: number; lng: number };
+
   // App Navigation and Module States
   const [activeTab, setActiveTab] = useState<'home' | 'active' | 'wallet' | 'profile' | 'map'>('home');
   const [selectedStation, setSelectedStation] = useState<string>('');
+  const [selectedStationCoords, setSelectedStationCoords] = useState<StationCoordinates | null>(null);
   const [distanceFilter, setDistanceFilter] = useState<number>(500); // meters
   const [spotTypeFilter, setSpotTypeFilter] = useState<string>('all');
   const [selectedSpot, setSelectedSpot] = useState<ParkingSpot | null>(null);
+  const [nearbySpots, setNearbySpots] = useState<ParkingSpot[]>([]);
+  const [isNearbyLoading, setIsNearbyLoading] = useState<boolean>(false);
+  const [nearbyError, setNearbyError] = useState<string | null>(null);
   
   // Wallet state
   const [walletBalance, setWalletBalance] = useState<number>(45.50);
@@ -189,6 +195,88 @@ export default function CommuterDashboard() {
     if (activeBooking && activeBooking.spot.id === spot.id) return false;
     return spot.available;
   });
+
+  const mapNearbySpots = nearbySpots.filter((spot) => {
+    if (spotTypeFilter !== 'all' && spot.type !== spotTypeFilter) return false;
+    if (activeBooking && activeBooking.spot.id === spot.id) return false;
+    return spot.available;
+  });
+
+  useEffect(() => {
+    if (!selectedStationCoords) {
+      setNearbySpots([]);
+      setNearbyError(null);
+      setIsNearbyLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadNearbySpots() {
+      setIsNearbyLoading(true);
+      setNearbyError(null);
+
+      try {
+        const params = new URLSearchParams({
+          lat: selectedStationCoords.lat.toString(),
+          lng: selectedStationCoords.lng.toString(),
+          radius: distanceFilter.toString(),
+        });
+
+        const res = await fetch(`/api/parkingspots/nearby?${params.toString()}`, {
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          throw new Error(`Nearby search failed (${res.status})`);
+        }
+
+        const data = await res.json();
+        const fetchedSpots: ParkingSpot[] = Array.isArray(data?.spots)
+          ? data.spots.map((spot: any) => ({
+              id: spot.id,
+              station: spot.station,
+              name: spot.name,
+              pricePerHour: spot.pricePerHour,
+              distance: spot.distance,
+              lat: spot.lat,
+              lng: spot.lng,
+              available: spot.available,
+              type: spot.type,
+              owner: spot.owner,
+            }))
+          : [];
+
+        setNearbySpots(fetchedSpots);
+      } catch (error: any) {
+        if (error.name === 'AbortError') return;
+        setNearbySpots([]);
+        setNearbyError('Unable to load nearby parking right now.');
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsNearbyLoading(false);
+        }
+      }
+    }
+
+    loadNearbySpots();
+
+    return () => controller.abort();
+  }, [selectedStationCoords, distanceFilter]);
+
+  const handleHomeStationSelect = (station: string) => {
+    setSelectedStation(station);
+    setSelectedStationCoords(null);
+    setNearbySpots([]);
+    setNearbyError(null);
+    setSelectedSpot(null);
+  };
+
+  const handleMapStationSelect = (name: string, lat: number, lng: number) => {
+    setSelectedStation(name);
+    setSelectedStationCoords({ lat, lng });
+    setSelectedSpot(null);
+  };
 
   // Countdown timer effect
   useEffect(() => {
@@ -513,7 +601,7 @@ export default function CommuterDashboard() {
                   {stationsList.map(station => {
                     const count = simulatedSpots.filter(s => s.station === station && s.available).length;
                     return (
-                      <button key={station} onClick={() => { setSelectedStation(station); setSelectedSpot(null); }}
+                      <button key={station} onClick={() => handleHomeStationSelect(station)}
                         className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold border transition ${
                           selectedStation === station ? 'bg-[#007AFF] text-white border-[#007AFF]' : 'bg-white text-[#5f6368] border-[#dadce0] hover:border-[#007AFF]'
                         }`}>
@@ -575,29 +663,48 @@ export default function CommuterDashboard() {
             <div className="space-y-4">
               {/* Map */}
               <div className="bg-white rounded-2xl border border-[#e8eaed] overflow-hidden h-[55vh] lg:h-[500px]">
-                <CommuterMap spots={simulatedSpots} onStationSelect={(name, lat, lng) => { setSelectedStation(name); }} selectedStation={selectedStation} onSpotClick={(spot) => setSelectedSpot(spot)} />
+                <CommuterMap
+                  spots={mapNearbySpots}
+                  onStationSelect={handleMapStationSelect}
+                  selectedStation={selectedStation}
+                  onSpotClick={(spot) => setSelectedSpot(spot)}
+                  distanceRadius={distanceFilter}
+                  onDistanceRadiusChange={setDistanceFilter}
+                  isNearbyLoading={isNearbyLoading}
+                  nearbyError={nearbyError}
+                />
               </div>
 
               {/* Nearby parking list — only when a station is selected */}
               {selectedStation && (
                 <div className="space-y-2">
                   <h3 className="text-[12px] font-semibold text-[#5f6368] uppercase tracking-wider px-1">
-                    {filteredSpots.length} spot{filteredSpots.length !== 1 ? 's' : ''} near {selectedStation.replace(' LRT', '').replace(' MRT', '')}
+                    {mapNearbySpots.length} spot{mapNearbySpots.length !== 1 ? 's' : ''} near {selectedStation.replace(' LRT', '').replace(' MRT', '')}
                   </h3>
-                  {filteredSpots.length === 0 ? (
+                  {isNearbyLoading ? (
+                    <div className="bg-white rounded-2xl border border-[#e8eaed] p-6 text-center">
+                      <Loader2 size={28} className="mx-auto text-[#007AFF] mb-2 animate-spin" />
+                      <p className="text-[13px] text-[#5f6368]">Finding parking within {distanceFilter}m...</p>
+                    </div>
+                  ) : nearbyError ? (
+                    <div className="bg-white rounded-2xl border border-red-200 p-6 text-center">
+                      <AlertCircle size={28} className="mx-auto text-red-500 mb-2" />
+                      <p className="text-[13px] text-red-700">{nearbyError}</p>
+                    </div>
+                  ) : mapNearbySpots.length === 0 ? (
                     <div className="bg-white rounded-2xl border border-[#e8eaed] p-6 text-center">
                       <MapPin size={28} className="mx-auto text-[#dadce0] mb-2" />
                       <p className="text-[13px] text-[#5f6368]">No spots within {distanceFilter}m</p>
                     </div>
                   ) : (
-                    filteredSpots.map((spot) => (
+                    mapNearbySpots.map((spot) => (
                       <div
                         key={spot.id}
                         onClick={() => navigate(`/commuter/parking/${spot.id}`, {
                           state: {
                             spot: { id: spot.id, lat: spot.lat, lon: spot.lng, address: spot.name, photoUrl: 'https://images.unsplash.com/photo-1590674899484-d5640d9da574?w=400&h=250&fit=crop', price: spot.pricePerHour },
-                            stationCoords: null,
-                            stationName: spot.station,
+                            stationCoords: selectedStationCoords ? { lat: selectedStationCoords.lat, lon: selectedStationCoords.lng } : null,
+                            stationName: selectedStation || spot.station,
                           },
                         })}
                         className="bg-white rounded-2xl border border-[#e8eaed] hover:border-[#d2d5d9] p-4 flex items-center gap-4 cursor-pointer transition-colors"

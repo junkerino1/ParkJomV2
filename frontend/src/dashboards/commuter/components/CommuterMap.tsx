@@ -81,6 +81,10 @@ interface CommuterMapProps {
   onStationSelect: (stationName: string, lat: number, lng: number) => void;
   selectedStation: string | null;
   onSpotClick: (spot: ParkingSpot) => void;
+  distanceRadius: number;
+  onDistanceRadiusChange: (radius: number) => void;
+  isNearbyLoading: boolean;
+  nearbyError: string | null;
 }
 
 // ---- FlyTo component — flies to station when clicked, no snap-back on scroll ----
@@ -116,181 +120,6 @@ const ROUTE_NAME_MAP: Record<string, string> = {
   BRT: 'BRT Sunway Line',
   SAL: 'Shah Alam Line',
 };
-
-// ---- Mock parking spot type ----
-interface MockParkingSpot {
-  id: string;
-  lat: number;
-  lon: number;
-  address: string;
-  photoUrl: string;
-  price: number; // RM per hour
-}
-
-// ---- Mock parking spot data (coordinates within 500m of LRT/MRT stations) ----
-const MOCK_PARKING_SPOTS: MockParkingSpot[] = [
-  // ===== Subang Jaya LRT area (≈3.083, 101.588) =====
-  {
-    id: 'mock-1',
-    lat: 3.0839, lon: 101.5886,
-    address: 'Jalan SS15/4D, Subang Jaya — Landed Driveway #4',
-    photoUrl: 'https://images.unsplash.com/photo-1590674899484-d5640d9da574?w=400&h=250&fit=crop',
-    price: 4.00,
-  },
-  {
-    id: 'mock-2',
-    lat: 3.0818, lon: 101.5855,
-    address: 'Casa Subang Condominium — Bay 12, Jalan Kemajuan',
-    photoUrl: 'https://images.unsplash.com/photo-1472224371017-08207f84aaae?w=400&h=250&fit=crop',
-    price: 3.50,
-  },
-  {
-    id: 'mock-2b',
-    lat: 3.0850, lon: 101.5900,
-    address: 'SS15 Courtyard — Gated Parking Slot B3, Subang Jaya',
-    photoUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400&h=250&fit=crop',
-    price: 3.80,
-  },
-  // ===== Kelana Jaya LRT area (≈3.113, 101.603) =====
-  {
-    id: 'mock-3',
-    lat: 3.1156, lon: 101.6044,
-    address: 'Kelana Puteri Condo — Bay 211, Jalan SS7/26',
-    photoUrl: 'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=400&h=250&fit=crop',
-    price: 3.00,
-  },
-  {
-    id: 'mock-4',
-    lat: 3.1118, lon: 101.6011,
-    address: 'Jalan SS7/19 Terrace — Driveway, Kelana Jaya',
-    photoUrl: 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400&h=250&fit=crop',
-    price: 4.50,
-  },
-  {
-    id: 'mock-4b',
-    lat: 3.1145, lon: 101.5995,
-    address: 'Parklane Commercial Hub — Basement L2, Kelana Jaya',
-    photoUrl: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400&h=250&fit=crop',
-    price: 2.50,
-  },
-  // ===== Wangsa Maju LRT area (≈3.205, 101.732) =====
-  {
-    id: 'mock-5',
-    lat: 3.2045, lon: 101.7300,
-    address: 'PV9 Residences — Parking L6-102, Wangsa Maju',
-    photoUrl: 'https://images.unsplash.com/photo-1582268611958-ebfd161ef9cf?w=400&h=250&fit=crop',
-    price: 3.00,
-  },
-  {
-    id: 'mock-6',
-    lat: 3.2068, lon: 101.7335,
-    address: 'Jalan Wangsa Melawati 3 — Driveway, Wangsa Maju',
-    photoUrl: 'https://images.unsplash.com/photo-1600566753086-00f18f6b0050?w=400&h=250&fit=crop',
-    price: 3.50,
-  },
-  {
-    id: 'mock-6b',
-    lat: 3.2030, lon: 101.7295,
-    address: 'Seksyen 2 Wangsa Maju — Terrace House Car Porch',
-    photoUrl: 'https://images.unsplash.com/photo-1590674899484-d5640d9da574?w=400&h=250&fit=crop',
-    price: 3.20,
-  },
-  // ===== Taman Connaught MRT area (≈3.078, 101.747) =====
-  {
-    id: 'mock-7',
-    lat: 3.0795, lon: 101.7450,
-    address: 'Altitude 236 Condominium — L1-4, Taman Connaught',
-    photoUrl: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400&h=250&fit=crop',
-    price: 3.00,
-  },
-  {
-    id: 'mock-8',
-    lat: 3.0770, lon: 101.7485,
-    address: 'Cheras Hartamas — Driveway Lane 2, Taman Connaught',
-    photoUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=400&h=250&fit=crop',
-    price: 3.50,
-  },
-  {
-    id: 'mock-8b',
-    lat: 3.0802, lon: 101.7495,
-    address: 'Jalan Cerdas 3 — Semi-D Corner Lot, Taman Connaught',
-    photoUrl: 'https://images.unsplash.com/photo-1472224371017-08207f84aaae?w=400&h=250&fit=crop',
-    price: 4.00,
-  },
-  // ===== Masjid Jamek LRT area (≈3.149, 101.696) =====
-  {
-    id: 'mock-9',
-    lat: 3.1480, lon: 101.6940,
-    address: 'Jalan Tun Perak — Private Parking Lot, Masjid Jamek',
-    photoUrl: 'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=400&h=250&fit=crop',
-    price: 5.00,
-  },
-  {
-    id: 'mock-10',
-    lat: 3.1505, lon: 101.6980,
-    address: 'Lebuh Ampang — Heritage Shophouse Bay, KL City',
-    photoUrl: 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=400&h=250&fit=crop',
-    price: 6.00,
-  },
-  // ===== KL Sentral / Muzium Negara MRT area (≈3.134, 101.687) =====
-  {
-    id: 'mock-11',
-    lat: 3.1360, lon: 101.6895,
-    address: 'Brickfields — Jalan Tun Sambanthan Apartment Bay',
-    photoUrl: 'https://images.unsplash.com/photo-1582268611958-ebfd161ef9cf?w=400&h=250&fit=crop',
-    price: 4.50,
-  },
-  {
-    id: 'mock-12',
-    lat: 3.1320, lon: 101.6850,
-    address: 'KL Sentral Premier — Office Tower P2, Brickfields',
-    photoUrl: 'https://images.unsplash.com/photo-1600566753086-00f18f6b0050?w=400&h=250&fit=crop',
-    price: 8.00,
-  },
-  // ===== Maluri LRT/MRT area (≈3.123, 101.727) =====
-  {
-    id: 'mock-13',
-    lat: 3.1245, lon: 101.7290,
-    address: 'Jalan Cheras — AEON Maluri Nearby Private Lot',
-    photoUrl: 'https://images.unsplash.com/photo-1590674899484-d5640d9da574?w=400&h=250&fit=crop',
-    price: 3.00,
-  },
-  {
-    id: 'mock-14',
-    lat: 3.1210, lon: 101.7240,
-    address: 'Taman Maluri — Corner Lot Driveway, Cheras',
-    photoUrl: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400&h=250&fit=crop',
-    price: 2.80,
-  },
-  // ===== Ampang LRT area (≈3.150, 101.760) =====
-  {
-    id: 'mock-15',
-    lat: 3.1515, lon: 101.7620,
-    address: 'Jalan Ampang — Condo Visitor Bay, Ampang Point Area',
-    photoUrl: 'https://images.unsplash.com/photo-1472224371017-08207f84aaae?w=400&h=250&fit=crop',
-    price: 3.50,
-  },
-  {
-    id: 'mock-16',
-    lat: 3.1485, lon: 101.7575,
-    address: 'Taman U Thant — Bungalow Driveway, Ampang Hilir',
-    photoUrl: 'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=400&h=250&fit=crop',
-    price: 5.50,
-  },
-];
-
-// ---- Haversine formula: straight-line distance between two GPS points (meters) ----
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000; // Earth's radius in meters
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
 
 // ---- LineControlPanel: rail line visibility control panel ----
 function LineControlPanel({
@@ -371,18 +200,24 @@ function MapLegend() {
 }
 
 // ---- Main CommuterMap Component ----
-export default function CommuterMap({ spots, onStationSelect, selectedStation, onSpotClick }: CommuterMapProps) {
+export default function CommuterMap({
+  spots,
+  onStationSelect,
+  selectedStation,
+  onSpotClick,
+  distanceRadius,
+  onDistanceRadiusChange,
+  isNearbyLoading,
+  nearbyError,
+}: CommuterMapProps) {
   const klCenter: [number, number] = [3.1390, 101.6869];
   const [flyToCoords, setFlyToCoords] = useState<[number, number] | null>(null);
   const [showStationList, setShowStationList] = useState(false);
   const [stationFilter, setStationFilter] = useState('');
-  const [distanceRadius, setDistanceRadius] = useState(500);
 
   // ---- Find parking flow state ----
   // Station coordinates clicked by user (for passing to detail page for walking distance calc)
   const [selectedStationCoords, setSelectedStationCoords] = useState<{ lat: number; lon: number } | null>(null);
-  // Nearby parking spots filtered by Haversine distance
-  const [nearbyParking, setNearbyParking] = useState<MockParkingSpot[]>([]);
 
   // react-router navigation
   const navigate = useNavigate();
@@ -482,17 +317,10 @@ export default function CommuterMap({ spots, onStationSelect, selectedStation, o
     setFlyToCoords([coords[1], coords[0]]);
     onStationSelect(name, coords[1], coords[0]);
 
-    // Feature A: Filter mock parking spots within distanceRadius using Haversine
     const stationLat = coords[1];
     const stationLon = coords[0];
     setSelectedStationCoords({ lat: stationLat, lon: stationLon });
     setClickedStationName(name);
-
-    const nearby = MOCK_PARKING_SPOTS.filter((spot) => {
-      const dist = haversineDistance(stationLat, stationLon, spot.lat, spot.lon);
-      return dist <= distanceRadius;
-    });
-    setNearbyParking(nearby);
   };
 
   const handleListStationClick = (name: string) => {
@@ -510,12 +338,6 @@ export default function CommuterMap({ spots, onStationSelect, selectedStation, o
       const stationLon = coords[0];
       setSelectedStationCoords({ lat: stationLat, lon: stationLon });
       setClickedStationName(name);
-
-      const nearby = MOCK_PARKING_SPOTS.filter((spot) => {
-        const dist = haversineDistance(stationLat, stationLon, spot.lat, spot.lon);
-        return dist <= distanceRadius;
-      });
-      setNearbyParking(nearby);
 
       setShowStationList(false);
     }
@@ -546,7 +368,7 @@ export default function CommuterMap({ spots, onStationSelect, selectedStation, o
   const [showMobileLines, setShowMobileLines] = useState(false);
 
   // Don't show parking spots until a station is explicitly selected
-  const shouldShowParking = !!selectedStation && selectedStation.length > 0;
+  const shouldShowParking = !!selectedStation && selectedStation.length > 0 && spots.length > 0;
 
   return (
     <div className="relative w-full h-full min-h-[400px] rounded-2xl overflow-hidden border border-slate-200 shadow-lg">
@@ -648,12 +470,8 @@ export default function CommuterMap({ spots, onStationSelect, selectedStation, o
           );
         })}
 
-        {/* Render parking spots only after station selection — filtered to selected station */}
-        {shouldShowParking && spots.filter(s => {
-          const spotBase = s.station.toLowerCase().replace(' lrt','').replace(' mrt','');
-          const selBase = (selectedStation || '').toLowerCase().replace(' lrt','').replace(' mrt','');
-          return spotBase.includes(selBase) || selBase.includes(spotBase);
-        }).map((spot) => (
+        {/* Render nearby parking spots returned by the backend */}
+        {shouldShowParking && spots.map((spot) => (
           <Marker
             key={spot.id}
             position={[spot.lat, spot.lng]}
@@ -677,6 +495,7 @@ export default function CommuterMap({ spots, onStationSelect, selectedStation, o
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    onSpotClick(spot);
                     navigate(`/commuter/parking/${spot.id}`, {
                       state: {
                         spot: { id: spot.id, lat: spot.lat, lon: spot.lng, address: spot.name, photoUrl: 'https://images.unsplash.com/photo-1590674899484-d5640d9da574?w=400&h=250&fit=crop', price: spot.pricePerHour },
@@ -734,7 +553,19 @@ export default function CommuterMap({ spots, onStationSelect, selectedStation, o
       </div>
 
       {/* ---- No nearby parking message ---- (centered to avoid blocking top-right buttons) */}
-      {clickedStationName && nearbyParking.length === 0 && (
+      {clickedStationName && isNearbyLoading && (
+        <div className="absolute top-[80px] left-1/2 -translate-x-1/2 z-[1001] animate-slide-up w-[90%] max-w-[320px]">
+          <div className="bg-blue-50/95 backdrop-blur border border-blue-200 rounded-xl px-4 py-3 shadow-lg flex items-start gap-2.5">
+            <Loader2 size={16} className="text-blue-600 shrink-0 mt-0.5 animate-spin" />
+            <div className="text-[11px] text-blue-900 leading-relaxed">
+              <strong className="block text-xs font-bold">Searching nearby parking</strong>
+              <span>Looking for available spaces within <strong>{distanceRadius}m</strong> of this station.</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {clickedStationName && !isNearbyLoading && !nearbyError && spots.length === 0 && (
         <div className="absolute top-[80px] left-1/2 -translate-x-1/2 z-[1001] animate-slide-up w-[90%] max-w-[300px]">
           <div className="bg-amber-50/95 backdrop-blur border border-amber-200 rounded-xl px-4 py-3 shadow-lg flex items-start gap-2.5">
             <MapPin size={16} className="text-amber-500 shrink-0 mt-0.5" />
@@ -763,6 +594,12 @@ export default function CommuterMap({ spots, onStationSelect, selectedStation, o
         </div>
       )}
 
+      {nearbyError && (
+        <div className="absolute top-16 left-4 right-4 z-[1001] bg-red-50 border border-red-200 text-red-700 text-xs px-4 py-2 rounded-lg shadow">
+          ⚠️ Nearby parking search failed: {nearbyError}
+        </div>
+      )}
+
       {/* Top Bar: Station Search & Filter */}
       <div className="absolute top-4 left-4 right-4 z-[1000] flex gap-2">
         {/* Station Selector Button */}
@@ -779,20 +616,7 @@ export default function CommuterMap({ spots, onStationSelect, selectedStation, o
         <select
           value={distanceRadius}
           onChange={(e) => {
-            const newRadius = Number(e.target.value);
-            setDistanceRadius(newRadius);
-
-            // If a station is already selected, auto-refilter with the new radius
-            if (selectedStationCoords) {
-              const nearby = MOCK_PARKING_SPOTS.filter((spot) => {
-                const dist = haversineDistance(
-                  selectedStationCoords.lat, selectedStationCoords.lon,
-                  spot.lat, spot.lon,
-                );
-                return dist <= newRadius;
-              });
-              setNearbyParking(nearby);
-            }
+            onDistanceRadiusChange(Number(e.target.value));
           }}
           className="bg-white/95 backdrop-blur rounded-xl border border-slate-200 shadow-lg px-3 py-2.5 text-xs font-semibold text-slate-600 focus:outline-none"
         >
