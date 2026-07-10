@@ -11,47 +11,42 @@ public class User
 
     [Required]
     [StringLength(100)]
-    public string FullName { get; set; } = string.Empty;
+    public string? FirstName { get; set; }
+
+    [Required]
+    [StringLength(100)]
+    public string? LastName { get; set; }
 
     [Required]
     [EmailAddress]
     [StringLength(255)]
     public string Email { get; set; } = string.Empty;
 
-    [Required]
-    public string PasswordHash { get; set; } = string.Empty;
-
     [StringLength(20)]
     public string? PhoneNumber { get; set; }
+
+    [Required]
+    public string GoogleId { get; set; } = string.Empty;
 
     [Required]
     [StringLength(30)]
     public UserType UserType { get; set; }
 
-    public int? ProfileImageId { get; set; }
+    public string? ProfilePictureURL { get; set; }
 
-    public VerificationStatus VerificationStatus { get; set; }
+    public bool IsProfileComplete { get; set; }
 
     [Required]
     [StringLength(20)]
     public string AccountStatus { get; set; } = "Active";
 
-    public string? RefreshToken { get; set; }
-
-    public DateTime? RefreshTokenExpiryTime { get; set; }
-
     public DateTime? LastLoginAt { get; set; }
-
-    public DateTime? EmailVerifiedAt { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
 
     // Navigation Properties
-
-    public MediaFile? ProfileImage { get; set; }
-
     public Wallet? Wallet { get; set; }
 
     public ICollection<Vehicle> Vehicles { get; set; } = new List<Vehicle>();

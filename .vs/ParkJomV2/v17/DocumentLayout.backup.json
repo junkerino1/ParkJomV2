@@ -3,36 +3,12 @@
   "WorkspaceRootPath": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\data\\applicationdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\data\\applicationdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707145858_InitialCreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:ParkJomV2\\Migrations\\20260707145858_InitialCreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707145509_InitialCreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:ParkJomV2\\Migrations\\20260707145509_InitialCreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\iotdevice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\iotdevice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707144443_InitialCreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:ParkJomV2\\Migrations\\20260707144443_InitialCreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\parkjomv2.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\parkjomv2.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\parkjomv2.csproj.backup.tmp||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\parkjomv2.csproj.backup.tmp||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707143948_InitialCreate2.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:ParkJomV2\\Migrations\\20260707143948_InitialCreate2.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\dtos\\authdto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\dtos\\authdto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
@@ -43,36 +19,71 @@
       "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707143358_InitialCreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:ParkJomV2\\Migrations\\20260707143358_InitialCreate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\controllers\\propertycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\controllers\\propertycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\readme.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\readme.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\controllers\\usercontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\controllers\\usercontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\parkingspot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\parkingspot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\services\\googleauthservices.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\services\\googleauthservices.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\favorite.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\favorite.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\services\\jwttokenservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\services\\jwttokenservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\data\\applicationdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\data\\applicationdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\migrations\\applicationdbcontextmodelsnapshot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\migrations\\applicationdbcontextmodelsnapshot.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\enums\\usertype.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\enums\\usertype.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\user.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\user.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\booking.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\booking.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\iotstatuslog.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\iotstatuslog.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260710063229_UpdatedUserModel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:ParkJomV2\\Migrations\\20260710063229_UpdatedUserModel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\parkingverificationrequest.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\parkingverificationrequest.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\transaction.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\transaction.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\property.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\property.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\mediafile.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\mediafile.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\controllers\\vehiclecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\controllers\\vehiclecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\dtos\\propertydto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\dtos\\propertydto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|c:\\users\\junka\\onedrive\\documents\\github\\parkjomv2\\parkjomv2\\models\\enums\\propertytype.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{0F4DC796-E724-4EB5-BFE8-868267BA7BDB}|ParkJomV2\\ParkJomV2.csproj|solutionrelative:parkjomv2\\models\\enums\\propertytype.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|ViewDataWindow_MSSQL__/localhost/ParkJom/True/SqlTable/dbo.Stations.sql||{0058A1F7-65F3-4DB9-B3D0-CA7E64DD73CD}"
     }
   ],
   "DocumentGroupContainers": [
@@ -82,240 +93,275 @@
       "DocumentGroups": [
         {
           "DockedWidth": 132,
-          "SelectedChildIndex": 9,
+          "SelectedChildIndex": 0,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "20260707145858_InitialCreate.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707145858_InitialCreate.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Migrations\\20260707145858_InitialCreate.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707145858_InitialCreate.cs",
-              "RelativeToolTip": "ParkJomV2\\Migrations\\20260707145858_InitialCreate.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:58:59.427Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "20260707145509_InitialCreate.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707145509_InitialCreate.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Migrations\\20260707145509_InitialCreate.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707145509_InitialCreate.cs",
-              "RelativeToolTip": "ParkJomV2\\Migrations\\20260707145509_InitialCreate.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:55:10.011Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "IOTDevice.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\IOTDevice.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Models\\IOTDevice.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\IOTDevice.cs",
-              "RelativeToolTip": "ParkJomV2\\Models\\IOTDevice.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:54:36.899Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 4,
-              "Title": "20260707144443_InitialCreate.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707144443_InitialCreate.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Migrations\\20260707144443_InitialCreate.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707144443_InitialCreate.cs",
-              "RelativeToolTip": "ParkJomV2\\Migrations\\20260707144443_InitialCreate.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:44:43.43Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 7,
-              "Title": "20260707143948_InitialCreate2.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707143948_InitialCreate2.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Migrations\\20260707143948_InitialCreate2.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707143948_InitialCreate2.cs",
-              "RelativeToolTip": "ParkJomV2\\Migrations\\20260707143948_InitialCreate2.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:39:48.804Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "ParkJomV2",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\ParkJomV2.csproj",
-              "RelativeDocumentMoniker": "ParkJomV2\\ParkJomV2.csproj",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\ParkJomV2.csproj",
-              "RelativeToolTip": "ParkJomV2\\ParkJomV2.csproj",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2026-07-07T14:36:12.209Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 6,
-              "Title": "ParkJomV2.csproj.Backup.tmp",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\ParkJomV2.csproj.Backup.tmp",
-              "RelativeDocumentMoniker": "ParkJomV2\\ParkJomV2.csproj.Backup.tmp",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\ParkJomV2.csproj.Backup.tmp",
-              "RelativeToolTip": "ParkJomV2\\ParkJomV2.csproj.Backup.tmp",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
-              "WhenOpened": "2026-07-07T14:32:29.346Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 10,
-              "Title": "20260707143358_InitialCreate.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707143358_InitialCreate.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Migrations\\20260707143358_InitialCreate.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260707143358_InitialCreate.cs",
-              "RelativeToolTip": "ParkJomV2\\Migrations\\20260707143358_InitialCreate.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:33:58.793Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 11,
-              "Title": "README.md",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\README.md",
-              "RelativeDocumentMoniker": "ParkJomV2\\README.md",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\README.md",
-              "RelativeToolTip": "ParkJomV2\\README.md",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
-              "WhenOpened": "2026-07-07T14:32:54.239Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "ApplicationDbContext.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Data\\ApplicationDbContext.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Data\\ApplicationDbContext.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Data\\ApplicationDbContext.cs",
-              "RelativeToolTip": "ParkJomV2\\Data\\ApplicationDbContext.cs",
-              "ViewState": "AgIAADUAAAAAAAAAAAAAADgAAAAyAAAAAAAAAA==",
+              "Title": "AuthController.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Controllers\\AuthController.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Controllers\\AuthController.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Controllers\\AuthController.cs",
+              "RelativeToolTip": "ParkJomV2\\Controllers\\AuthController.cs",
+              "ViewState": "AgIAAFIAAAAAAAAAAAASwFsAAAASAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:19:13.367Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 12,
-              "Title": "ParkingSpot.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\ParkingSpot.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Models\\ParkingSpot.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\ParkingSpot.cs",
-              "RelativeToolTip": "ParkJomV2\\Models\\ParkingSpot.cs",
-              "ViewState": "AgIAABkAAAAAAAAAAAAgwDMAAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:18:17.77Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 13,
-              "Title": "Favorite.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Favorite.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Favorite.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Favorite.cs",
-              "RelativeToolTip": "ParkJomV2\\Models\\Favorite.cs",
-              "ViewState": "AgIAAAYAAAAAAAAAAADwvxwAAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:12:28.148Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 15,
-              "Title": "Booking.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Booking.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Booking.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Booking.cs",
-              "RelativeToolTip": "ParkJomV2\\Models\\Booking.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T14:12:27.392Z",
+              "WhenOpened": "2026-07-10T07:35:28.626Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 9,
+              "Title": "ApplicationDbContextModelSnapshot.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\ApplicationDbContextModelSnapshot.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Migrations\\ApplicationDbContextModelSnapshot.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\ApplicationDbContextModelSnapshot.cs",
+              "RelativeToolTip": "ParkJomV2\\Migrations\\ApplicationDbContextModelSnapshot.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T07:33:47.46Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
               "Title": "Program.cs",
               "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Program.cs",
               "RelativeDocumentMoniker": "ParkJomV2\\Program.cs",
               "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Program.cs",
               "RelativeToolTip": "ParkJomV2\\Program.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAAKAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAAvAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T10:00:57.896Z",
+              "WhenOpened": "2026-07-10T07:12:11.069Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 16,
-              "Title": "IOTStatusLog.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\IOTStatusLog.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Models\\IOTStatusLog.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\IOTStatusLog.cs",
-              "RelativeToolTip": "ParkJomV2\\Models\\IOTStatusLog.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T10:00:37.955Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 2,
               "Title": "appsettings.json",
               "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\appsettings.json",
               "RelativeDocumentMoniker": "ParkJomV2\\appsettings.json",
               "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\appsettings.json",
               "RelativeToolTip": "ParkJomV2\\appsettings.json",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAADAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAAOAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2026-07-07T09:58:17.727Z",
+              "WhenOpened": "2026-07-10T07:14:19.184Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 14,
-              "Title": "User.cs",
-              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\User.cs",
-              "RelativeDocumentMoniker": "ParkJomV2\\Models\\User.cs",
-              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\User.cs",
-              "RelativeToolTip": "ParkJomV2\\Models\\User.cs",
-              "ViewState": "AgIAACwAAAAAAAAAAAAQwEgAAAABAAAAAAAAAA==",
+              "DocumentIndex": 12,
+              "Title": "20260710063229_UpdatedUserModel.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260710063229_UpdatedUserModel.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Migrations\\20260710063229_UpdatedUserModel.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Migrations\\20260710063229_UpdatedUserModel.cs",
+              "RelativeToolTip": "ParkJomV2\\Migrations\\20260710063229_UpdatedUserModel.cs",
+              "ViewState": "AgIAAEAAAAAAAAAAAAAgwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T09:51:23.345Z",
+              "WhenOpened": "2026-07-10T06:32:29.546Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 17,
+              "DocumentIndex": 8,
+              "Title": "ApplicationDbContext.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Data\\ApplicationDbContext.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Data\\ApplicationDbContext.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Data\\ApplicationDbContext.cs",
+              "RelativeToolTip": "ParkJomV2\\Data\\ApplicationDbContext.cs",
+              "ViewState": "AgIAAB8AAAAAAAAAAAAswDQAAAAyAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T06:31:14.788Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
               "Title": "ParkingVerificationRequest.cs",
               "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\ParkingVerificationRequest.cs",
               "RelativeDocumentMoniker": "ParkJomV2\\Models\\ParkingVerificationRequest.cs",
               "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\ParkingVerificationRequest.cs",
               "RelativeToolTip": "ParkJomV2\\Models\\ParkingVerificationRequest.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABIAAAALAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T06:30:39.344Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "Transaction.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Transaction.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Transaction.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Transaction.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Transaction.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-07-07T09:49:16.146Z",
+              "WhenOpened": "2026-07-10T06:19:33.643Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 16,
+              "Title": "MediaFile.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\MediaFile.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\MediaFile.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\MediaFile.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\MediaFile.cs",
+              "ViewState": "AgIAABYAAAAAAAAAAAA0wAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T06:18:29.872Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "JwtTokenService.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Services\\JwtTokenService.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Services\\JwtTokenService.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Services\\JwtTokenService.cs",
+              "RelativeToolTip": "ParkJomV2\\Services\\JwtTokenService.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAADEAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T06:17:38.13Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "GoogleAuthServices.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Services\\GoogleAuthServices.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Services\\GoogleAuthServices.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Services\\GoogleAuthServices.cs",
+              "RelativeToolTip": "ParkJomV2\\Services\\GoogleAuthServices.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAB0AAAATAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T06:16:35.385Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "AuthDTO.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\DTOs\\AuthDTO.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\DTOs\\AuthDTO.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\DTOs\\AuthDTO.cs",
+              "RelativeToolTip": "ParkJomV2\\DTOs\\AuthDTO.cs",
+              "ViewState": "AgIAAA8AAAAAAAAAAAAUwCYAAAA3AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T06:05:45.148Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "UserType.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Enums\\UserType.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Enums\\UserType.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Enums\\UserType.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Enums\\UserType.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T05:57:53.212Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "User.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\User.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\User.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\User.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\User.cs",
+              "ViewState": "AgIAACMAAAAAAAAAAAAgwEMAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T05:53:58.205Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 17,
+              "Title": "VehicleController.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Controllers\\VehicleController.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Controllers\\VehicleController.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Controllers\\VehicleController.cs",
+              "RelativeToolTip": "ParkJomV2\\Controllers\\VehicleController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T05:53:01.144Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "UserController.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Controllers\\UserController.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Controllers\\UserController.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Controllers\\UserController.cs",
+              "RelativeToolTip": "ParkJomV2\\Controllers\\UserController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-10T05:50:10.726Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 18,
+              "Title": "PropertyDTO.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\DTOs\\PropertyDTO.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\DTOs\\PropertyDTO.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\DTOs\\PropertyDTO.cs",
+              "RelativeToolTip": "ParkJomV2\\DTOs\\PropertyDTO.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACEAAAAsAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-09T17:05:32.931Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 19,
+              "Title": "PropertyType.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Enums\\PropertyType.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Enums\\PropertyType.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Enums\\PropertyType.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Enums\\PropertyType.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAYAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-09T17:05:15.526Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 20,
+              "Title": "dbo.Stations.sql",
+              "DocumentMoniker": "ViewDataWindow_MSSQL__/localhost/ParkJom/True/SqlTable/dbo.Stations.sql",
+              "ToolTip": "ViewDataWindow_MSSQL__/localhost/ParkJom/True/SqlTable/dbo.Stations.sql",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-07-09T17:04:30.47Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "PropertyController.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Controllers\\PropertyController.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Controllers\\PropertyController.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Controllers\\PropertyController.cs",
+              "RelativeToolTip": "ParkJomV2\\Controllers\\PropertyController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-09T16:55:52.26Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "Property.cs",
+              "DocumentMoniker": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Property.cs",
+              "RelativeDocumentMoniker": "ParkJomV2\\Models\\Property.cs",
+              "ToolTip": "C:\\Users\\junka\\OneDrive\\Documents\\GitHub\\ParkJomV2\\ParkJomV2\\Models\\Property.cs",
+              "RelativeToolTip": "ParkJomV2\\Models\\Property.cs",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAAACcAAAArAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-09T16:38:07.174Z",
               "EditorCaption": ""
             }
           ]
