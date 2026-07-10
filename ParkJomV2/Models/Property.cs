@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using ParkJomV2.Models.Enums;
 namespace ParkJomV2.Models;
 
@@ -25,8 +26,8 @@ public class Property
     [Column(TypeName = "decimal(9,6)")]
     public decimal Longitude { get; set; }
 
-    [StringLength(100)]
-    public string? NearestStation { get; set; }
+    [Required]
+    public int NearestStationId { get; set; }
 
     [Column(TypeName = "decimal(5,2)")]
     public decimal DistanceToStation { get; set; }
@@ -39,6 +40,9 @@ public class Property
     public DateTime UpdatedAt { get; set; }
 
     // Navigation Properties
+
+    [ForeignKey(nameof(NearestStationId))]
+    public Station Station { get; set; } = null!;
 
     public ICollection<ParkingSpot> ParkingSpots { get; set; } = new List<ParkingSpot>();
 }

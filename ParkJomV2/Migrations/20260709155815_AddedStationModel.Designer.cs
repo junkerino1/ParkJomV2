@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ParkJomV2.Data;
 
@@ -11,9 +12,11 @@ using ParkJomV2.Data;
 namespace ParkJomV2.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260709155815_AddedStationModel")]
+    partial class AddedStationModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -608,32 +611,33 @@ namespace ParkJomV2.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
-                    b.Property<string>("FirstName")
+                    b.Property<DateTime?>("EmailVerifiedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("GoogleId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("IsProfileComplete")
-                        .HasColumnType("bit");
 
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("LastName")
+                    b.Property<string>("PasswordHash")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PhoneNumber")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<string>("ProfilePictureURL")
+                    b.Property<int?>("ProfileImageId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RefreshToken")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("RefreshTokenExpiryTime")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -643,10 +647,16 @@ namespace ParkJomV2.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("UserId");
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("ProfileImageId");
 
                     b.ToTable("Users");
                 });
@@ -979,6 +989,16 @@ namespace ParkJomV2.Migrations
                     b.Navigation("Booking");
 
                     b.Navigation("Wallet");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.User", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.MediaFile", "ProfileImage")
+                        .WithMany()
+                        .HasForeignKey("ProfileImageId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ProfileImage");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Vehicle", b =>
