@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Verification Document</title>
+</head>
+<body>
+
+    <h2>View Verification Document</h2>
+
+    <label>JWT Token</label><br>
+    <textarea id="jwtToken" rows="6" cols="80"></textarea>
+
+
+    <br><br>
+
+    <iframe id="pdfViewer"
+            width="100%"
+            height="900px">
+    </iframe>
+
+    <label>Media File ID</label><br>
+    <input type="number" id="mediaId" value="1">
+
+    <br><br>
+
+    <button onclick="viewDocument()">View Document</button>
+
+    <script>
+
+        async function viewDocument() {
+
+            const token = document.getElementById("jwtToken").value.trim();
+            const mediaId = document.getElementById("mediaId").value;
+
+            const response = await fetch(
+                `https://localhost:7250/api/media/view/${mediaId}`,
+                {
+                    method: "GET",
+                    headers: {
+                        "Authorization": `Bearer ${token}`
+                    }
+                });
+
+            if (!response.ok) {
+                alert("Request failed.\nStatus : " + response.status);
+                return;
+            }
+
+            const blob = await response.blob();
+
+            const blobUrl = URL.createObjectURL(blob);
+
+            document.getElementById("pdfViewer").src = blobUrl;
+        }
+
+    </script>
+
+</body>
+</html>

@@ -13,7 +13,7 @@ namespace ParkJomV2.Controllers
 {
     [ApiController]
     [Route("api/auth")]
-    public class AuthController : Controller
+    public class AuthController : ControllerBase
     {
 
         private readonly ApplicationDbContext _context;
