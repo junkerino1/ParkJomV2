@@ -14,11 +14,11 @@ appsettings.Local.json
 
 # Visual Studio / VS Code
 *.user
-.vs/
-.vscode/
+**/.vs/
+**/.vscode/
 
 # NuGet packages
-packages/
+**/packages/
 
 # Environment files
 .env

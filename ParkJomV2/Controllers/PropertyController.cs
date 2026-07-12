@@ -12,7 +12,7 @@ namespace ParkJomV2.Controllers
 {
     [ApiController]
     [Route("api/property")]
-    public class PropertyController : Controller
+    public class PropertyController : ControllerBase
     {
 
         private readonly ApplicationDbContext _context;
