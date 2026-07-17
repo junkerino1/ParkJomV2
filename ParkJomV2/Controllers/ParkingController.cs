@@ -471,11 +471,11 @@ namespace ParkJomV2.Controllers
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation(
-                    "Verification request {VerificationRequestId} status updated from {PreviousStatus} to {NewStatus} by admin user {UserId}",
+                    "Verification request {VerificationRequestId} status updated from {PreviousStatus} to {NewStatus} by admin {UserId}",
                     id,
                     previousStatus,
                     verificationRequest.VerificationStatus,
-                    userId);
+                    user.FirstName + user.LastName);
 
                 var statusMessage = request.IsApproved ? "Approved" : "Rejected";
 
