@@ -6,11 +6,50 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ParkJomV2.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class initialMigrate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.CreateTable(
+                name: "Stations",
+                columns: table => new
+                {
+                    StationId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    StationName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Latitude = table.Column<decimal>(type: "decimal(9,6)", nullable: false),
+                    Longitude = table.Column<decimal>(type: "decimal(9,6)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Stations", x => x.StationId);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    UserId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    FirstName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    LastName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Email = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
+                    PhoneNumber = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
+                    GoogleId = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    UserType = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
+                    ProfilePictureURL = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    IsProfileComplete = table.Column<bool>(type: "bit", nullable: false),
+                    AccountStatus = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    LastLoginAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.UserId);
+                });
+
             migrationBuilder.CreateTable(
                 name: "Properties",
                 columns: table => new
@@ -22,7 +61,7 @@ namespace ParkJomV2.Migrations
                     Address = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
                     Latitude = table.Column<decimal>(type: "decimal(9,6)", nullable: false),
                     Longitude = table.Column<decimal>(type: "decimal(9,6)", nullable: false),
-                    NearestStation = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    NearestStationId = table.Column<int>(type: "int", nullable: false),
                     DistanceToStation = table.Column<decimal>(type: "decimal(5,2)", nullable: false),
                     Description = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
@@ -31,109 +70,12 @@ namespace ParkJomV2.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Properties", x => x.PropertyId);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "AccessLogs",
-                columns: table => new
-                {
-                    AccessLogId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    BookingId = table.Column<int>(type: "int", nullable: false),
-                    UserId = table.Column<int>(type: "int", nullable: false),
-                    IoTDeviceId = table.Column<int>(type: "int", nullable: false),
-                    Actions = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: false),
-                    AccessedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AccessLogs", x => x.AccessLogId);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Bookings",
-                columns: table => new
-                {
-                    BookingId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    BookingReference = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    RenterId = table.Column<int>(type: "int", nullable: false),
-                    ParkingSpotId = table.Column<int>(type: "int", nullable: false),
-                    VehicleId = table.Column<int>(type: "int", nullable: false),
-                    StartDate = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    EndDate = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    BookingStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    TotalAmount = table.Column<decimal>(type: "decimal(10,2)", nullable: false),
-                    CancellationReason = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
-                    CancelledAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Bookings", x => x.BookingId);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Favorites",
-                columns: table => new
-                {
-                    FavoriteId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    UserId = table.Column<int>(type: "int", nullable: false),
-                    ParkingSpotId = table.Column<int>(type: "int", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Favorites", x => x.FavoriteId);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "IoTDevices",
-                columns: table => new
-                {
-                    IoTDeviceId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    ParkingSpotId = table.Column<int>(type: "int", nullable: false),
-                    Esp32Serial = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    FirmwareVersion = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    DeviceStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    IsAssigned = table.Column<bool>(type: "bit", nullable: false),
-                    LastHeartbeatAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_IoTDevices", x => x.IoTDeviceId);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "IoTStatusLogs",
-                columns: table => new
-                {
-                    IoTStatusLogId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    IoTDeviceId = table.Column<int>(type: "int", nullable: false),
-                    DeviceStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Message = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
-                    LoggedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_IoTStatusLogs", x => x.IoTStatusLogId);
                     table.ForeignKey(
-                        name: "FK_IoTStatusLogs_IoTDevices_IoTDeviceId",
-                        column: x => x.IoTDeviceId,
-                        principalTable: "IoTDevices",
-                        principalColumn: "IoTDeviceId",
-                        onDelete: ReferentialAction.Cascade);
+                        name: "FK_Properties_Stations_NearestStationId",
+                        column: x => x.NearestStationId,
+                        principalTable: "Stations",
+                        principalColumn: "StationId",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -144,12 +86,10 @@ namespace ParkJomV2.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     PublicId = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
                     SecureUrl = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ResourceType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Format = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
                     OriginalFileName = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
-                    MimeType = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    FileExtension = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    FileSize = table.Column<long>(type: "bigint", nullable: false),
-                    ResourceType = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
-                    Folder = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    Folder = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
                     UploadedBy = table.Column<int>(type: "int", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
@@ -157,67 +97,9 @@ namespace ParkJomV2.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_MediaFiles", x => x.MediaFileId);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Users",
-                columns: table => new
-                {
-                    UserId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    FullName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Email = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
-                    PasswordHash = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    PhoneNumber = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: true),
-                    UserType = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: false),
-                    ProfileImageId = table.Column<int>(type: "int", nullable: true),
-                    VerificationStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    AccountStatus = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    RefreshToken = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    RefreshTokenExpiryTime = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    LastLoginAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    EmailVerifiedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Users", x => x.UserId);
                     table.ForeignKey(
-                        name: "FK_Users_MediaFiles_ProfileImageId",
-                        column: x => x.ProfileImageId,
-                        principalTable: "MediaFiles",
-                        principalColumn: "MediaFileId",
-                        onDelete: ReferentialAction.SetNull);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "ParkingSpots",
-                columns: table => new
-                {
-                    ParkingSpotId = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    PropertyId = table.Column<int>(type: "int", nullable: false),
-                    OwnerId = table.Column<int>(type: "int", nullable: false),
-                    ParkingLabel = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    AvailabilityStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    MonthlyPrice = table.Column<decimal>(type: "decimal(6,2)", nullable: false),
-                    IsPublished = table.Column<bool>(type: "bit", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ParkingSpots", x => x.ParkingSpotId);
-                    table.ForeignKey(
-                        name: "FK_ParkingSpots_Properties_PropertyId",
-                        column: x => x.PropertyId,
-                        principalTable: "Properties",
-                        principalColumn: "PropertyId",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_ParkingSpots_Users_OwnerId",
-                        column: x => x.OwnerId,
+                        name: "FK_MediaFiles_Users_UploadedBy",
+                        column: x => x.UploadedBy,
                         principalTable: "Users",
                         principalColumn: "UserId");
                 });
@@ -267,6 +149,132 @@ namespace ParkJomV2.Migrations
                         column: x => x.UserId,
                         principalTable: "Users",
                         principalColumn: "UserId",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ParkingSpots",
+                columns: table => new
+                {
+                    ParkingSpotId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    PropertyId = table.Column<int>(type: "int", nullable: false),
+                    OwnerId = table.Column<int>(type: "int", nullable: false),
+                    ParkingLabel = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    AvailabilityStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    MonthlyPrice = table.Column<decimal>(type: "decimal(6,2)", nullable: false),
+                    IsPublished = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ParkingSpots", x => x.ParkingSpotId);
+                    table.ForeignKey(
+                        name: "FK_ParkingSpots_Properties_PropertyId",
+                        column: x => x.PropertyId,
+                        principalTable: "Properties",
+                        principalColumn: "PropertyId",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ParkingSpots_Users_OwnerId",
+                        column: x => x.OwnerId,
+                        principalTable: "Users",
+                        principalColumn: "UserId");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Bookings",
+                columns: table => new
+                {
+                    BookingId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    BookingReference = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    RenterId = table.Column<int>(type: "int", nullable: false),
+                    ParkingSpotId = table.Column<int>(type: "int", nullable: false),
+                    VehicleId = table.Column<int>(type: "int", nullable: false),
+                    StartDate = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    EndDate = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    BookingStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    TotalAmount = table.Column<decimal>(type: "decimal(10,2)", nullable: false),
+                    CancellationReason = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    CancelledAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Bookings", x => x.BookingId);
+                    table.ForeignKey(
+                        name: "FK_Bookings_ParkingSpots_ParkingSpotId",
+                        column: x => x.ParkingSpotId,
+                        principalTable: "ParkingSpots",
+                        principalColumn: "ParkingSpotId",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Bookings_Users_RenterId",
+                        column: x => x.RenterId,
+                        principalTable: "Users",
+                        principalColumn: "UserId");
+                    table.ForeignKey(
+                        name: "FK_Bookings_Vehicles_VehicleId",
+                        column: x => x.VehicleId,
+                        principalTable: "Vehicles",
+                        principalColumn: "VehicleId",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Favorites",
+                columns: table => new
+                {
+                    FavoriteId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    UserId = table.Column<int>(type: "int", nullable: false),
+                    ParkingSpotId = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Favorites", x => x.FavoriteId);
+                    table.ForeignKey(
+                        name: "FK_Favorites_ParkingSpots_ParkingSpotId",
+                        column: x => x.ParkingSpotId,
+                        principalTable: "ParkingSpots",
+                        principalColumn: "ParkingSpotId",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_Favorites_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "UserId",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "IoTDevices",
+                columns: table => new
+                {
+                    IoTDeviceId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    ParkingSpotId = table.Column<int>(type: "int", nullable: false),
+                    Esp32Serial = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    FirmwareVersion = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    DeviceStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    IsAssigned = table.Column<bool>(type: "bit", nullable: false),
+                    LastHeartbeatAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_IoTDevices", x => x.IoTDeviceId);
+                    table.ForeignKey(
+                        name: "FK_IoTDevices_ParkingSpots_ParkingSpotId",
+                        column: x => x.ParkingSpotId,
+                        principalTable: "ParkingSpots",
+                        principalColumn: "ParkingSpotId",
                         onDelete: ReferentialAction.Cascade);
                 });
 
@@ -402,6 +410,66 @@ namespace ParkJomV2.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "AccessLogs",
+                columns: table => new
+                {
+                    AccessLogId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    BookingId = table.Column<int>(type: "int", nullable: false),
+                    UserId = table.Column<int>(type: "int", nullable: false),
+                    IoTDeviceId = table.Column<int>(type: "int", nullable: false),
+                    Actions = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: false),
+                    AccessedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AccessLogs", x => x.AccessLogId);
+                    table.ForeignKey(
+                        name: "FK_AccessLogs_Bookings_BookingId",
+                        column: x => x.BookingId,
+                        principalTable: "Bookings",
+                        principalColumn: "BookingId",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_AccessLogs_IoTDevices_IoTDeviceId",
+                        column: x => x.IoTDeviceId,
+                        principalTable: "IoTDevices",
+                        principalColumn: "IoTDeviceId",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_AccessLogs_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "UserId");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "IoTStatusLogs",
+                columns: table => new
+                {
+                    IoTStatusLogId = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    IoTDeviceId = table.Column<int>(type: "int", nullable: false),
+                    DeviceStatus = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Message = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
+                    LoggedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_IoTStatusLogs", x => x.IoTStatusLogId);
+                    table.ForeignKey(
+                        name: "FK_IoTStatusLogs_IoTDevices_IoTDeviceId",
+                        column: x => x.IoTDeviceId,
+                        principalTable: "IoTDevices",
+                        principalColumn: "IoTDeviceId",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "VerificationDocuments",
                 columns: table => new
                 {
@@ -524,6 +592,11 @@ namespace ParkJomV2.Migrations
                 column: "SubmittedByUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Properties_NearestStationId",
+                table: "Properties",
+                column: "NearestStationId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Reviews_BookingId",
                 table: "Reviews",
                 column: "BookingId");
@@ -555,11 +628,6 @@ namespace ParkJomV2.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Users_ProfileImageId",
-                table: "Users",
-                column: "ProfileImageId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Vehicles_UserId",
                 table: "Vehicles",
                 column: "UserId");
@@ -579,92 +647,11 @@ namespace ParkJomV2.Migrations
                 table: "Wallets",
                 column: "UserId",
                 unique: true);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_AccessLogs_Bookings_BookingId",
-                table: "AccessLogs",
-                column: "BookingId",
-                principalTable: "Bookings",
-                principalColumn: "BookingId",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_AccessLogs_IoTDevices_IoTDeviceId",
-                table: "AccessLogs",
-                column: "IoTDeviceId",
-                principalTable: "IoTDevices",
-                principalColumn: "IoTDeviceId",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_AccessLogs_Users_UserId",
-                table: "AccessLogs",
-                column: "UserId",
-                principalTable: "Users",
-                principalColumn: "UserId");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_Bookings_ParkingSpots_ParkingSpotId",
-                table: "Bookings",
-                column: "ParkingSpotId",
-                principalTable: "ParkingSpots",
-                principalColumn: "ParkingSpotId",
-                onDelete: ReferentialAction.Restrict);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_Bookings_Users_RenterId",
-                table: "Bookings",
-                column: "RenterId",
-                principalTable: "Users",
-                principalColumn: "UserId");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_Bookings_Vehicles_VehicleId",
-                table: "Bookings",
-                column: "VehicleId",
-                principalTable: "Vehicles",
-                principalColumn: "VehicleId",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_Favorites_ParkingSpots_ParkingSpotId",
-                table: "Favorites",
-                column: "ParkingSpotId",
-                principalTable: "ParkingSpots",
-                principalColumn: "ParkingSpotId",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_Favorites_Users_UserId",
-                table: "Favorites",
-                column: "UserId",
-                principalTable: "Users",
-                principalColumn: "UserId",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_IoTDevices_ParkingSpots_ParkingSpotId",
-                table: "IoTDevices",
-                column: "ParkingSpotId",
-                principalTable: "ParkingSpots",
-                principalColumn: "ParkingSpotId",
-                onDelete: ReferentialAction.Cascade);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_MediaFiles_Users_UploadedBy",
-                table: "MediaFiles",
-                column: "UploadedBy",
-                principalTable: "Users",
-                principalColumn: "UserId");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_MediaFiles_Users_UploadedBy",
-                table: "MediaFiles");
-
             migrationBuilder.DropTable(
                 name: "AccessLogs");
 
@@ -696,6 +683,9 @@ namespace ParkJomV2.Migrations
                 name: "Wallets");
 
             migrationBuilder.DropTable(
+                name: "MediaFiles");
+
+            migrationBuilder.DropTable(
                 name: "ParkingVerificationRequests");
 
             migrationBuilder.DropTable(
@@ -711,7 +701,7 @@ namespace ParkJomV2.Migrations
                 name: "Users");
 
             migrationBuilder.DropTable(
-                name: "MediaFiles");
+                name: "Stations");
         }
     }
 }
