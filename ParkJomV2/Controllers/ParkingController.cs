@@ -116,7 +116,7 @@ namespace ParkJomV2.Controllers
 
             try
             {
-                var folder = $"verification-documents";
+                var folder = $"parkjom/verification-documents";
                 var format = Path.GetExtension(dto.Document.FileName)
                              .TrimStart('.')
                              .ToLowerInvariant();
@@ -165,7 +165,7 @@ namespace ParkJomV2.Controllers
                     OwnerId = userId,
                     ParkingLabel = $"{dto.BayNumber}/{dto.Level}",
                     AvailabilityStatus = AvailabilityStatus.Inactive,
-                    MonthlyPrice = 0,
+                    MonthlyRate = 0,
                     IsPublished = false,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -401,9 +401,7 @@ namespace ParkJomV2.Controllers
         [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
         [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ApprovalResponse>> ApproveParkingRequest(
-            int id,
-            [FromBody] ApprovalRequest request)
+        public async Task<ActionResult<ApprovalResponse>> ApproveParkingRequest(int id, [FromBody] ApprovalRequest request)
         {
             try
             {
@@ -448,7 +446,7 @@ namespace ParkJomV2.Controllers
                     });
                 }
 
-                if(verificationRequest.VerificationStatus != VerificationStatus.Pending)
+                if (verificationRequest.VerificationStatus != VerificationStatus.Pending)
                 {
                     return BadRequest(new ErrorResponse
                     {
@@ -502,6 +500,358 @@ namespace ParkJomV2.Controllers
             }
         }
 
+        [HttpPost("config-parking/{id}")]
+        [Authorize]
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(typeof(ConfigParkingResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<ConfigParkingResponse>> ConfigParking(int id, [FromForm] ConfigParkingRequest request)
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+
+                if (user == null)
+                {
+                    _logger.LogWarning("User {UserId} not found", userId);
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "User not found"
+                    });
+                }
+
+                //return Ok(user);
+
+                // Check if user is PropertyOwner
+                if (user.UserType != UserType.PropertyOwner)
+                {
+                    _logger.LogWarning("Unauthorized config attempt. UserId={UserId}, UserType={UserType}", userId, user.UserType);
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Only property owners can configure parking spots"
+                    });
+                }
+
+                var parkingSpot = await _context.ParkingSpots
+                    .FirstOrDefaultAsync(p => p.ParkingSpotId == id);
+
+                // Check if parking spot exists and belongs to the user
+                if (parkingSpot == null || parkingSpot.OwnerId != userId)
+                {
+                    _logger.LogWarning("Parking spot {ParkingSpotId} not found or unauthorized. UserId={UserId}", id, userId);
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "You are not authorized to configure this parking spot"
+                    });   
+                }
+
+                // check if parking spot is approved
+                var pvq = await _context.ParkingVerificationRequests
+                    .Include(vr => vr.VerificationDocuments)
+                    .FirstOrDefaultAsync(vr => vr.ParkingSpotId == id);
+
+                if (pvq == null || pvq.VerificationStatus != VerificationStatus.Approved)
+                {
+                    _logger.LogWarning("Parking spot {ParkingSpotId} is not verified. UserId={UserId}", id, userId);
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Your parking verification request is currently under review and has not yet been approved."
+                    });
+                }
+
+                var allowedTypes = new[]
+                {
+                    "image/jpeg",
+                    "image/jpg",
+                    "image/png"
+                };
+
+                // Validate image files if provided
+                if (request.ParkingImage != null && request.ParkingImage.Count > 0)
+                {
+                    foreach (var file in request.ParkingImage)
+                    {
+                        if (!allowedTypes.Contains(file.ContentType.ToLower()))
+                        {
+                            return BadRequest(new ErrorResponse
+                            {
+                                Code = StatusCodes.Status400BadRequest,
+                                Success = false,
+                                Message = "Only JPG and PNG files are allowed for parking images."
+                            });
+                        }
+                    }
+                }
+
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    var folder = "parkjom/parking-images";
+                    int displayOrder = 1;
+
+                    // Process image uploads if provided
+                    if (request.ParkingImage != null && request.ParkingImage.Count > 0)
+                    {
+                        // Get the current max display order for existing images
+                        var existingImages = await _context.ParkingSpotImages
+                            .Where(psi => psi.ParkingSpotId == id)
+                            .ToListAsync();
+
+                        displayOrder = existingImages.Any() ? existingImages.Max(psi => psi.DisplayOrder) + 1 : 1;
+
+                        foreach (var file in request.ParkingImage)
+                        {
+                            var uploadResult = await _cloudinaryService.UploadImageAsync(file, folder);
+
+                            if (uploadResult == null)
+                            {
+                                throw new Exception("Cloudinary upload failed.");
+                            }
+
+                            _logger.LogInformation("Cloudinary upload successful. PublicId={PublicId}", uploadResult.PublicId);
+
+                            var mediaFile = new MediaFile
+                            {
+                                PublicId = uploadResult.PublicId,
+                                SecureUrl = uploadResult.SecureUrl.ToString(),
+                                ResourceType = uploadResult.ResourceType,
+                                Format = uploadResult.Format ?? Path.GetExtension(file.FileName).TrimStart('.').ToLowerInvariant(),
+                                OriginalFileName = uploadResult.OriginalFilename,
+                                Folder = folder,
+                                UploadedBy = userId,
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            };
+
+                            _context.MediaFiles.Add(mediaFile);
+                            await _context.SaveChangesAsync();
+
+                            _logger.LogInformation("MediaFile created. MediaFileId={MediaFileId}", mediaFile.MediaFileId);
+
+                            // Create ParkingSpotImage with primary flag for first image
+                            bool isPrimary = (displayOrder == 1 && !existingImages.Any());
+
+                            var parkingSpotImage = new ParkingSpotImage
+                            {
+                                ParkingSpotId = id,
+                                MediaFileId = mediaFile.MediaFileId,
+                                DisplayOrder = displayOrder,
+                                IsPrimary = isPrimary,
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            };
+
+                            _context.ParkingSpotImages.Add(parkingSpotImage);
+                            displayOrder++;
+                        }
+
+                        await _context.SaveChangesAsync();
+                    }
+                    else
+                    {
+                        return StatusCode(
+                       StatusCodes.Status500InternalServerError,
+                       new ErrorResponse
+                       {
+                           Code = StatusCodes.Status500InternalServerError,
+                           Success = false,
+                           Message = "Please upload parking spot images."
+                       });
+
+                    }
+
+                    // Create or update Availability based on DateType
+                    var availability = new Availability
+                    {
+                        ParkingSpotId = id,
+                        DayType = request.DayType,
+                        StartTime = request.StartTime,
+                        EndTime = request.EndTime,
+                        EffectiveFrom = request.EffectiveFrom,
+                        EffectiveUntil = request.EffectiveUntil,
+                    };
+
+                    _context.Availabilities.Add(availability);
+
+                    // Update ParkingSpot pricing and status based on DateType
+                    if (request.DayType == DayType.Weekday || request.DayType == DayType.Weekend)
+                    {
+                        // Use DailyRate for weekday/weekend
+                        if (request.DailyRate.HasValue)
+                        {
+                            parkingSpot.DailyRate = request.DailyRate;
+                        }   
+                    }
+                    else if (request.DayType == DayType.Everyday)
+                    {
+                        // Use MonthlyRate for everyday
+                        if (request.MonthlyPrice.HasValue)
+                        {
+                            parkingSpot.MonthlyRate = request.MonthlyPrice;
+                        }
+                    }
+
+                    // Update parking spot status
+                    parkingSpot.AvailabilityStatus = AvailabilityStatus.Available;
+                    parkingSpot.IsPublished = true;
+                    parkingSpot.UpdatedAt = DateTime.UtcNow;
+
+                    _context.ParkingSpots.Update(parkingSpot);
+                    await _context.SaveChangesAsync();
+
+                    _logger.LogInformation("Parking spot configured. ParkingSpotId={ParkingSpotId}, DateType={DateType}, AvailabilityStatus={Status}",
+                        id, request.DayType, parkingSpot.AvailabilityStatus);
+
+                    // Commit transaction
+                    await transaction.CommitAsync();
+
+                    _logger.LogInformation("Parking configuration completed successfully. ParkingSpotId={ParkingSpotId}", id);
+
+                    return Ok(new ConfigParkingResponse
+                    {
+                        Code = StatusCodes.Status200OK,
+                        Success = true,
+                        Message = "Parking spot configured successfully.",
+                        ParkingSpotId = parkingSpot.ParkingSpotId
+                    });
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogError(ex, "Parking configuration failed for UserId={UserId}, ParkingSpotId={ParkingSpotId}", userId, id);
+
+                    return StatusCode(
+                        StatusCodes.Status500InternalServerError,
+                        new ErrorResponse
+                        {
+                            Code = StatusCodes.Status500InternalServerError,
+                            Success = false,
+                            Message = "An unexpected error occurred while configuring the parking spot."
+                        });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in config-parking endpoint for ParkingSpotId={ParkingSpotId}", id);
+                return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+                {
+                    Code = StatusCodes.Status500InternalServerError,
+                    Success = false,
+                    Message = "An error occurred while configuring the parking spot"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Get all parking spots owned by the authenticated user
+        /// </summary>
+        [Authorize]
+        [HttpGet("my-parking")]
+        [ProducesResponseType(typeof(DisplayMyParkingResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<DisplayMyParkingResponse>> DisplayMyParking()
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+
+                if (user == null)
+                {
+                    _logger.LogWarning("User {UserId} not found", userId);
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "User not found"
+                    });
+                }
+
+                // Check if user is PropertyOwner
+                if (user.UserType != UserType.PropertyOwner)
+                {
+                    _logger.LogWarning("Unauthorized access attempt. UserId={UserId}, UserType={UserType}", userId, user.UserType);
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Only property owners can view their parking spots"
+                    });
+                }
+
+                var parkingSpots = await _context.ParkingSpots
+                    .Where(ps => ps.OwnerId == userId)
+                    .OrderByDescending(ps => ps.CreatedAt)
+                    .ToListAsync();
+
+                if (!parkingSpots.Any())
+                {
+                    _logger.LogInformation("No parking spots found for user {UserId}", userId);
+                    return Ok(new DisplayMyParkingResponse
+                    {
+                        Code = StatusCodes.Status200OK,
+                        Success = true,
+                        Message = "No parking spots found",
+                        Data = new List<DisplayParkingSpotDTO>()
+                    });
+                }
+
+                var result = parkingSpots
+                    .Select(ps => MapToDisplayParkingSpotDTO(ps))
+                    .ToList();
+
+                _logger.LogInformation("Retrieved {Count} parking spots for owner {UserId}", result.Count, userId);
+
+                return Ok(new DisplayMyParkingResponse
+                {
+                    Code = StatusCodes.Status200OK,
+                    Success = true,
+                    Message = $"Retrieved {result.Count} parking spot(s) successfully",
+                    Data = result
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user's parking spots");
+                return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+                {
+                    Code = StatusCodes.Status500InternalServerError,
+                    Success = false,
+                    Message = "An error occurred while retrieving your parking spots"
+                });
+            }
+        }
+
+        private static DisplayParkingSpotDTO MapToDisplayParkingSpotDTO(ParkingSpot parkingSpot)
+        {
+            return new DisplayParkingSpotDTO
+            {
+                PropertyId = parkingSpot.PropertyId,
+                OwnerId = parkingSpot.OwnerId,
+                ParkingLabel = parkingSpot.ParkingLabel,
+                AvailabilityStatus = parkingSpot.AvailabilityStatus,
+                MonthlyRate = parkingSpot.MonthlyRate,
+                DailyRate = parkingSpot.DailyRate,
+                IsPublished = parkingSpot.IsPublished,
+                CreatedAt = parkingSpot.CreatedAt,
+                UpdatedAt = parkingSpot.UpdatedAt
+            };
+        }
         private static VerificationRequestListDTO MapToVerificationRequestListDTO(ParkingVerificationRequest request)
         {
             return new VerificationRequestListDTO
@@ -545,5 +895,7 @@ namespace ParkJomV2.Controllers
                 }).ToList() ?? new List<VerificationDocumentDTO>()
             };
         }
+
+
     }
 }

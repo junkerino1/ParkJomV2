@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
+using ParkJomV2.DTOs;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using System.Security.Claims;
@@ -45,12 +46,22 @@ namespace ParkJomV2.Controllers
 
                 if (user == null)
                 {
-                    return Unauthorized();
+                    return Unauthorized(new ErrorResponse
+                    {
+                        Code = StatusCodes.Status401Unauthorized,
+                        Success = false,
+                        Message = "Unauthorized."
+                    });
                 }
 
                 if (user.UserType != UserType.Admin)
                 {
-                    return Forbid();
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Forbidden."
+                    });
                 }
 
                 var media = await _context.MediaFiles.FirstOrDefaultAsync(m => m.MediaFileId == mediaFileId);
@@ -59,7 +70,12 @@ namespace ParkJomV2.Controllers
 
                 if (media == null)
                 {
-                    return NotFound("Media file not found.");
+                    return NotFound(new ErrorResponse
+                    {
+                        Code = StatusCodes.Status404NotFound,
+                        Success = false,
+                        Message = "Media file not found."
+                    });
                 }
 
                 var cloudinaryUrl = _cloudinaryService.GeneratePrivateUrl(
@@ -81,7 +97,12 @@ namespace ParkJomV2.Controllers
                         response.StatusCode,
                         mediaFileId);
 
-                    return StatusCode((int)response.StatusCode);
+                    return StatusCode((int)response.StatusCode, new ErrorResponse
+                    {
+                        Code = (int)response.StatusCode,
+                        Success = false,
+                        Message = "Failed to retrieve media from storage."
+                    });
                 }
 
                 var stream = await response.Content.ReadAsStreamAsync();
@@ -113,7 +134,12 @@ namespace ParkJomV2.Controllers
                     "Failed to retrieve media {MediaFileId}",
                     mediaFileId);
 
-                return StatusCode(500, "Unable to retrieve media.");
+                return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+                {
+                    Code = StatusCodes.Status500InternalServerError,
+                    Success = false,
+                    Message = "Unable to retrieve media."
+                });
             }
         }
 
@@ -123,7 +149,12 @@ namespace ParkJomV2.Controllers
             var media = await _context.MediaFiles.FirstOrDefaultAsync(m => m.MediaFileId == mediaFileId);
             if (media == null)
             {
-                return NotFound("Media file not found.");
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Media file not found."
+                });
             }
             var cloudinaryUrl = _cloudinaryService.GeneratePrivateUrl(media.PublicId, media.ResourceType);
             var client = _httpClientFactory.CreateClient();
@@ -136,7 +167,12 @@ namespace ParkJomV2.Controllers
                     "Cloudinary returned {StatusCode} for MediaFileId={MediaFileId}",
                     response.StatusCode,
                     mediaFileId);
-                return StatusCode((int)response.StatusCode);
+                return StatusCode((int)response.StatusCode, new ErrorResponse
+                {
+                    Code = (int)response.StatusCode,
+                    Success = false,
+                    Message = "Failed to retrieve media from storage."
+                });
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var resourceType = media.ResourceType == "raw" ? "application" : media.ResourceType;

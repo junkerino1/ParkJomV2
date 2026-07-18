@@ -1,4 +1,6 @@
-﻿using ParkJomV2.Models.Enums;
+﻿using Microsoft.AspNetCore.Components.Forms;
+using ParkJomV2.Models;
+using ParkJomV2.Models.Enums;
 using System.ComponentModel.DataAnnotations;
 
 namespace ParkJomV2.DTOs;
@@ -119,4 +121,65 @@ public class VerificationRequestDetailResponse
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
     public VerificationRequestDTO? Data { get; set; }
+}
+
+public class ConfigParkingRequest
+{
+    public int parkingSpotId { get; set; }
+
+    public List<IFormFile> ParkingImage { get; set; } = new();
+
+    public DayType DayType { get; set; }
+
+    public TimeOnly StartTime { get; set; }
+
+    public TimeOnly EndTime { get; set; }
+
+    public DateOnly EffectiveFrom { get; set; }
+
+    public DateOnly EffectiveUntil { get; set; }
+
+    public decimal? DailyRate { get; set; }
+
+    public decimal? MonthlyPrice { get; set; }
+}
+
+public class ParkingSpotImageDTO
+{
+    public int ParkingSpotId { get; set; }
+    public int MediaFileId { get; set; }
+    public string? ResourceType { get; set; }
+    public string? Format { get; set; }
+    public string? OriginalFileName { get; set; }
+    public DateTime UploadedAt { get; set; }
+}
+
+public class ConfigParkingResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ParkingSpotId { get; set; }
+}
+
+public class DisplayParkingSpotDTO
+{
+    public int ParkingSpotId { get; set; }
+    public int PropertyId { get; set; }
+    public int OwnerId { get; set; }
+    public string? ParkingLabel { get; set; }
+    public AvailabilityStatus AvailabilityStatus { get; set; }
+    public decimal? MonthlyRate { get; set; }
+    public decimal? DailyRate { get; set; }
+    public bool IsPublished { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+public class DisplayMyParkingResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<DisplayParkingSpotDTO> Data { get; set; } = new();
 }

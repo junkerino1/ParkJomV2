@@ -29,6 +29,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<IoTStatusLog> IoTStatusLogs => Set<IoTStatusLog>();
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
 
+    public DbSet<Availability> Availabilities => Set<Availability>();
     public DbSet<MediaFile> MediaFiles => Set<MediaFile>();
 
     //public DbSet<Notification> Notifications => Set<Notification>();
