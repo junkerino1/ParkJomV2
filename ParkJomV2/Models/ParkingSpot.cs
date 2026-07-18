@@ -22,7 +22,10 @@ public class ParkingSpot
     public AvailabilityStatus AvailabilityStatus { get; set; }
 
     [Column(TypeName = "decimal(6,2)")]
-    public decimal MonthlyPrice { get; set; }
+    public decimal? MonthlyRate { get; set; }
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal? DailyRate { get; set; }
 
     public bool IsPublished { get; set; }
 
@@ -49,4 +52,6 @@ public class ParkingSpot
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
 
     public ICollection<Favorite> Favorites { get; set; } = new List<Favorite>();
+
+    public ICollection<Availability> ParkingAvailabilities { get; set; } = new List<Availability>();
 }

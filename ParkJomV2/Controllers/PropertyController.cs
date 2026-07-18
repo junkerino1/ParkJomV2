@@ -35,7 +35,12 @@ namespace ParkJomV2.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Invalid request."
+                });
             }
 
             var property = new Property
@@ -66,7 +71,12 @@ namespace ParkJomV2.Controllers
             {
                 _logger.LogError(ex, "Error creating property");
                 return StatusCode(StatusCodes.Status500InternalServerError,
-                    new { message = "An error occurred while creating the property" });
+                    new ErrorResponse
+                    {
+                        Code = StatusCodes.Status500InternalServerError,
+                        Success = false,
+                        Message = "An error occurred while creating the property"
+                    });
             }
         }
 
@@ -81,7 +91,12 @@ namespace ParkJomV2.Controllers
             var property = await _context.Properties.FindAsync(id);
             if (property == null)
             {
-                return NotFound(new { message = "Property not found" });
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Property not found"
+                });
             }
 
             return Ok(MapToDTO(property));
@@ -93,7 +108,12 @@ namespace ParkJomV2.Controllers
             var property = await _context.Stations.ToListAsync();
             if (property == null)
             {
-                return NotFound(new { message = "Property not found" });
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Property not found"
+                });
             }
 
             return Ok(property);
@@ -121,13 +141,23 @@ namespace ParkJomV2.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Invalid request."
+                });
             }
 
             var property = await _context.Properties.FindAsync(id);
             if (property == null)
             {
-                return NotFound(new { message = "Property not found" });
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Property not found"
+                });
             }
 
             property.PropertyName = request.PropertyName ?? property.PropertyName;
@@ -153,7 +183,12 @@ namespace ParkJomV2.Controllers
             {
                 _logger.LogError(ex, "Error updating property");
                 return StatusCode(StatusCodes.Status500InternalServerError,
-                    new { message = "An error occurred while updating the property" });
+                    new ErrorResponse
+                    {
+                        Code = StatusCodes.Status500InternalServerError,
+                        Success = false,
+                        Message = "An error occurred while updating the property"
+                    });
             }
         }
 
@@ -168,7 +203,12 @@ namespace ParkJomV2.Controllers
             var property = await _context.Properties.FindAsync(id);
             if (property == null)
             {
-                return NotFound(new { message = "Property not found" });
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Property not found"
+                });
             }
 
             try
@@ -184,10 +224,14 @@ namespace ParkJomV2.Controllers
             {
                 _logger.LogError(ex, "Error deleting property");
                 return StatusCode(StatusCodes.Status500InternalServerError,
-                    new { message = "An error occurred while deleting the property" });
+                    new ErrorResponse
+                    {
+                        Code = StatusCodes.Status500InternalServerError,
+                        Success = false,
+                        Message = "An error occurred while deleting the property"
+                    });
             }
         }
-
         private static PropertyDTO MapToDTO(Property property)
         {
             return new PropertyDTO

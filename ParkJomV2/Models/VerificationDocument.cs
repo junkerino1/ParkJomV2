@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using ParkJomV2.Models.Enums;   
 
 namespace ParkJomV2.Models;
@@ -25,7 +26,7 @@ public class VerificationDocument
     public DateTime UpdatedAt { get; set; }
 
     // Navigation Properties
-
+    [JsonIgnore]
     [ForeignKey(nameof(VerificationRequestId))]
     public ParkingVerificationRequest VerificationRequest { get; set; } = null!;
 

@@ -34,12 +34,13 @@ namespace ParkJomV2.Controllers
         }
 
         [HttpPost("google")]
-        public async Task<ActionResult<AuthResponseDTO>> GoogleLogin([FromBody] GoogleAuthRequest request)
+        public async Task<ActionResult<AuthResponse>> GoogleLogin([FromBody] GoogleAuthRequest request)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(new AuthResponseDTO
+                return BadRequest(new AuthResponse
                 {
+                    Code = StatusCodes.Status400BadRequest,
                     Success = false,
                     Message = "Invalid request."
                 });
@@ -50,8 +51,9 @@ namespace ParkJomV2.Controllers
 
             if (googleUser == null)
             {
-                return Unauthorized(new AuthResponseDTO
+                return Unauthorized(new AuthResponse
                 {
+                    Code = StatusCodes.Status401Unauthorized,
                     Success = false,
                     Message = "Invalid Google token."
                 });
@@ -107,8 +109,9 @@ namespace ParkJomV2.Controllers
             // Step 4 - Profile incomplete
             if (!user.IsProfileComplete)
             {
-                return Ok(new AuthResponseDTO
+                return Ok(new AuthResponse
                 {
+                    Code = StatusCodes.Status200OK,
                     Success = true,
                     Message = "Please complete your profile.",
                     IsProfileComplete = false,
@@ -120,8 +123,9 @@ namespace ParkJomV2.Controllers
 
             var token = _jwtService.GenerateToken(user);
 
-            return Ok(new AuthResponseDTO
+            return Ok(new AuthResponse
             {
+                Code = StatusCodes.Status200OK,
                 Success = true,
                 Message = "Login successful.",
                 JwtToken = token,
@@ -131,11 +135,16 @@ namespace ParkJomV2.Controllers
         }
 
         [HttpPost("complete-profile")]
-        public async Task<ActionResult<AuthResponseDTO>> CompleteProfile([FromBody] CompleteProfileRequest request)
+        public async Task<ActionResult<AuthResponse>> CompleteProfile([FromBody] CompleteProfileRequest request)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest();
+                return BadRequest(new AuthResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Invalid request."
+                });
             }
 
             var user = await _context.Users
@@ -144,8 +153,9 @@ namespace ParkJomV2.Controllers
 
             if (user == null)
             {
-                return NotFound(new AuthResponseDTO
+                return NotFound(new AuthResponse
                 {
+                    Code = StatusCodes.Status404NotFound,
                     Success = false,
                     Message = "User not found."
                 });
@@ -170,8 +180,9 @@ namespace ParkJomV2.Controllers
 
             var token = _jwtService.GenerateToken(user);
 
-            return Ok(new AuthResponseDTO
+            return Ok(new AuthResponse
             {
+                Code = StatusCodes.Status200OK,
                 Success = true,
                 Message = "Profile completed.",
                 JwtToken = token,

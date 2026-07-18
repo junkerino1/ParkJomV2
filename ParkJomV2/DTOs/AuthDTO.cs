@@ -33,8 +33,9 @@ public class UserDTO
     public DateTime LastLoginAt { get; set; }
 }
 
-public class AuthResponseDTO
+public class AuthResponse
 {
+    public int Code { get; set; }
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
     public UserDTO? User { get; set; }
