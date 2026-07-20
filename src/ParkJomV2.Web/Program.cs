@@ -26,12 +26,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
-// ---------- CORS (allow Vite dev server to access) ----------
+// ---------- CORS (allow Vite dev server and Firebase Hosting) ----------
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCors", policy =>
     {
         policy.WithOrigins("http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+
+    options.AddPolicy("FirebaseCors", policy =>
+    {
+        policy.WithOrigins("https://united-perigee-400000.web.app")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -51,6 +59,10 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseCors("DevCors");
+}
+else
+{
+    app.UseCors("FirebaseCors");
 }
 
 app.UseAuthentication();

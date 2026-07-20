@@ -52,7 +52,8 @@ export default function DashboardHeader({
     navigate(meta.homePath);
   };
 
-  const initials = user?.name?.charAt(0)?.toUpperCase() ?? '?';
+  const displayName = user ? `${user.firstName} ${user.lastName}`.trim() || user.email : '';
+  const initials = (user?.firstName?.charAt(0) || user?.email?.charAt(0))?.toUpperCase() ?? '?';
 
   return (
     <header
@@ -138,7 +139,7 @@ export default function DashboardHeader({
                 </span>
               )}
               <span className="hidden lg:inline text-[13px] font-medium text-[#333] max-w-[120px] truncate">
-                {user.name}
+                {displayName}
               </span>
             </div>
           )}

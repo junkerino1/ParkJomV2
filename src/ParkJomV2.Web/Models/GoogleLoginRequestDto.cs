@@ -1,17 +1,37 @@
 // ---- DTO: Google login request from frontend ----
 namespace ParkJomV2.Web.Models;
 
-public class GoogleLoginRequestDto
+public class GoogleAuthRequest
 {
     /// <summary>Google ID Token (credential) from client</summary>
-    public string IdToken { get; set; } = string.Empty;
+    public string GoogleToken { get; set; } = string.Empty;
 }
 
-public class GoogleLoginResponseDto
+public class UserDTO
 {
-    public string Token { get; set; } = string.Empty;
+    public int UserId { get; set; }
     public string Email { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string Picture { get; set; } = string.Empty;
-    public string Role { get; set; } = string.Empty;
+    public string? FirstName { get; set; }
+    public string? LastName { get; set; }
+    public string? ProfilePictureURL { get; set; }
+    public int UserType { get; set; }
+    public bool IsProfileComplete { get; set; }
+    public string? PhoneNumber { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime LastLoginAt { get; set; }
+}
+
+public class AuthResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public UserDTO? User { get; set; }
+    public string? JwtToken { get; set; }
+    public bool IsProfileComplete { get; set; }
+}
+
+public class CompleteProfileRequest
+{
+    public string Email { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
 }

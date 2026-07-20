@@ -27,10 +27,10 @@ export default function Navbar() {
           {user && (
             <div className="flex items-center gap-2">
               <span className="w-7 h-7 rounded-full bg-[#eff6ff] text-[#2563eb] flex items-center justify-center text-[11px] font-bold">
-                {user.name.charAt(0)}
+                {(user.firstName?.charAt(0) || user.email?.charAt(0) || '?')}
               </span>
               <span className="hidden md:inline text-[13px] font-medium text-[#333]">
-                {user.name}
+                {`${user.firstName} ${user.lastName}`.trim() || user.email}
               </span>
             </div>
           )}

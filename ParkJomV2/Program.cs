@@ -50,9 +50,14 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend",
         policy =>
         {
-            policy.WithOrigins("http://127.0.0.1:5500")
+            policy.WithOrigins(
+                "http://127.0.0.1:5500",
+                "http://localhost:3000",
+                "https://united-perigee-400000.web.app"
+            )
                   .AllowAnyHeader()
-                  .AllowAnyMethod();
+                  .AllowAnyMethod()
+                  .AllowCredentials();
         });
 });
 
@@ -61,6 +66,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseHttpsRedirection();
+app.UseCors("AllowFrontend");
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();   
