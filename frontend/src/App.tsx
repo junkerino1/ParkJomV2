@@ -73,12 +73,16 @@ function LoginPage() {
                 whileTap={{ scale: 0.96 }}
                 onClick={() =>
                   setUser({
-                    userId: 'demo-' + role.toLowerCase(),
+                    userId: 0,
                     email: `${role.toLowerCase()}@demo.parkjom`,
-                    name: `Demo ${role}`,
+                    firstName: `Demo`,
+                    lastName: role,
                     picture: '',
+                    phoneNumber: '',
+                    userType: role === 'Commuter' ? 0 : role === 'Owner' ? 1 : 2,
                     role,
                     token: 'demo-token',
+                    isProfileComplete: true,
                   })
                 }
                 className="flex-1 py-2.5 bg-[#f5f5f7] hover:bg-[#ebebed] text-xs font-semibold text-[#1d1d1f] rounded-xl border border-black/[0.06] transition-colors"
