@@ -1,6 +1,6 @@
 # Build artifacts
-[Bb]in/
-[Oo]bj/
+**/[Bb]in/
+**/[Oo]bj/
 
 # Local database files
 *.db
@@ -8,15 +8,17 @@
 *.ldf
 *.sqlite
 
-# User-specific configuration (Secrets)
+# User-specific configuration
 appsettings.Development.json
 appsettings.Local.json
-.user
-.vs/
-.vscode/
+
+# Visual Studio / VS Code
+*.user
+**/.vs/
+**/.vscode/
 
 # NuGet packages
-packages/
+**/packages/
 
 # Node
 node_modules/

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Models;
@@ -30,12 +31,13 @@ public class ParkingVerificationRequest
 
     // Navigation Properties
 
+    [JsonIgnore]
     [ForeignKey(nameof(ParkingSpotId))]
     public ParkingSpot ParkingSpot { get; set; } = null!;
 
+    [JsonIgnore]
     [ForeignKey(nameof(SubmittedByUserId))]
     public User SubmittedByUser { get; set; } = null!;
-
 
     public ICollection<VerificationDocument> VerificationDocuments { get; set; } = new List<VerificationDocument>();
 }

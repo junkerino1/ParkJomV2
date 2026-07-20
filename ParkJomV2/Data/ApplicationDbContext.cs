@@ -13,6 +13,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<Property> Properties => Set<Property>();
+
+    public DbSet<Station> Stations => Set<Station>();
     public DbSet<ParkingSpot> ParkingSpots => Set<ParkingSpot>();
     public DbSet<ParkingSpotImage> ParkingSpotImages => Set<ParkingSpotImage>();
 
@@ -27,6 +29,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<IoTStatusLog> IoTStatusLogs => Set<IoTStatusLog>();
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
 
+    public DbSet<Availability> Availabilities => Set<Availability>();
     public DbSet<MediaFile> MediaFiles => Set<MediaFile>();
 
     //public DbSet<Notification> Notifications => Set<Notification>();
@@ -44,12 +47,6 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Email)
             .IsUnique();
-
-        modelBuilder.Entity<User>()
-            .HasOne(u => u.ProfileImage)
-            .WithMany()
-            .HasForeignKey(u => u.ProfileImageId)
-            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<User>()
             .HasOne(u => u.Wallet)
@@ -90,6 +87,12 @@ public class ApplicationDbContext : DbContext
             .HasOne(b => b.ParkingSpot)
             .WithMany(p => p.Bookings)
             .HasForeignKey(b => b.ParkingSpotId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Station>()
+            .HasMany(s => s.Properties)
+            .WithOne(p => p.Station)
+            .HasForeignKey(p => p.NearestStationId)
             .OnDelete(DeleteBehavior.Restrict);
 
         // =========================
@@ -155,10 +158,6 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<User>()
             .Property(u => u.UserType)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<User>()
-            .Property(u => u.VerificationStatus)
             .HasConversion<string>();
 
         modelBuilder.Entity<Property>()

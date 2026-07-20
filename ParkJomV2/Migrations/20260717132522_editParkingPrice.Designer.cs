@@ -12,8 +12,8 @@ using ParkJomV2.Data;
 namespace ParkJomV2.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260707150131_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260717132522_editParkingPrice")]
+    partial class editParkingPrice
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -65,6 +65,39 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("AccessLogs");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.Availability", b =>
+                {
+                    b.Property<int>("AvailabilityId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("AvailabilityId"));
+
+                    b.Property<int>("DayType")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("EffectiveUntil")
+                        .HasColumnType("date");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time");
+
+                    b.Property<int>("ParkingSpotId")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time");
+
+                    b.HasKey("AvailabilityId");
+
+                    b.HasIndex("ParkingSpotId");
+
+                    b.ToTable("Availabilities");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Booking", b =>
@@ -249,22 +282,14 @@ namespace ParkJomV2.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("FileExtension")
+                    b.Property<string>("Folder")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Format")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
-
-                    b.Property<long>("FileSize")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Folder")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("MimeType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("OriginalFileName")
                         .IsRequired()
@@ -278,8 +303,8 @@ namespace ParkJomV2.Migrations
 
                     b.Property<string>("ResourceType")
                         .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("SecureUrl")
                         .IsRequired()
@@ -313,10 +338,13 @@ namespace ParkJomV2.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<decimal?>("DailyRate")
+                        .HasColumnType("decimal(6,2)");
+
                     b.Property<bool>("IsPublished")
                         .HasColumnType("bit");
 
-                    b.Property<decimal>("MonthlyPrice")
+                    b.Property<decimal?>("MonthlyPrice")
                         .HasColumnType("decimal(6,2)");
 
                     b.Property<int>("OwnerId")
@@ -447,9 +475,8 @@ namespace ParkJomV2.Migrations
                     b.Property<decimal>("Longitude")
                         .HasColumnType("decimal(9,6)");
 
-                    b.Property<string>("NearestStation")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                    b.Property<int>("NearestStationId")
+                        .HasColumnType("int");
 
                     b.Property<string>("PropertyName")
                         .IsRequired()
@@ -464,6 +491,8 @@ namespace ParkJomV2.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("PropertyId");
+
+                    b.HasIndex("NearestStationId");
 
                     b.ToTable("Properties");
                 });
@@ -514,6 +543,30 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("ReviewerId");
 
                     b.ToTable("Reviews");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.Station", b =>
+                {
+                    b.Property<int>("StationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("StationId"));
+
+                    b.Property<decimal>("Latitude")
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<decimal>("Longitude")
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("StationName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("StationId");
+
+                    b.ToTable("Stations");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Transaction", b =>
@@ -586,33 +639,32 @@ namespace ParkJomV2.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
-                    b.Property<DateTime?>("EmailVerifiedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("FullName")
+                    b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("GoogleId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsProfileComplete")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("PasswordHash")
+                    b.Property<string>("LastName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("PhoneNumber")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<int?>("ProfileImageId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("RefreshToken")
+                    b.Property<string>("ProfilePictureURL")
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("RefreshTokenExpiryTime")
-                        .HasColumnType("datetime2");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -622,16 +674,10 @@ namespace ParkJomV2.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
-                    b.Property<string>("VerificationStatus")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.HasKey("UserId");
 
                     b.HasIndex("Email")
                         .IsUnique();
-
-                    b.HasIndex("ProfileImageId");
 
                     b.ToTable("Users");
                 });
@@ -775,6 +821,17 @@ namespace ParkJomV2.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.Availability", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.ParkingSpot", "ParkingSpot")
+                        .WithMany("ParkingAvailabilities")
+                        .HasForeignKey("ParkingSpotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ParkingSpot");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.Booking", b =>
                 {
                     b.HasOne("ParkJomV2.Models.ParkingSpot", "ParkingSpot")
@@ -911,6 +968,17 @@ namespace ParkJomV2.Migrations
                     b.Navigation("SubmittedByUser");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.Property", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.Station", "Station")
+                        .WithMany("Properties")
+                        .HasForeignKey("NearestStationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Station");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.Review", b =>
                 {
                     b.HasOne("ParkJomV2.Models.Booking", "Booking")
@@ -953,16 +1021,6 @@ namespace ParkJomV2.Migrations
                     b.Navigation("Booking");
 
                     b.Navigation("Wallet");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.User", b =>
-                {
-                    b.HasOne("ParkJomV2.Models.MediaFile", "ProfileImage")
-                        .WithMany()
-                        .HasForeignKey("ProfileImageId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("ProfileImage");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Vehicle", b =>
@@ -1030,6 +1088,8 @@ namespace ParkJomV2.Migrations
 
                     b.Navigation("IoTDevice");
 
+                    b.Navigation("ParkingAvailabilities");
+
                     b.Navigation("ParkingSpotImages");
 
                     b.Navigation("Reviews");
@@ -1045,6 +1105,11 @@ namespace ParkJomV2.Migrations
             modelBuilder.Entity("ParkJomV2.Models.Property", b =>
                 {
                     b.Navigation("ParkingSpots");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.Station", b =>
+                {
+                    b.Navigation("Properties");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.User", b =>

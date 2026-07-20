@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Models;
@@ -22,7 +23,10 @@ public class ParkingSpot
     public AvailabilityStatus AvailabilityStatus { get; set; }
 
     [Column(TypeName = "decimal(6,2)")]
-    public decimal MonthlyPrice { get; set; }
+    public decimal? MonthlyRate { get; set; }
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal? DailyRate { get; set; }
 
     public bool IsPublished { get; set; }
 
@@ -32,12 +36,15 @@ public class ParkingSpot
 
     // Navigation Properties
 
+    [JsonIgnore]
     [ForeignKey(nameof(PropertyId))]
     public Property Property { get; set; } = null!;
 
+    [JsonIgnore]
     [ForeignKey(nameof(OwnerId))]
     public User Owner { get; set; } = null!;
 
+    [JsonIgnore]
     public IoTDevice? IoTDevice { get; set; }
 
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
@@ -49,4 +56,6 @@ public class ParkingSpot
     public ICollection<Review> Reviews { get; set; } = new List<Review>();
 
     public ICollection<Favorite> Favorites { get; set; } = new List<Favorite>();
+
+    public ICollection<Availability> ParkingAvailabilities { get; set; } = new List<Availability>();
 }

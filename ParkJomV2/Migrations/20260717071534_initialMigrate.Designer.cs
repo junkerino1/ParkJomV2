@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ParkJomV2.Data;
 
@@ -11,9 +12,11 @@ using ParkJomV2.Data;
 namespace ParkJomV2.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260717071534_initialMigrate")]
+    partial class initialMigrate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -62,39 +65,6 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("AccessLogs");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.Availability", b =>
-                {
-                    b.Property<int>("AvailabilityId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("AvailabilityId"));
-
-                    b.Property<int>("DayType")
-                        .HasColumnType("int");
-
-                    b.Property<DateOnly?>("EffectiveFrom")
-                        .HasColumnType("date");
-
-                    b.Property<DateOnly?>("EffectiveUntil")
-                        .HasColumnType("date");
-
-                    b.Property<TimeOnly>("EndTime")
-                        .HasColumnType("time");
-
-                    b.Property<int>("ParkingSpotId")
-                        .HasColumnType("int");
-
-                    b.Property<TimeOnly>("StartTime")
-                        .HasColumnType("time");
-
-                    b.HasKey("AvailabilityId");
-
-                    b.HasIndex("ParkingSpotId");
-
-                    b.ToTable("Availabilities");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Booking", b =>
@@ -335,13 +305,10 @@ namespace ParkJomV2.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<decimal?>("DailyRate")
-                        .HasColumnType("decimal(6,2)");
-
                     b.Property<bool>("IsPublished")
                         .HasColumnType("bit");
 
-                    b.Property<decimal?>("MonthlyRate")
+                    b.Property<decimal>("MonthlyPrice")
                         .HasColumnType("decimal(6,2)");
 
                     b.Property<int>("OwnerId")
@@ -818,17 +785,6 @@ namespace ParkJomV2.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ParkJomV2.Models.Availability", b =>
-                {
-                    b.HasOne("ParkJomV2.Models.ParkingSpot", "ParkingSpot")
-                        .WithMany("ParkingAvailabilities")
-                        .HasForeignKey("ParkingSpotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ParkingSpot");
-                });
-
             modelBuilder.Entity("ParkJomV2.Models.Booking", b =>
                 {
                     b.HasOne("ParkJomV2.Models.ParkingSpot", "ParkingSpot")
@@ -1084,8 +1040,6 @@ namespace ParkJomV2.Migrations
                     b.Navigation("Favorites");
 
                     b.Navigation("IoTDevice");
-
-                    b.Navigation("ParkingAvailabilities");
 
                     b.Navigation("ParkingSpotImages");
 
