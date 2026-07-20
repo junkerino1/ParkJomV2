@@ -53,7 +53,7 @@ public class VerificationRequestDTO
     public int SubmittedByUserId { get; set; }
     public string? SubmittedByEmail { get; set; }
     public string? SubmittedByName { get; set; }
-    public VerificationStatus VerificationStatus { get; set; }
+    public string? VerificationStatus { get; set; }
     public DateTime SubmittedAt { get; set; }
     public List<VerificationDocumentDTO>? Documents { get; set; }
 }
@@ -68,7 +68,7 @@ public class VerificationRequestListDTO
     public int SubmittedByUserId { get; set; }
     public string? SubmittedByEmail { get; set; }
     public string? SubmittedByName { get; set; }
-    public VerificationStatus VerificationStatus { get; set; }
+    public string? VerificationStatus { get; set; }
     public DateTime SubmittedAt { get; set; }
 }
 
@@ -103,7 +103,7 @@ public class ApprovalResponse
     public string Message { get; set; } = string.Empty;
     public int VerificationRequestId { get; set; }
     public int ParkingSpotId { get; set; }
-    public VerificationStatus VerificationStatus { get; set; }
+    public string? VerificationStatus { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
 
