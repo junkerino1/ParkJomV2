@@ -484,7 +484,7 @@ namespace ParkJomV2.Controllers
                     Message = $"Verification request {statusMessage.ToLower()} successfully",
                     VerificationRequestId = id,
                     ParkingSpotId = verificationRequest.ParkingSpotId,
-                    VerificationStatus = verificationRequest.VerificationStatus,
+                    VerificationStatus = verificationRequest.VerificationStatus.ToString(),
                     UpdatedAt = verificationRequest.UpdatedAt
                 });
             }
@@ -794,10 +794,12 @@ namespace ParkJomV2.Controllers
                     });
                 }
 
-                var parkingSpots = await _context.ParkingSpots
+                var parkingSpots = await _context.ParkingSpots  
                     .Where(ps => ps.OwnerId == userId)
                     .OrderByDescending(ps => ps.CreatedAt)
                     .ToListAsync();
+
+                // return Ok(parkingSpots);
 
                 if (!parkingSpots.Any())
                 {
@@ -841,6 +843,7 @@ namespace ParkJomV2.Controllers
         {
             return new DisplayParkingSpotDTO
             {
+                ParkingSpotId = parkingSpot.ParkingSpotId,
                 PropertyId = parkingSpot.PropertyId,
                 OwnerId = parkingSpot.OwnerId,
                 ParkingLabel = parkingSpot.ParkingLabel,
@@ -864,7 +867,7 @@ namespace ParkJomV2.Controllers
                 SubmittedByUserId = request.SubmittedByUserId,
                 SubmittedByEmail = request.SubmittedByUser?.Email,
                 SubmittedByName = $"{request.SubmittedByUser?.FirstName} {request.SubmittedByUser?.LastName}".Trim(),
-                VerificationStatus = request.VerificationStatus,
+                VerificationStatus = request.VerificationStatus.ToString(),
                 SubmittedAt = request.SubmittedAt
             };
         }
@@ -881,7 +884,7 @@ namespace ParkJomV2.Controllers
                 SubmittedByUserId = request.SubmittedByUserId,
                 SubmittedByEmail = request.SubmittedByUser?.Email,
                 SubmittedByName = $"{request.SubmittedByUser?.FirstName} {request.SubmittedByUser?.LastName}".Trim(),
-                VerificationStatus = request.VerificationStatus,
+                VerificationStatus = request.VerificationStatus.ToString(),
                 SubmittedAt = request.SubmittedAt,
                 Documents = request.VerificationDocuments?.Select(vd => new VerificationDocumentDTO
                 {

@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Models;
@@ -35,12 +36,15 @@ public class ParkingSpot
 
     // Navigation Properties
 
+    [JsonIgnore]
     [ForeignKey(nameof(PropertyId))]
     public Property Property { get; set; } = null!;
 
+    [JsonIgnore]
     [ForeignKey(nameof(OwnerId))]
     public User Owner { get; set; } = null!;
 
+    [JsonIgnore]
     public IoTDevice? IoTDevice { get; set; }
 
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
