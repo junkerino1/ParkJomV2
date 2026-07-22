@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   TrendingUp, ShieldCheck, Radio, AlertOctagon, 
@@ -23,6 +23,11 @@ import OverstayEnforcement from './components/OverstayEnforcement';
 import SupportDispute from './components/SupportDispute';
 import SystemAudit from './components/SystemAudit';
 import SystemConfiguration from './components/SystemConfiguration';
+
+const API_BASE = (window as any).VITE_API_BASE ||
+  (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? 'https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.azurewebsites.net/api'
+    : '/api');
 
 type ActiveView = 'home' | 'governance' | 'iot' | 'settlement' | 'enforcement' | 'support' | 'audit' | 'system';
 
@@ -70,15 +75,58 @@ export default function AdminDashboard() {
     }));
   };
 
-  // State triggers from subcomponents
-  const handleApproveListing = (id: string) => {
-    setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'approved' } : l));
-    addActivityLog('governance', `Approved property listing ID: ${id}`, "Admin");
+  // ---- Fetch pending properties from backend ----
+  useEffect(() => {
+    async function fetchPending() {
+      try {
+        const res = await fetch(`${API_BASE}/property/pending`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Map PropertyDTO → ListingRequest for the admin UI
+        const mapped: ListingRequest[] = data.map((p: any) => ({
+          id: p.propertyId.toString(),
+          ownerName: p.propertyName,
+          ownerEmail: '-',
+          location: p.address,
+          bayNumber: `Property #${p.propertyId}`,
+          hourlyRate: 0,
+          documents: { titleDeed: '-', utilityBill: '-', identityCard: '-' },
+          submittedAt: p.createdAt,
+          status: p.verificationStatus === 1 ? 'pending' :
+                  p.verificationStatus === 2 ? 'approved' : 'rejected',
+        }));
+        setListings(mapped);
+        setStats(prev => ({ ...prev, pendingListingsCount: mapped.filter(l => l.status === 'pending').length }));
+      } catch { /* API not available yet */ }
+    }
+    fetchPending();
+  }, []);
+
+  // ---- Admin actions ----
+
+  const handleApproveListing = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/property/${id}/approve`, { method: 'PUT' });
+      if (res.ok) {
+        setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'approved' } : l));
+        addActivityLog('governance', `Approved property listing ID: ${id}`, "Admin");
+      }
+    } catch { /* API not available */ }
   };
 
-  const handleRejectListing = (id: string, reason: string) => {
-    setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected', rejectionReason: reason } : l));
-    addActivityLog('governance', `Rejected property listing ID: ${id} due to: ${reason}`, "Admin");
+  const handleRejectListing = async (id: string, reason: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/property/${id}/reject`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      if (res.ok) {
+        setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected', rejectionReason: reason } : l));
+        addActivityLog('governance', `Rejected property listing ID: ${id} due to: ${reason}`, "Admin");
+      }
+    } catch { /* API not available */ }
   };
 
   // Trigger from support component to lower a bollard

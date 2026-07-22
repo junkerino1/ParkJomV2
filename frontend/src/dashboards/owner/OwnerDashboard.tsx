@@ -126,6 +126,7 @@ export default function OwnerDashboard() {
   };
 
   // Register New Parking Spot Near Transit Stations
+  // Property creation is now handled by POST /api/property/create-property in PropertyOnboarding
   const handleOnboardProperty = (property: {
     propertyName: string;
     stationName: string;
@@ -133,25 +134,13 @@ export default function OwnerDashboard() {
     level: string;
     docName: string;
   }) => {
-    const newBay: ParkingBay = {
-      id: `b-${Date.now()}`,
-      propertyName: property.propertyName,
-      stationName: property.stationName,
-      bayNumber: property.bayNumber,
-      level: property.level,
-      status: 'Pending Verification',
-      hourlyRate: 2.00,
-      verificationDocName: property.docName,
-      verificationProgress: 0
-    };
+    // TODO: Refresh bays list from backend after successful property creation
+    // const newBay = await fetch('/api/parking-spots', { ... })
 
-    setBays(prev => [...prev, newBay]);
-
-    // Push notification
     const newNotif: Notification = {
       id: `n-${Date.now()}`,
-      title: 'Registration Pending Review',
-      message: `Your bay ${property.bayNumber} at ${property.propertyName} was successfully uploaded. Administrator is verifying compliance papers.`,
+      title: 'Registration Submitted',
+      message: `${property.propertyName} (${property.bayNumber}) submitted for admin verification.`,
       time: 'Just now',
       unread: true,
       type: 'system'
