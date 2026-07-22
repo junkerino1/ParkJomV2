@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'motion/react';
@@ -11,9 +12,16 @@ const API_BASE = import.meta.env.VITE_API_BASE ||
 
 export default function GoogleLoginButton() {
   const { setUser } = useAuth();
+  const [searchParams] = useSearchParams();
+
+  // For new users: pre-select role from URL (e.g. /login?role=Owner)
+  // For existing users: role comes from DB, this default is ignored
+  const roleParam = searchParams.get('role');
+  const defaultRole = roleParam === 'Owner' ? 2 : 3; // 2=Owner, 3=Commuter
+
   const [pendingUserId, setPendingUserId] = useState<number | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [selectedRole, setSelectedRole] = useState<number>(3); // 3=Renter(Commuter), 2=PropertyOwner
+  const [selectedRole, setSelectedRole] = useState<number>(defaultRole);
   const [isSubmittingPhone, setIsSubmittingPhone] = useState(false);
   const [phoneError, setPhoneError] = useState('');
 
