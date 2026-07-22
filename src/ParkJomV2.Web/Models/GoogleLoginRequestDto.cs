@@ -32,7 +32,7 @@ public class AuthResponse
 
 public class CompleteProfileRequest
 {
-    public string Email { get; set; } = string.Empty;
+    public int UserId { get; set; }
     public string PhoneNumber { get; set; } = string.Empty;
 }
 

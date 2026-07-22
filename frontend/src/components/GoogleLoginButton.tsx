@@ -11,7 +11,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ||
 
 export default function GoogleLoginButton() {
   const { setUser } = useAuth();
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [pendingUserId, setPendingUserId] = useState<number | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isSubmittingPhone, setIsSubmittingPhone] = useState(false);
   const [phoneError, setPhoneError] = useState('');
@@ -40,8 +40,8 @@ export default function GoogleLoginButton() {
       const data = await res.json();
 
       // Step 1a: Profile incomplete → show phone verification
-      if (!data.isProfileComplete && data.user?.email) {
-        setPendingEmail(data.user.email);
+      if (!data.isProfileComplete && data.user?.userId) {
+        setPendingUserId(data.user.userId);
         return;
       }
 
@@ -73,7 +73,7 @@ export default function GoogleLoginButton() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: pendingEmail,
+          userId: pendingUserId,
           phoneNumber: trimmed,
         }),
       });
@@ -119,7 +119,7 @@ export default function GoogleLoginButton() {
   };
 
   // ---- Show phone verification form when profile is incomplete ----
-  if (pendingEmail) {
+  if (pendingUserId) {
     return (
       <div className="w-full space-y-4">
         <div className="text-left">
@@ -156,7 +156,7 @@ export default function GoogleLoginButton() {
         </motion.button>
 
         <button
-          onClick={() => setPendingEmail(null)}
+          onClick={() => setPendingUserId(null)}
           className="text-[12px] text-[#6e6e73] hover:text-[#1d1d1f] transition-colors"
         >
           ← Use a different account

@@ -64,6 +64,12 @@ public class UserStoreService
         return user;
     }
 
+    public async Task<StoredUser?> FindByUserIdAsync(int userId)
+    {
+        var users = await LoadAsync();
+        return users.Values.FirstOrDefault(u => u.UserId == userId);
+    }
+
     public async Task SaveUserAsync(StoredUser user)
     {
         await LoadAsync(); // ensure loaded

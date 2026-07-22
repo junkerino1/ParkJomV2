@@ -156,7 +156,7 @@ public class AuthController : ControllerBase
     [HttpPost("complete-profile")]
     public async Task<ActionResult<AuthResponse>> CompleteProfile([FromBody] CompleteProfileRequest request)
     {
-        var user = await _userStore.FindByEmailAsync(request.Email);
+        var user = await _userStore.FindByUserIdAsync(request.UserId);
 
         if (user == null)
         {
