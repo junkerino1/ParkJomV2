@@ -542,7 +542,7 @@ export default function CommuterDashboard() {
                 <User size={17} className="text-[#007AFF]" />
               </div>
               <div className="truncate">
-                <p className="text-[13px] font-semibold text-[#111]">{user?.name ?? 'Commuter'}</p>
+                <p className="text-[13px] font-semibold text-[#111]">{user?.firstName ?? 'Commuter'}</p>
                 <p className="text-[11px] text-[#5f6368]">{vehicles.find(v => v.active)?.plate || 'VGV 8899'}</p>
               </div>
             </div>
