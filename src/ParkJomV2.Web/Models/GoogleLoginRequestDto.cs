@@ -35,3 +35,19 @@ public class CompleteProfileRequest
     public string Email { get; set; } = string.Empty;
     public string PhoneNumber { get; set; } = string.Empty;
 }
+
+/// <summary>Persistent user model — stored in App_Data/users.json</summary>
+public class StoredUser
+{
+    public int UserId { get; set; }
+    public string Email { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string? ProfilePictureURL { get; set; }
+    public int UserType { get; set; } // 0=Renter, 1=Owner, 2=Admin
+    public string? PhoneNumber { get; set; }
+    public bool IsProfileComplete { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime LastLoginAt { get; set; }
+    public string Role { get; set; } = "Commuter";
+}

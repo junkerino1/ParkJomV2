@@ -53,6 +53,9 @@ var client = new Client(apiKey: apiKey);
 // Register the AI client as a singleton service so it's accessible throughout MVC controllers and Minimal APIs
 builder.Services.AddSingleton(client);
 
+// ---------- Persistent user store (file-based JSON) ----------
+builder.Services.AddSingleton<ParkJomV2.Web.Services.UserStoreService>();
+
 var app = builder.Build();
 
 // ---------- Middleware Pipeline ----------

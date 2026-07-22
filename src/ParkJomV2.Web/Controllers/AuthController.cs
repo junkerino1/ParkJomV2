@@ -2,6 +2,7 @@ using Google.Apis.Auth;
 using Microsoft.AspNetCore.Mvc;
 using ParkJomV2.Web.Helpers;
 using ParkJomV2.Web.Models;
+using ParkJomV2.Web.Services;
 using System.ComponentModel.DataAnnotations;
 
 // ---- Google OAuth Authentication Controller ----
@@ -11,17 +12,18 @@ namespace ParkJomV2.Web.Controllers;
 [Route("api/auth")]
 public class AuthController : ControllerBase
 {
-    // Simple user store (production should use EF Core + database)
-    // TODO: Replace with DbContext.Users
-    private static readonly Dictionary<string, StoredUser> _users = new();
-
     private readonly ILogger<AuthController> _logger;
     private readonly IConfiguration _configuration;
+    private readonly UserStoreService _userStore;
 
-    public AuthController(ILogger<AuthController> logger, IConfiguration configuration)
+    public AuthController(
+        ILogger<AuthController> logger,
+        IConfiguration configuration,
+        UserStoreService userStore)
     {
         _logger = logger;
         _configuration = configuration;
+        _userStore = userStore;
     }
 
     /// <summary>
@@ -63,11 +65,12 @@ public class AuthController : ControllerBase
             var picture = payload.Picture ?? "";
 
             // ---------- 2. Find or create user ----------
-            StoredUser user;
+            StoredUser? user = await _userStore.FindByEmailAsync(email);
 
-            if (_users.TryGetValue(email, out var existingUser))
+            if (user != null)
             {
-                user = existingUser;
+                user.LastLoginAt = DateTime.UtcNow;
+                await _userStore.SaveUserAsync(user);
                 _logger.LogInformation("Existing user login: {Email} (Role: {Role})", email, user.Role);
             }
             else
@@ -76,9 +79,10 @@ public class AuthController : ControllerBase
                 var firstName = names.FirstOrDefault() ?? name;
                 var lastName = names.Length > 1 ? string.Join(" ", names.Skip(1)) : "";
 
+                var nextId = await _userStore.GetNextUserIdAsync();
                 user = new StoredUser
                 {
-                    UserId = _users.Count + 1,
+                    UserId = nextId,
                     Email = email,
                     FirstName = firstName,
                     LastName = lastName,
@@ -91,7 +95,7 @@ public class AuthController : ControllerBase
                     Role = "Commuter"
                 };
 
-                _users[email] = user;
+                await _userStore.SaveUserAsync(user);
                 _logger.LogInformation("New user registered: {Email} | ID: {UserId} | Role: {Role}", email, user.UserId, user.Role);
             }
 
@@ -150,9 +154,11 @@ public class AuthController : ControllerBase
     /// Sets phone number and marks profile complete, then returns JWT
     /// </summary>
     [HttpPost("complete-profile")]
-    public ActionResult<AuthResponse> CompleteProfile([FromBody] CompleteProfileRequest request)
+    public async Task<ActionResult<AuthResponse>> CompleteProfile([FromBody] CompleteProfileRequest request)
     {
-        if (!_users.TryGetValue(request.Email, out var user))
+        var user = await _userStore.FindByEmailAsync(request.Email);
+
+        if (user == null)
         {
             return NotFound(new AuthResponse
             {
@@ -165,7 +171,7 @@ public class AuthController : ControllerBase
         user.IsProfileComplete = true;
         user.LastLoginAt = DateTime.UtcNow;
 
-        _users[request.Email] = user;
+        await _userStore.SaveUserAsync(user);
 
         var token = JwtHelper.GenerateToken(
             user.UserId.ToString(),
@@ -203,20 +209,4 @@ public class AuthController : ControllerBase
             LastLoginAt = user.LastLoginAt
         };
     }
-}
-
-// ---- In-memory user store model ----
-public class StoredUser
-{
-    public int UserId { get; set; }
-    public string Email { get; set; } = string.Empty;
-    public string FirstName { get; set; } = string.Empty;
-    public string LastName { get; set; } = string.Empty;
-    public string? ProfilePictureURL { get; set; }
-    public int UserType { get; set; } // 0=Renter, 1=Owner, 2=Admin
-    public string? PhoneNumber { get; set; }
-    public bool IsProfileComplete { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime LastLoginAt { get; set; }
-    public string Role { get; set; } = "Commuter";
 }
