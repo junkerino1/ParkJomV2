@@ -79,7 +79,7 @@ function LoginPage() {
                     lastName: role,
                     picture: '',
                     phoneNumber: '',
-                    userType: role === 'Commuter' ? 0 : role === 'Owner' ? 1 : 2,
+                    userType: role === 'Admin' ? 1 : role === 'Owner' ? 2 : 3,
                     role,
                     token: 'demo-token',
                     isProfileComplete: true,
@@ -106,11 +106,14 @@ function LoginRedirect() {
   const [searchParams] = useSearchParams();
   const redirectParam = searchParams.get('redirect');
 
-  if (redirectParam) {
+  // Role is always determined by the database, never by the URL parameter
+  const rolePath =
+    user?.role === 'Admin' ? '/admin' : user?.role === 'Owner' ? '/owner' : '/commuter';
+
+  // If redirect matches the user's own role path, allow it (e.g., /commuter/parking/123)
+  if (redirectParam && redirectParam.startsWith(rolePath)) {
     return <Navigate to={redirectParam} replace />;
   }
 
-  const rolePath =
-    user?.role === 'Admin' ? '/admin' : user?.role === 'Owner' ? '/owner' : '/commuter';
   return <Navigate to={rolePath} replace />;
 }
