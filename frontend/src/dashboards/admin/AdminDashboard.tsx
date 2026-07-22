@@ -11,15 +11,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 import { 
-  initialStats, 
-  initialBollards, 
-  initialListings, 
-  initialPayouts, 
-  initialTransactions, 
-  initialOverstays, 
-  initialTickets,
-  initialActivityLogs
+  initialStats
 } from './data/mockData';
+import { IoTBollard, ListingRequest, OwnerPayout, Transaction, OverstayRecord, SupportTicket } from './types';
 
 import DashboardHome from './components/DashboardHome';
 import ListingGovernance from './components/ListingGovernance';
@@ -38,16 +32,16 @@ export default function AdminDashboard() {
   // Mobile sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // App core states
+  // App core states — all data fetched from backend
   const [activeView, setActiveView] = useState<ActiveView>('home');
   const [stats, setStats] = useState(initialStats);
-  const [bollards, setBollards] = useState(initialBollards);
-  const [listings, setListings] = useState(initialListings);
-  const [payouts, setPayouts] = useState(initialPayouts);
-  const [transactions, setTransactions] = useState(initialTransactions);
-  const [overstays, setOverstays] = useState(initialOverstays);
-  const [tickets, setTickets] = useState(initialTickets);
-  const [activityLogs, setActivityLogs] = useState(initialActivityLogs);
+  const [bollards, setBollards] = useState<IoTBollard[]>([]);
+  const [listings, setListings] = useState<ListingRequest[]>([]);
+  const [payouts, setPayouts] = useState<OwnerPayout[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [overstays, setOverstays] = useState<OverstayRecord[]>([]);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [activityLogs, setActivityLogs] = useState<{ id: string; type: string; message: string; timestamp: string; user: string }[]>([]);
 
   // Global system configs (live-wired into widgets)
   const [systemConfig, setSystemConfig] = useState({

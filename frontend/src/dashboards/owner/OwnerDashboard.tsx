@@ -16,46 +16,26 @@ export default function OwnerDashboard() {
   const [activeView, setActiveView] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // 1. Wallet Balance (RM)
-  const [walletBalance, setWalletBalance] = useState(450.00);
+  // 1. Wallet Balance (RM) — TODO: fetch from backend
+  const [walletBalance, setWalletBalance] = useState(0);
 
-  // 2. Active Registered Parking Bays
-  const [bays, setBays] = useState<ParkingBay[]>([
-    { id: 'b-104', propertyName: 'Wangsa Latian Condominium', stationName: 'Wangsa Maju LRT', bayNumber: 'Bay 104', level: 'Level 3 (Basement A)', status: 'Active', hourlyRate: 2.00 },
-    { id: 'b-208', propertyName: 'Gombak Height Residence', stationName: 'Gombak LRT', bayNumber: 'Bay 208', level: 'Level 1 (Ground)', status: 'Active', hourlyRate: 2.00 },
-  ]);
+  // 2. Active Registered Parking Bays — TODO: fetch from backend
+  const [bays, setBays] = useState<ParkingBay[]>([]);
 
-  // 3. Recent Bookings History (realistic dummy data in Malaysian context)
-  const [bookings, setBookings] = useState<Booking[]>([
-    { id: 'bk-01', date: '05 Jul 2026', renterPlate: 'VCS 8824', renterName: 'Mohd Fadhil', bayId: 'b-104', bayInfo: 'Bay 104', duration: '08:00 AM - 06:00 PM (10.0 hrs)', totalEarned: 18.00, commissionPaid: 2.00, status: 'Completed' },
-    { id: 'bk-02', date: '04 Jul 2026', renterPlate: 'WRA 9031', renterName: 'Chong Wei Min', bayId: 'b-104', bayInfo: 'Bay 104', duration: '09:00 AM - 05:00 PM (8.0 hrs)', totalEarned: 14.40, commissionPaid: 1.60, status: 'Completed' },
-    { id: 'bk-03', date: '03 Jul 2026', renterPlate: 'ALL 5110', renterName: 'Arul Dev', bayId: 'b-208', bayInfo: 'Bay 208', duration: '08:00 AM - 06:00 PM (10.0 hrs)', totalEarned: 20.00, commissionPaid: 2.00, status: 'Disputed', disputeReason: 'Vehicle overstayed by 23 minutes. ESP32 ultrasonic telemetry logged physical presence past reservation block.' },
-    { id: 'bk-04', date: '02 Jul 2026', renterPlate: 'VDE 6729', renterName: 'Siti Aminah', bayId: 'b-104', bayInfo: 'Bay 104', duration: '07:30 AM - 04:30 PM (9.0 hrs)', totalEarned: 16.20, commissionPaid: 1.80, status: 'Completed' },
-    { id: 'bk-05', date: '30 Jun 2026', renterPlate: 'PMD 3020', renterName: 'Tan Kok Seng', bayId: 'b-208', bayInfo: 'Bay 208', duration: '08:00 AM - 05:00 PM (9.0 hrs)', totalEarned: 16.20, commissionPaid: 1.80, status: 'Completed' },
-  ]);
+  // 3. Recent Bookings History — TODO: fetch from backend
+  const [bookings, setBookings] = useState<Booking[]>([]);
 
-  // 4. Notifications Dropdown list
-  const [notifications, setNotifications] = useState<Notification[]>([
-    { id: 'n-1', title: 'Withdrawal Success', message: 'RM 120.00 transferred successfully to your Maybank Account.', time: '1h ago', unread: true, type: 'payment' },
-    { id: 'n-2', title: 'New Booking Confirmed', message: 'Mohd Fadhil booked Bay 104 today 08:00 AM - 06:00 PM.', time: '3h ago', unread: true, type: 'booking' },
-    { id: 'n-3', title: 'Smart Spot Disputed', message: 'Dispute raised for Bay 208. Renter ALL 5110 overstayed over booking time limit.', time: '1d ago', unread: false, type: 'dispute' },
-  ]);
+  // 4. Notifications — TODO: fetch from backend
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // 5. Weekly calendar schedule blocks
-  // (dayOfWeek: 0 = Sun, 1-5 = Mon-Fri, 6 = Sat)
-  const [scheduleBlocks, setScheduleBlocks] = useState([
-    { id: 'sc-1', dayOfWeek: 1, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-    { id: 'sc-2', dayOfWeek: 2, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-    { id: 'sc-3', dayOfWeek: 3, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-    { id: 'sc-4', dayOfWeek: 4, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-    { id: 'sc-5', dayOfWeek: 5, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-  ]);
+  // 5. Weekly calendar schedule blocks — TODO: fetch from backend
+  const [scheduleBlocks, setScheduleBlocks] = useState<{ id: string; dayOfWeek: number; startTime: string; endTime: string; rate: number }[]>([]);
 
-  // 6. Configured Bank Beneficiary Payout (Defaults)
+  // 6. Bank Beneficiary — TODO: fetch from backend
   const [activeBank, setActiveBank] = useState({
-    name: 'Malayan Banking Berhad (Maybank)',
-    accNo: '114012345678',
-    holder: 'CHAW CHUN JIA'
+    name: '-',
+    accNo: '-',
+    holder: '-'
   });
 
   // --- INTERACTION ACTION HANDLERS ---

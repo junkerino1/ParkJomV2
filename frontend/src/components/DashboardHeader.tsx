@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Menu, Repeat } from 'lucide-react';
+import { LogOut, Menu } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export type DashboardRole = 'commuter' | 'owner' | 'admin';
@@ -40,22 +39,9 @@ export default function DashboardHeader({
   statusText,
   badge,
 }: DashboardHeaderProps) {
-  const { user, setUser, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const meta = ROLE_META[role];
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
-
-  const otherRoles: { label: string; role: DashboardRole; path: string; icon: string }[] = [];
-  if (role !== 'commuter') otherRoles.push({ label: 'Commuter', role: 'commuter', path: '/commuter', icon: '🚗' });
-  if (role !== 'owner') otherRoles.push({ label: 'Owner', role: 'owner', path: '/owner', icon: '🏠' });
-
-  const switchRole = (newRole: DashboardRole, path: string) => {
-    setShowRoleMenu(false);
-    if (user) {
-      setUser({ ...user, role: newRole === 'owner' ? 'Owner' : newRole === 'admin' ? 'Admin' : 'Commuter' });
-    }
-    navigate(path);
-  };
 
   const handleSignOut = () => {
     logout();
@@ -155,45 +141,6 @@ export default function DashboardHeader({
               <span className="hidden lg:inline text-[13px] font-medium text-[#333] max-w-[120px] truncate">
                 {displayName}
               </span>
-            </div>
-          )}
-
-          {/* Role switcher — hidden on smallest screens */}
-          {otherRoles.length > 0 && (
-            <div className="relative hidden sm:block">
-              <button
-                type="button"
-                onClick={() => setShowRoleMenu(!showRoleMenu)}
-                aria-label="Switch role"
-                className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-[12px] font-medium
-                  text-[#007AFF] hover:bg-[#e8f0fe] active:bg-[#d0e3fd] transition-colors"
-              >
-                <Repeat size={14} strokeWidth={2} />
-                <span className="hidden lg:inline">Switch to {otherRoles[0]?.label}</span>
-              </button>
-
-              {showRoleMenu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowRoleMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl border border-[#e8eaed]
-                    shadow-[0_8px_28px_rgba(0,0,0,0.12)] py-1.5 min-w-[180px] overflow-hidden">
-                    {otherRoles.map(({ label, role: r, path, icon }) => (
-                      <button
-                        key={r}
-                        onClick={() => switchRole(r, path)}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium
-                          text-[#1d1d1f] hover:bg-[#f5f5f7] transition-colors text-left"
-                      >
-                        <span className="text-[15px]">{icon}</span>
-                        <div>
-                          <span>{label}</span>
-                          <span className="block text-[10px] text-[#8e8e93] font-normal">Switch portal</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
             </div>
           )}
 
