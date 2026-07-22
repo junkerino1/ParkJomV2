@@ -165,6 +165,12 @@ namespace ParkJomV2.Controllers
             user.IsProfileComplete = true;
             user.UpdatedAt = DateTime.UtcNow;
 
+            // Allow user to set their role during registration
+            if (request.UserType.HasValue)
+            {
+                user.UserType = request.UserType.Value;
+            }
+
             if (user.Wallet == null)
             {
                 _context.Wallets.Add(new Wallet

@@ -43,6 +43,18 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            // Verify the station exists
+            var station = await _context.Stations.FindAsync(request.NearestStationId);
+            if (station == null)
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = $"Station with ID {request.NearestStationId} not found."
+                });
+            }
+
             var property = new Property
             {
                 PropertyName = request.PropertyName,
