@@ -33,7 +33,7 @@ type ActiveView = 'home' | 'governance' | 'iot' | 'settlement' | 'enforcement' |
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   // Mobile sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -75,56 +75,69 @@ export default function AdminDashboard() {
     }));
   };
 
-  // ---- Fetch pending properties from backend ----
+  // ---- Fetch verification requests from backend ----
   useEffect(() => {
-    async function fetchPending() {
+    async function fetchVerificationRequests() {
       try {
-        const res = await fetch(`${API_BASE}/property/pending`);
+        const token = user?.token ?? '';
+        if (!token) return;
+        const res = await fetch(`${API_BASE}/parking/verification-requests`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!res.ok) return;
-        const data = await res.json();
+        const body = await res.json();
 
-        // Map PropertyDTO → ListingRequest for the admin UI
-        const mapped: ListingRequest[] = data.map((p: any) => ({
-          id: p.propertyId.toString(),
-          ownerName: p.propertyName,
-          ownerEmail: '-',
-          location: p.address,
-          bayNumber: `Property #${p.propertyId}`,
-          hourlyRate: 0,
-          documents: { titleDeed: '-', utilityBill: '-', identityCard: '-' },
-          submittedAt: p.createdAt,
-          status: p.verificationStatus === 1 ? 'pending' :
-                  p.verificationStatus === 2 ? 'approved' : 'rejected',
-        }));
-        setListings(mapped);
-        setStats(prev => ({ ...prev, pendingListingsCount: mapped.filter(l => l.status === 'pending').length }));
-      } catch { /* API not available yet */ }
+        if (body.success && body.data) {
+          const mapped: ListingRequest[] = body.data.map((vr: any) => ({
+            id: vr.verificationRequestId.toString(),
+            ownerName: vr.submittedByName ?? vr.submittedByEmail ?? '-',
+            ownerEmail: vr.submittedByEmail ?? '-',
+            location: `${vr.propertyName ?? 'Unknown'} — ${vr.parkingLabel}`,
+            bayNumber: vr.parkingLabel ?? `Spot #${vr.parkingSpotId}`,
+            hourlyRate: 0,
+            documents: { titleDeed: '-', utilityBill: '-', identityCard: '-' },
+            submittedAt: vr.submittedAt,
+            status: vr.verificationStatus === 1 ? 'pending' :
+                    vr.verificationStatus === 2 ? 'approved' : 'rejected',
+            propertyId: vr.propertyId,
+            parkingSpotId: vr.parkingSpotId,
+          }));
+          setListings(mapped);
+          setStats(prev => ({ ...prev, pendingListingsCount: mapped.filter(l => l.status === 'pending').length }));
+        }
+      } catch { /* API not available */ }
     }
-    fetchPending();
-  }, []);
+    fetchVerificationRequests();
+  }, [user?.token]);
 
   // ---- Admin actions ----
 
   const handleApproveListing = async (id: string) => {
     try {
-      const res = await fetch(`${API_BASE}/property/${id}/approve`, { method: 'PUT' });
+      const token = user?.token ?? '';
+      const res = await fetch(`${API_BASE}/parking/verification-requests/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ isApproved: true }),
+      });
       if (res.ok) {
         setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'approved' } : l));
-        addActivityLog('governance', `Approved property listing ID: ${id}`, "Admin");
+        addActivityLog('governance', `Approved verification request ID: ${id}`, "Admin");
       }
     } catch { /* API not available */ }
   };
 
   const handleRejectListing = async (id: string, reason: string) => {
     try {
-      const res = await fetch(`${API_BASE}/property/${id}/reject`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
+      const token = user?.token ?? '';
+      const res = await fetch(`${API_BASE}/parking/verification-requests/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ isApproved: false, reason }),
       });
       if (res.ok) {
         setListings(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected', rejectionReason: reason } : l));
-        addActivityLog('governance', `Rejected property listing ID: ${id} due to: ${reason}`, "Admin");
+        addActivityLog('governance', `Rejected verification request ID: ${id} — ${reason}`, "Admin");
       }
     } catch { /* API not available */ }
   };
