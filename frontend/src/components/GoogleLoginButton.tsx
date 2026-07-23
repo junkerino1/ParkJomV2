@@ -59,7 +59,7 @@ export default function GoogleLoginButton() {
     } catch (err: any) {
       console.error('❌ Google login failed:', err.message);
       if (err.message?.includes('Unexpected token') || err.message?.includes('Failed to fetch')) {
-        alert('Backend server not available. Please use the "Quick Demo Access" buttons below to explore the app.');
+        alert('Backend server not available. Please try again later.');
       } else {
         alert('Login failed. Please try again.');
       }

@@ -42,7 +42,9 @@ export default function AvailabilityScheduler({
   onRemoveBlock, 
   onBlockAll 
 }: AvailabilitySchedulerProps) {
-  const [selectedBayId, setSelectedBayId] = useState(bays[0]?.id || '1');
+  // Only approved (Active) bays can be scheduled
+  const activeBays = bays.filter(b => b.status === 'Active');
+  const [selectedBayId, setSelectedBayId] = useState(activeBays[0]?.id || '');
   const [day, setDay] = useState(1);
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('18:00');
@@ -212,7 +214,7 @@ export default function AvailabilityScheduler({
     setSelectedBayId(bayId);
   };
 
-  const activeBay = bays.find(b => b.id === selectedBayId) || bays[0];
+  const activeBay = activeBays.find(b => b.id === selectedBayId) || activeBays[0];
 
   const dayStats = useMemo(() => {
     const total = scheduleBlocks.length;
@@ -244,6 +246,21 @@ export default function AvailabilityScheduler({
           Define the specific days and hourly blocks when your parking bay is vacant. Use bulk actions to schedule entire weeks or months in seconds.
         </p>
       </div>
+
+      {/* No approved bays — show guidance */}
+      {activeBays.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+          <Ban className="w-10 h-10 text-amber-400 mx-auto mb-2" />
+          <h3 className="text-sm font-bold text-amber-800 mb-1">No Approved Parking Bays</h3>
+          <p className="text-xs text-amber-600 max-w-md mx-auto">
+            Only parking bays that have been approved by an admin can be scheduled. 
+            Please wait for your registration to be verified, or check the status under the Dashboard tab.
+          </p>
+        </div>
+      )}
+
+      {activeBays.length > 0 && (
+      <>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-3 gap-3">
@@ -279,7 +296,10 @@ export default function AvailabilityScheduler({
                   onChange={(e) => handleBayChange(e.target.value)}
                   className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-600"
                 >
-                  {bays.map((bay) => (
+                  {activeBays.length === 0 && (
+                    <option value="">No approved bays available</option>
+                  )}
+                  {activeBays.map((bay) => (
                     <option key={bay.id} value={bay.id}>
                       {bay.bayNumber} ({bay.propertyName})
                     </option>
@@ -571,6 +591,8 @@ export default function AvailabilityScheduler({
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

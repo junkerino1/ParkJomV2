@@ -107,7 +107,7 @@ A **functional web API** (in `src/ParkJomV2.Web/`) with a complete React SPA fro
 ### Frontend (ParkJomV2.Web)
 
 - **Landing Page** — Apple-style marketing hero, how-it-works, features, stats, FAQ accordion, footer
-- **Login** — Google OAuth sign-in + 3 demo role buttons (Commuter / Owner / Admin)
+- **Login** — Google OAuth sign-in
 - **Commuter Dashboard** — 5-tab mobile-first UI: Home, Active Booking, Wallet, Profile, Map
   - Interactive Leaflet map with GTFS rail lines overlay
   - Station search + Haversine distance filtering

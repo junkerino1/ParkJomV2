@@ -60,7 +60,9 @@ export default function AdminDashboard() {
       id: `LOG-${Date.now()}`,
       type,
       message,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toLocaleString([], { 
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+      }),
       user
     };
     setActivityLogs(prev => [newLog, ...prev]);
@@ -97,8 +99,8 @@ export default function AdminDashboard() {
             hourlyRate: 0,
             documents: { titleDeed: '-', utilityBill: '-', identityCard: '-' },
             submittedAt: vr.submittedAt,
-            status: vr.verificationStatus === 1 ? 'pending' :
-                    vr.verificationStatus === 2 ? 'approved' : 'rejected',
+            status: vr.verificationStatus === 'Pending' ? 'pending' :
+                    vr.verificationStatus === 'Approved' ? 'approved' : 'rejected',
             propertyId: vr.propertyId,
             parkingSpotId: vr.parkingSpotId,
           }));

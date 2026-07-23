@@ -25,6 +25,7 @@ import {
 import { Booking } from '../types';
 
 import { ParkingBay } from '../types';
+import PropertyStatusPanel from './PropertyStatusPanel';
 
 interface DashboardHomeProps {
   walletBalance: number;
@@ -352,7 +353,11 @@ export default function DashboardHome({
                   <p className="text-[11px] text-slate-500">{bay.bayNumber} &middot; {bay.level} &middot; {bay.stationName}</p>
                   <div className="flex items-center gap-3 mt-1">
                     <span className="text-[12px] font-bold text-emerald-600">RM {bay.hourlyRate.toFixed(2)}/hr</span>
-                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${bay.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{bay.status}</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      bay.status === 'Active' ? 'bg-emerald-50 text-emerald-700' :
+                      bay.status === 'Rejected' ? 'bg-rose-50 text-rose-700' :
+                      'bg-amber-50 text-amber-700'
+                    }`}>{bay.status}</span>
                   </div>
                 </div>
               </div>
@@ -360,6 +365,9 @@ export default function DashboardHome({
           </div>
         )}
       </div>
+
+      {/* Property Registration Status Panel */}
+      <PropertyStatusPanel bays={bays} baysLoading={baysLoading} />
 
       {/* IoT Gateways */}
       <div className="space-y-3 md:space-y-4">

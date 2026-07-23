@@ -8,6 +8,8 @@ export interface ParkingBay {
   hourlyRate: number;
   verificationDocName?: string;
   verificationProgress?: number;
+  verificationRequestId?: number;
+  verificationSubmittedAt?: string;
 }
 
 export interface Booking {

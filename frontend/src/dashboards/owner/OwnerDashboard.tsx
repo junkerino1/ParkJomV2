@@ -51,7 +51,11 @@ export default function OwnerDashboard() {
   const [activeBank, setActiveBank] = useState({ name: '-', accNo: '-', holder: '-' });
 
   // ---- Fetch parking spots from backend ----
+  // Re-fetch whenever the user returns to the dashboard or availability view
+  // so that admin updates (approvals/rejections) are reflected immediately.
   useEffect(() => {
+    if (activeView !== 'dashboard' && activeView !== 'availability') return;
+
     async function fetchMyParking() {
       setBaysLoading(true);
       try {
@@ -71,8 +75,12 @@ export default function OwnerDashboard() {
             stationName: '-',
             bayNumber: ps.parkingLabel ?? `Spot #${ps.parkingSpotId}`,
             level: '-',
-            status: ps.isPublished ? 'Active' : 'Pending Verification',
+            status: ps.isPublished ? 'Active' as const :
+                    ps.verificationStatus === 'Rejected' ? 'Rejected' as const :
+                    'Pending Verification' as const,
             hourlyRate: ps.dailyRate ?? 0,
+            verificationRequestId: ps.verificationRequestId,
+            verificationSubmittedAt: ps.verificationSubmittedAt,
           }));
           setBays(mapped);
         }
@@ -80,7 +88,7 @@ export default function OwnerDashboard() {
       finally { setBaysLoading(false); }
     }
     fetchMyParking();
-  }, [user?.token]);
+  }, [user?.token, activeView]);
 
   // Sync notifications to localStorage
   useEffect(() => { saveNotifications(notifications); }, [notifications]);

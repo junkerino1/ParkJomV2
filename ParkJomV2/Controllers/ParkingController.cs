@@ -796,6 +796,7 @@ namespace ParkJomV2.Controllers
 
                 var parkingSpots = await _context.ParkingSpots  
                     .Where(ps => ps.OwnerId == userId)
+                    .Include(ps => ps.VerificationRequests)
                     .OrderByDescending(ps => ps.CreatedAt)
                     .ToListAsync();
 
@@ -841,6 +842,11 @@ namespace ParkJomV2.Controllers
 
         private static DisplayParkingSpotDTO MapToDisplayParkingSpotDTO(ParkingSpot parkingSpot)
         {
+            // Get the latest verification request for this parking spot
+            var latestVerification = parkingSpot.VerificationRequests?
+                .OrderByDescending(vr => vr.SubmittedAt)
+                .FirstOrDefault();
+
             return new DisplayParkingSpotDTO
             {
                 ParkingSpotId = parkingSpot.ParkingSpotId,
@@ -852,7 +858,10 @@ namespace ParkJomV2.Controllers
                 DailyRate = parkingSpot.DailyRate,
                 IsPublished = parkingSpot.IsPublished,
                 CreatedAt = parkingSpot.CreatedAt,
-                UpdatedAt = parkingSpot.UpdatedAt
+                UpdatedAt = parkingSpot.UpdatedAt,
+                VerificationStatus = latestVerification?.VerificationStatus.ToString(),
+                VerificationRequestId = latestVerification?.VerificationRequestId,
+                VerificationSubmittedAt = latestVerification?.SubmittedAt
             };
         }
         private static VerificationRequestListDTO MapToVerificationRequestListDTO(ParkingVerificationRequest request)

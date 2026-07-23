@@ -174,6 +174,9 @@ public class DisplayParkingSpotDTO
     public bool IsPublished { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public string? VerificationStatus { get; set; }
+    public int? VerificationRequestId { get; set; }
+    public DateTime? VerificationSubmittedAt { get; set; }
 }
 
 public class DisplayMyParkingResponse

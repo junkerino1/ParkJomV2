@@ -1,5 +1,5 @@
 // ParkJom PWA Service Worker
-const CACHE_NAME = 'parkjom-v1';
+const CACHE_NAME = 'parkjom-v3';
 
 // Assets to pre-cache on install
 const PRECACHE_URLS = [

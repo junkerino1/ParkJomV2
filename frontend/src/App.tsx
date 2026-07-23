@@ -60,8 +60,6 @@ function RequireRole({ role, children }: { role: string; children: React.ReactNo
 }
 
 function LoginPage() {
-  const { setUser } = useAuth();
-
   return (
     <div className="min-h-screen bg-[#f5f5f7] flex items-center justify-center px-4">
       <motion.div
@@ -80,35 +78,6 @@ function LoginPage() {
           </p>
         </div>
         <GoogleLoginButton />
-
-        <div className="pt-3 border-t border-black/[0.06] space-y-3">
-          <p className="text-[10px] text-[#8e8e93] uppercase tracking-wider font-semibold">Quick demo access</p>
-          <div className="flex gap-2">
-            {(['Commuter', 'Owner', 'Admin'] as const).map((role) => (
-              <motion.button
-                key={role}
-                whileTap={{ scale: 0.96 }}
-                onClick={() =>
-                  setUser({
-                    userId: 0,
-                    email: `${role.toLowerCase()}@demo.parkjom`,
-                    firstName: `Demo`,
-                    lastName: role,
-                    picture: '',
-                    phoneNumber: '',
-                    userType: role === 'Admin' ? 1 : role === 'Owner' ? 2 : 3,
-                    role,
-                    token: 'demo-token',
-                    isProfileComplete: true,
-                  })
-                }
-                className="flex-1 py-2.5 bg-[#f5f5f7] hover:bg-[#ebebed] text-xs font-semibold text-[#1d1d1f] rounded-xl border border-black/[0.06] transition-colors"
-              >
-                {role}
-              </motion.button>
-            ))}
-          </div>
-        </div>
 
         <a href="/" className="block text-[13px] text-[#007AFF] font-medium hover:underline transition">
           ← Back to Home
