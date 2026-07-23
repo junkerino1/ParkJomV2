@@ -14,7 +14,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:5176',
+        target: 'http://localhost:5276',  // ParkJomV2 main project (has DB)
         changeOrigin: true,
       },
     },
