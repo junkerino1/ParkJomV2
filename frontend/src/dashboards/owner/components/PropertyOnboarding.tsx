@@ -4,7 +4,7 @@ import { useAuth } from '../../../contexts/AuthContext';
 import OwnerRegistrationMap from './OwnerRegistrationMap';
 
 // Backend API URL — matches the pattern used in GoogleLoginButton
-const API_BASE = (window as any).VITE_API_BASE ||
+const API_BASE = import.meta.env.VITE_API_BASE ||
   (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
     ? 'https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.azurewebsites.net/api'
     : '/api');
@@ -254,10 +254,15 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
     setSubmitError(null);
 
     try {
+      const token = user?.token ?? '';
+
       // Step 1: Create Property
       const propRes = await fetch(`${API_BASE}/property/create-property`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           propertyName: propName,
           propertyType,
@@ -286,7 +291,6 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
       formData.append('DocumentType', '1'); // 1 = Strata Title / Ownership document
       formData.append('Document', uploadedFileObject);
 
-      const token = user?.token ?? '';
       const parkRes = await fetch(`${API_BASE}/parking/register-parking`, {
         method: 'POST',
         headers: {

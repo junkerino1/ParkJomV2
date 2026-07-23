@@ -25,17 +25,43 @@ namespace ParkJomV2.Controllers
         }
 
         /// <summary>
+        /// Get all stations
+        /// </summary>
+        [HttpGet]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult> GetAllStations()
+        {
+            var stations = await _context.Stations
+                .Select(s => new
+                {
+                    s.StationId,
+                    s.StationName,
+                    s.Latitude,
+                    s.Longitude
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Stations retrieved successfully.",
+                Stations = stations
+            });
+        }
+
+        /// <summary>
         /// get all property with available parking spot by station id
         /// </summary>
-        [HttpGet("get-property/{stationId}")]
+        [HttpGet("get-property")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<GetPropertyResponse>> GetPropertyByStationId(int stationId)
+        public async Task<ActionResult> GetPropertyByStationId([FromQuery] int stationId)
         {
             var station = await _context.Stations.FindAsync(stationId);
-
-            // return Ok(station);
 
             if (station == null)
             {
@@ -61,26 +87,13 @@ namespace ParkJomV2.Controllers
                 })
                 .ToListAsync();
 
-            if (properties.Count == 0)
+            return Ok(new
             {
-                return NotFound(new ErrorResponse
-                {
-                    Code = StatusCodes.Status404NotFound,
-                    Success = false,
-                    Message = "No properties found for the given station."
-                });
-            }
-            else
-            {
-                return Ok(new
-                {
-                    Code = StatusCodes.Status200OK,
-                    Success = true,
-                    Message = "Properties retrieved successfully.",
-                    Properties = properties
-                });
-            }
-
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Properties retrieved successfully.",
+                Properties = properties
+            });
         }
 
         [HttpGet("get-parking-spot/{propertyId}")]

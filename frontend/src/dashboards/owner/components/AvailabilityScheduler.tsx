@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Calendar, Clock, Plus, Trash2, Ban, ShieldAlert, Wifi, Info, Copy, Check, Layers, CalendarRange, ListChecks } from 'lucide-react';
+import { Calendar, Clock, Plus, Trash2, Ban, ShieldAlert, Wifi, Info, Copy, Check, Layers, CalendarRange, ListChecks, UploadCloud, Image, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ParkingBay } from '../types';
 
@@ -17,6 +17,17 @@ interface AvailabilitySchedulerProps {
   onAddBlock: (block: { dayOfWeek: number; startTime: string; endTime: string; rate: number }) => void;
   onRemoveBlock: (id: string) => void;
   onBlockAll: () => void;
+  onConfigParking: (
+    parkingSpotId: string,
+    images: File[],
+    dayType: string,
+    startTime: string,
+    endTime: string,
+    effectiveFrom: string,
+    effectiveUntil: string,
+    monthlyRate?: number,
+    dailyRate?: number
+  ) => Promise<boolean>;
 }
 
 type BulkAction = 'single' | 'weekdays' | 'weekends' | 'allweek' | 'month';
@@ -40,7 +51,8 @@ export default function AvailabilityScheduler({
   scheduleBlocks, 
   onAddBlock, 
   onRemoveBlock, 
-  onBlockAll 
+  onBlockAll,
+  onConfigParking 
 }: AvailabilitySchedulerProps) {
   // Only approved (Active) bays can be scheduled
   const activeBays = bays.filter(b => b.status === 'Active');
@@ -56,9 +68,69 @@ export default function AvailabilityScheduler({
   const [dateRangeStart, setDateRangeStart] = useState('');
   const [dateRangeEnd, setDateRangeEnd] = useState('');
 
+  // Config parking state — image upload, day type, publish
+  const [configImages, setConfigImages] = useState<File[]>([]);
+  const [configDayType, setConfigDayType] = useState('Everyday');
+  const [configStartTime, setConfigStartTime] = useState('09:00');
+  const [configEndTime, setConfigEndTime] = useState('17:30');
+  const [configFrom, setConfigFrom] = useState('');
+  const [configUntil, setConfigUntil] = useState('');
+  const [configRate, setConfigRate] = useState('100');
+  const [configRateType, setConfigRateType] = useState<'monthly' | 'daily'>('monthly');
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishMsg, setPublishMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const showToast = (msg: string) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setConfigImages(prev => [...prev, ...Array.from(e.target.files!)]);
+    }
+  };
+
+  const removeImage = (idx: number) => {
+    setConfigImages(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handlePublish = async () => {
+    if (!selectedBayId) {
+      setPublishMsg({ type: 'error', text: 'Please select a parking bay.' });
+      return;
+    }
+    if (configImages.length === 0) {
+      setPublishMsg({ type: 'error', text: 'Please upload at least one parking image.' });
+      return;
+    }
+    if (!configFrom || !configUntil) {
+      setPublishMsg({ type: 'error', text: 'Please set the effective date range.' });
+      return;
+    }
+
+    setIsPublishing(true);
+    setPublishMsg(null);
+
+    const success = await onConfigParking(
+      selectedBayId,
+      configImages,
+      configDayType,
+      configStartTime,
+      configEndTime,
+      configFrom,
+      configUntil,
+      configRateType === 'monthly' ? parseFloat(configRate) : undefined,
+      configRateType === 'daily' ? parseFloat(configRate) : undefined
+    );
+
+    setIsPublishing(false);
+    if (success) {
+      setPublishMsg({ type: 'success', text: 'Parking spot configured and published successfully!' });
+      setConfigImages([]);
+    } else {
+      setPublishMsg({ type: 'error', text: 'Failed to configure parking. Please try again.' });
+    }
   };
 
   const getTargetDays = (): number[] => {
@@ -591,6 +663,175 @@ export default function AvailabilityScheduler({
           </div>
         </div>
       </div>
+
+      {/* Publish Configuration Section — POST /api/parking/config-parking/{id} */}
+      {activeBays.length > 0 && (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+          <h2 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b border-slate-100 pb-3">
+            <UploadCloud className="w-4 h-4 text-emerald-600" />
+            Publish Parking Configuration
+          </h2>
+          <p className="text-xs text-slate-500 -mt-2">
+            Upload photos, set schedule and pricing, then publish your parking spot to commuters.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Left: Images + Bay Select */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Select Bay</label>
+                <select
+                  value={selectedBayId}
+                  onChange={(e) => setSelectedBayId(e.target.value)}
+                  className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-600"
+                >
+                  {activeBays.map((bay) => (
+                    <option key={bay.id} value={bay.id}>
+                      {bay.bayNumber} — {bay.propertyName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Parking Images</label>
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-5 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/30 transition-all">
+                  <Image className="w-8 h-8 text-slate-300 mb-2" />
+                  <span className="text-xs text-slate-500 font-medium">Click to upload images</span>
+                  <span className="text-[10px] text-slate-400">JPG, PNG (multiple)</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    multiple
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </label>
+                {configImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {configImages.map((file, idx) => (
+                      <div key={idx} className="relative group">
+                        <img
+                          src={URL.createObjectURL(file)}
+                          alt={file.name}
+                          className="w-16 h-16 object-cover rounded-lg border border-slate-200"
+                        />
+                        <button
+                          onClick={() => removeImage(idx)}
+                          className="absolute -top-1.5 -right-1.5 bg-white border border-rose-100 text-rose-500 rounded-full p-0.5 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                        <span className="text-[8px] text-slate-400 truncate block w-16 text-center mt-0.5">{file.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Schedule Config */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Day Type</label>
+                  <select
+                    value={configDayType}
+                    onChange={(e) => {
+                      setConfigDayType(e.target.value);
+                      setConfigRateType(e.target.value === 'Everyday' ? 'monthly' : 'daily');
+                    }}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-600"
+                  >
+                    <option value="Everyday">Everyday (Monthly)</option>
+                    <option value="Weekday">Weekday (Daily)</option>
+                    <option value="Weekend">Weekend (Daily)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
+                    {configRateType === 'monthly' ? 'Monthly Rate (RM)' : 'Daily Rate (RM)'}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">RM</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={configRate}
+                      onChange={(e) => setConfigRate(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-600 font-mono font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Start Time</label>
+                  <input
+                    type="time"
+                    value={configStartTime}
+                    onChange={(e) => setConfigStartTime(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">End Time</label>
+                  <input
+                    type="time"
+                    value={configEndTime}
+                    onChange={(e) => setConfigEndTime(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Effective From</label>
+                  <input
+                    type="date"
+                    value={configFrom}
+                    onChange={(e) => setConfigFrom(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Effective Until</label>
+                  <input
+                    type="date"
+                    value={configUntil}
+                    onChange={(e) => setConfigUntil(e.target.value)}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-600"
+                  />
+                </div>
+              </div>
+
+              {publishMsg && (
+                <div className={`text-xs font-medium p-3 rounded-lg ${
+                  publishMsg.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {publishMsg.text}
+                </div>
+              )}
+
+              <button
+                onClick={handlePublish}
+                disabled={isPublishing}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold text-xs py-3 rounded-xl transition-all duration-150 flex items-center justify-center gap-2 shadow"
+              >
+                {isPublishing ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Publishing...</>
+                ) : (
+                  <><UploadCloud className="w-4 h-4" /> Publish Configuration</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </>
       )}
     </div>

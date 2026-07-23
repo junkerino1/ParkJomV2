@@ -25,6 +25,34 @@ export interface ListingRequest {
   submittedAt: string;
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
+  // Backend IDs for detail fetch
+  propertyId?: number;
+  parkingSpotId?: number;
+}
+
+export interface VerificationDocument {
+  verificationDocumentId: number;
+  documentType: number;
+  mediaFileId: number;
+  resourceType?: string;
+  format?: string;
+  originalFileName?: string;
+  secureUrl?: string;
+  uploadedAt: string;
+}
+
+export interface VerificationRequestDetail {
+  verificationRequestId: number;
+  parkingSpotId: number;
+  parkingLabel?: string;
+  propertyId?: number;
+  propertyName?: string;
+  submittedByUserId: number;
+  submittedByEmail?: string;
+  submittedByName?: string;
+  verificationStatus?: string;
+  submittedAt: string;
+  documents: VerificationDocument[];
 }
 
 export interface OwnerPayout {

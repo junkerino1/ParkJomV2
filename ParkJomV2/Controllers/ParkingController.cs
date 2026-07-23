@@ -125,7 +125,7 @@ namespace ParkJomV2.Controllers
 
                 if (dto.Document.ContentType.StartsWith("image"))
                 {
-                    uploadResult = await _cloudinaryService.UploadImageAsync(dto.Document, folder);
+                    uploadResult = await _cloudinaryService.UploadImageAsync(dto.Document, folder, "private");
                 }
                 else
                 {
@@ -433,6 +433,7 @@ namespace ParkJomV2.Controllers
 
                 var verificationRequest = await _context.ParkingVerificationRequests
                     .Include(vr => vr.ParkingSpot)
+                        .ThenInclude(ps => ps.Property)
                     .FirstOrDefaultAsync(vr => vr.VerificationRequestId == id);
 
                 if (verificationRequest == null)
@@ -464,6 +465,21 @@ namespace ParkJomV2.Controllers
                     : VerificationStatus.Rejected;
 
                 verificationRequest.UpdatedAt = DateTime.UtcNow;
+
+                // Also update ParkingSpot.IsPublished and Property.VerificationStatus
+                if (verificationRequest.ParkingSpot != null)
+                {
+                    verificationRequest.ParkingSpot.IsPublished = request.IsApproved;
+                    verificationRequest.ParkingSpot.UpdatedAt = DateTime.UtcNow;
+
+                    if (verificationRequest.ParkingSpot.Property != null)
+                    {
+                        verificationRequest.ParkingSpot.Property.VerificationStatus = request.IsApproved
+                            ? VerificationStatus.Approved
+                            : VerificationStatus.Rejected;
+                        verificationRequest.ParkingSpot.Property.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
 
                 _context.ParkingVerificationRequests.Update(verificationRequest);
                 await _context.SaveChangesAsync();
@@ -903,6 +919,7 @@ namespace ParkJomV2.Controllers
                     ResourceType = vd.MediaFile?.ResourceType,
                     Format = vd.MediaFile?.Format,
                     OriginalFileName = vd.MediaFile?.OriginalFileName,
+                    SecureUrl = vd.MediaFile?.SecureUrl,
                     UploadedAt = vd.UploadedAt
                 }).ToList() ?? new List<VerificationDocumentDTO>()
             };

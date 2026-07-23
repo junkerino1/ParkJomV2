@@ -36,3 +36,20 @@ export interface AppNotification {
   read: boolean;
   type: 'alert' | 'wallet' | 'booking' | 'general';
 }
+
+export interface Station {
+  stationId: number;
+  stationName: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface Property {
+  propertyId: number;
+  propertyName: string;
+  propertyType: number;
+  address: string;
+  latitude: number;
+  longitude: number;
+  distanceToStation: number;
+}

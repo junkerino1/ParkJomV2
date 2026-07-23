@@ -4,12 +4,14 @@ import {
   ShieldCheck, AlertOctagon, FileText, CheckCircle, XCircle, 
   Search, Eye, HelpCircle, ArrowUpRight, ShieldAlert, BadgeAlert 
 } from 'lucide-react';
-import { ListingRequest } from '../types';
+import { ListingRequest, VerificationRequestDetail } from '../types';
 
 interface ListingGovernanceProps {
   listings: ListingRequest[];
   onApprove: (id: string) => void;
   onReject: (id: string, reason: string) => void;
+  onFetchDetail: (id: string) => Promise<VerificationRequestDetail | null>;
+  onViewDocument: (mediaFileId: number) => void;
   addActivityLog: (type: string, message: string, user: string) => void;
 }
 
@@ -17,11 +19,15 @@ export default function ListingGovernance({
   listings, 
   onApprove, 
   onReject,
+  onFetchDetail,
+  onViewDocument,
   addActivityLog 
 }: ListingGovernanceProps) {
   const [activeTab, setActiveTab] = useState<'pending' | 'moderated'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedListing, setSelectedListing] = useState<ListingRequest | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<VerificationRequestDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [rejectingListingId, setRejectingListingId] = useState<string | null>(null);
   const [customRejectionReason, setCustomRejectionReason] = useState('Deed name mismatch with registration profile');
   
@@ -179,7 +185,14 @@ export default function ListingGovernance({
                       <td className="py-3.5 px-2 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button 
-                            onClick={() => setSelectedListing(listing)}
+                            onClick={async () => {
+                              setSelectedListing(listing);
+                              setSelectedDetail(null);
+                              setDetailLoading(true);
+                              const detail = await onFetchDetail(listing.id);
+                              setSelectedDetail(detail);
+                              setDetailLoading(false);
+                            }}
                             className="p-1.5 hover:bg-slate-100 rounded text-slate-600 hover:text-[#2563EB] transition-colors"
                             title="Inspect Documents"
                           >
@@ -292,7 +305,7 @@ export default function ListingGovernance({
                   <h3 className="text-md font-bold text-slate-800 mt-1">{selectedListing.ownerName}'s Strata Submission</h3>
                 </div>
                 <button 
-                  onClick={() => setSelectedListing(null)}
+                  onClick={() => { setSelectedListing(null); setSelectedDetail(null); }}
                   className="p-1 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600"
                 >
                   <XCircle className="w-5 h-5" />
@@ -315,42 +328,47 @@ export default function ListingGovernance({
                 </div>
               </div>
 
-              {/* Uploaded Documents */}
+              {/* Uploaded Documents — fetched from API */}
               <div className="space-y-3">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Uploaded Legal Proof Documents</span>
                 
-                {/* Strata Title Deed Doc */}
-                <div className="p-3 border border-slate-100 rounded-lg flex items-start gap-3 bg-white hover:border-[#2563EB]/20 transition-all">
-                  <FileText className="w-8 h-8 text-[#2563EB] shrink-0" />
-                  <div className="text-xs space-y-0.5">
-                    <span className="font-semibold text-slate-700">Strata Land Title Deed Certificate</span>
-                    <p className="text-[11px] text-slate-500">{selectedListing.documents.titleDeed}</p>
-                    <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1 mt-1">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Legally Encrypted & Sealed
-                    </span>
+                {detailLoading ? (
+                  <div className="py-6 text-center text-slate-400 text-xs">Loading documents...</div>
+                ) : selectedDetail && selectedDetail.documents.length > 0 ? (
+                  selectedDetail.documents.map((doc) => {
+                    const docLabel = 
+                      doc.documentType === 1 ? 'Sales & Purchase Agreement / Title Deed' :
+                      doc.documentType === 2 ? 'Utility Bill (Water/Electric)' :
+                      doc.documentType === 3 ? 'Parking Bay Photo' :
+                      doc.documentType === 4 ? 'Government Identity Card' :
+                      'Other Supporting Document';
+                    const isImage = doc.resourceType === 'image' || ['jpg','jpeg','png','gif','webp'].includes(doc.format ?? '');
+                    return (
+                      <div key={doc.verificationDocumentId} className="p-3 border border-slate-100 rounded-lg flex items-start gap-3 bg-white hover:border-[#2563EB]/20 transition-all">
+                        <FileText className={`w-8 h-8 shrink-0 ${doc.documentType === 1 ? 'text-[#2563EB]' : doc.documentType === 2 ? 'text-blue-500' : doc.documentType === 4 ? 'text-slate-500' : 'text-amber-500'}`} />
+                        <div className="text-xs space-y-1 flex-1 min-w-0">
+                          <span className="font-semibold text-slate-700">{docLabel}</span>
+                          <p className="text-[11px] text-slate-500 truncate">{doc.originalFileName ?? `Document #${doc.verificationDocumentId}`}</p>
+                          {doc.mediaFileId && (
+                            <button
+                              onClick={() => onViewDocument(doc.mediaFileId)}
+                              className="text-[10px] text-[#2563EB] font-medium flex items-center gap-1 mt-1 hover:underline cursor-pointer bg-transparent border-none p-0"
+                            >
+                              <ArrowUpRight className="w-3 h-3" /> {isImage ? 'View Image' : 'Open Document'}
+                            </button>
+                          )}
+                          <span className="text-[10px] text-slate-400 block">
+                            {doc.format?.toUpperCase()} · Uploaded {new Date(doc.uploadedAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-4 text-center text-slate-400 text-xs italic">
+                    No documents available. Click inspect on a listing to load documents.
                   </div>
-                </div>
-
-                {/* Utility Bill Doc */}
-                <div className="p-3 border border-slate-100 rounded-lg flex items-start gap-3 bg-white hover:border-[#2563EB]/20 transition-all">
-                  <FileText className="w-8 h-8 text-blue-500 shrink-0" />
-                  <div className="text-xs space-y-0.5">
-                    <span className="font-semibold text-slate-700">Municipal Utility Statement (Water/Electric)</span>
-                    <p className="text-[11px] text-slate-500">{selectedListing.documents.utilityBill}</p>
-                    <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1 mt-1">
-                      <ShieldCheck className="w-3.5 h-3.5" /> Matches Host Name & Bay Address
-                    </span>
-                  </div>
-                </div>
-
-                {/* Identity Doc */}
-                <div className="p-3 border border-slate-100 rounded-lg flex items-start gap-3 bg-white hover:border-[#2563EB]/20 transition-all">
-                  <FileText className="w-8 h-8 text-slate-500 shrink-0" />
-                  <div className="text-xs space-y-0.5">
-                    <span className="font-semibold text-slate-700">Government Identity Card Scan</span>
-                    <p className="text-[11px] text-slate-500">{selectedListing.documents.identityCard}</p>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Action bar inside modal */}

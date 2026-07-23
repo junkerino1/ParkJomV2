@@ -13,7 +13,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { 
   initialStats
 } from './data/mockData';
-import { IoTBollard, ListingRequest, OwnerPayout, Transaction, OverstayRecord, SupportTicket } from './types';
+import { IoTBollard, ListingRequest, OwnerPayout, Transaction, OverstayRecord, SupportTicket, VerificationRequestDetail } from './types';
 
 import DashboardHome from './components/DashboardHome';
 import ListingGovernance from './components/ListingGovernance';
@@ -144,6 +144,37 @@ export default function AdminDashboard() {
     } catch { /* API not available */ }
   };
 
+  // Fetch specific verification request with documents
+  const fetchVerificationDetail = async (id: string): Promise<VerificationRequestDetail | null> => {
+    try {
+      const token = user?.token ?? '';
+      if (!token) return null;
+      const res = await fetch(`${API_BASE}/parking/verification-requests/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      return body.success ? body.data : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Fetch document via private media proxy and open in new tab
+  const viewDocument = async (mediaFileId: number) => {
+    try {
+      const token = user?.token ?? '';
+      if (!token) return;
+      const res = await fetch(`${API_BASE}/media/view/document/${mediaFileId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch { /* ignore */ }
+  };
+
   // Trigger from support component to lower a bollard
   const handleLowerBollard = (bollardId: string) => {
     setBollards(prev => prev.map(b => b.id === bollardId ? { ...b, barrierState: 'lowered' } : b));
@@ -182,6 +213,8 @@ export default function AdminDashboard() {
             listings={listings} 
             onApprove={handleApproveListing} 
             onReject={handleRejectListing}
+            onFetchDetail={fetchVerificationDetail}
+            onViewDocument={viewDocument}
             addActivityLog={addActivityLog}
           />
         );

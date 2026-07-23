@@ -33,10 +33,10 @@ import {
   Train,
   Home,
   Navigation,
-  Loader2
+  Loader2,
+  Building
 } from 'lucide-react';
-import { ParkingSpot, Booking, Vehicle, AppNotification } from './types';
-import { stationsList, simulatedSpots } from './data';
+import { ParkingSpot, Booking, Vehicle, AppNotification, Station, Property } from './types';
 import CommuterMap from './components/CommuterMap';
 import DashboardHeader from '../../components/DashboardHeader';
 import BottomNav from '../../components/ui/BottomNav';
@@ -51,6 +51,7 @@ export default function CommuterDashboard() {
   // App Navigation and Module States
   const [activeTab, setActiveTab] = useState<'home' | 'active' | 'wallet' | 'profile' | 'map'>('home');
   const [selectedStation, setSelectedStation] = useState<string>('');
+  const [selectedStationId, setSelectedStationId] = useState<number | null>(null);
   const [selectedStationCoords, setSelectedStationCoords] = useState<StationCoordinates | null>(null);
   const [distanceFilter, setDistanceFilter] = useState<number>(500); // meters
   const [spotTypeFilter, setSpotTypeFilter] = useState<string>('all');
@@ -58,6 +59,12 @@ export default function CommuterDashboard() {
   const [nearbySpots, setNearbySpots] = useState<ParkingSpot[]>([]);
   const [isNearbyLoading, setIsNearbyLoading] = useState<boolean>(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
+
+  // Stations and Properties
+  const [stations, setStations] = useState<Station[]>([]);
+  const [isStationsLoading, setIsStationsLoading] = useState<boolean>(false);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [isPropertiesLoading, setIsPropertiesLoading] = useState<boolean>(false);
   
   // Wallet state — TODO: fetch from backend
   const [walletBalance, setWalletBalance] = useState<number>(0);
@@ -85,6 +92,50 @@ export default function CommuterDashboard() {
   // Time remaining countdown
   const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
   const [showGraceAlert, setShowGraceAlert] = useState<boolean>(false);
+
+  // Fetch all stations on load
+  useEffect(() => {
+    const fetchStations = async () => {
+      setIsStationsLoading(true);
+      try {
+        const res = await fetch('/api/station');
+        const data = await res.json();
+        if (data.success && data.Stations) {
+          setStations(data.Stations);
+        }
+      } catch (e) {
+        console.error('Failed to fetch stations', e);
+      } finally {
+        setIsStationsLoading(false);
+      }
+    };
+    fetchStations();
+  }, []);
+
+  // Fetch properties when selectedStationId changes
+  useEffect(() => {
+    if (!selectedStationId) {
+      setProperties([]);
+      return;
+    }
+
+    const fetchProperties = async () => {
+      setIsPropertiesLoading(true);
+      try {
+        const params = new URLSearchParams({ stationId: selectedStationId.toString() });
+        const res = await fetch(`/api/station/get-property?${params.toString()}`);
+        const data = await res.json();
+        if (data.success && data.Properties) {
+          setProperties(data.Properties);
+        }
+      } catch (e) {
+        console.error('Failed to fetch properties', e);
+      } finally {
+        setIsPropertiesLoading(false);
+      }
+    };
+    fetchProperties();
+  }, [selectedStationId]);
 
   // Notifications — TODO: fetch from backend
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -176,9 +227,10 @@ export default function CommuterDashboard() {
     return () => controller.abort();
   }, [selectedStationCoords, distanceFilter]);
 
-  const handleHomeStationSelect = (station: string) => {
-    setSelectedStation(station);
-    setSelectedStationCoords(null);
+  const handleHomeStationSelect = (station: Station) => {
+    setSelectedStation(station.stationName);
+    setSelectedStationId(station.stationId);
+    setSelectedStationCoords({ lat: station.latitude, lng: station.longitude });
     setNearbySpots([]);
     setNearbyError(null);
     setSelectedSpot(null);
@@ -186,6 +238,11 @@ export default function CommuterDashboard() {
 
   const handleMapStationSelect = (name: string, lat: number, lng: number) => {
     setSelectedStation(name);
+    // Find stationId by name or coords
+    const station = stations.find(s => s.stationName === name || (s.latitude === lat && s.longitude === lng));
+    if (station) {
+      setSelectedStationId(station.stationId);
+    }
     setSelectedStationCoords({ lat, lng });
     setSelectedSpot(null);
   };
@@ -507,22 +564,27 @@ export default function CommuterDashboard() {
               <div className="bg-white rounded-2xl border border-[#e8eaed] p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-[12px] font-semibold text-[#5f6368] uppercase tracking-wider">Select Station</h3>
-                  <span className="text-[11px] text-[#9ca3af]">{simulatedSpots.filter(s => s.available).length} spots</span>
+                  <span className="text-[11px] text-[#9ca3af]">{stations.length} stations</span>
                 </div>
-                <div className="flex gap-1.5 flex-wrap">
-                  {stationsList.map(station => {
-                    const count = simulatedSpots.filter(s => s.station === station && s.available).length;
-                    return (
-                      <button key={station} onClick={() => handleHomeStationSelect(station)}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold border transition ${
-                          selectedStation === station ? 'bg-[#007AFF] text-white border-[#007AFF]' : 'bg-white text-[#5f6368] border-[#dadce0] hover:border-[#007AFF]'
-                        }`}>
-                        <Train size={12} /> {station.replace(' LRT', '').replace(' MRT', '')}
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${selectedStation === station ? 'bg-white/20 text-white' : 'bg-[#f1f3f4] text-[#5f6368]'}`}>{count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {isStationsLoading ? (
+                  <div className="text-center py-4 text-[13px] text-slate-500">
+                    <Loader2 size={24} className="mx-auto mb-2 animate-spin text-[#007AFF]" />
+                    Loading stations...
+                  </div>
+                ) : (
+                  <div className="flex gap-1.5 flex-wrap">
+                    {stations.map(station => {
+                      return (
+                        <button key={station.stationId} onClick={() => handleHomeStationSelect(station)}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold border transition ${
+                            selectedStation === station.stationName ? 'bg-[#007AFF] text-white border-[#007AFF]' : 'bg-white text-[#5f6368] border-[#dadce0] hover:border-[#007AFF]'
+                          }`}>
+                          <Train size={12} /> {station.stationName.replace(' LRT', '').replace(' MRT', '')}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[#f1f3f4]">
                   <span className="text-[10px] font-semibold text-[#9ca3af]">Max walk</span>
                   <input type="range" min="100" max="500" step="50" value={distanceFilter} onChange={(e) => setDistanceFilter(parseInt(e.target.value))}
@@ -531,41 +593,80 @@ export default function CommuterDashboard() {
                 </div>
               </div>
 
+              {/* Properties List */}
+              {selectedStationId && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[12px] font-semibold text-[#5f6368] uppercase tracking-wider">
+                      {isPropertiesLoading ? 'Loading properties...' : `${properties.length} properties near ${selectedStation.replace(' LRT','').replace(' MRT','')}`}
+                    </h3>
+                  </div>
+                  {isPropertiesLoading ? (
+                    <div className="bg-white rounded-2xl border border-[#e8eaed] p-8 text-center">
+                      <Loader2 size={28} className="mx-auto text-[#007AFF] mb-2 animate-spin" />
+                      <p className="text-[13px] text-[#5f6368]">Finding properties...</p>
+                    </div>
+                  ) : properties.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-[#e8eaed] p-8 text-center">
+                      <Building size={32} className="mx-auto text-[#dadce0] mb-2" />
+                      <p className="text-[13px] text-[#5f6368] font-medium">No properties available</p>
+                      <p className="text-[11px] text-[#9ca3af] mt-1">Try selecting a different station.</p>
+                    </div>
+                  ) : (
+                    properties.map((property) => (
+                      <div key={property.propertyId} className="bg-white rounded-2xl border border-[#e8eaed] p-4 flex items-center gap-4 hover:border-[#d2d5d9] transition-all">
+                        <div className="w-12 h-12 rounded-xl bg-[#eff6ff] flex items-center justify-center shrink-0">
+                          <Building size={20} className="text-[#007AFF]" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-semibold text-[#111] truncate">{property.propertyName}</p>
+                          <p className="text-[11px] text-[#5f6368] truncate">{property.address}</p>
+                          <p className="text-[11px] text-[#5f6368]">{property.distanceToStation}m walk to station</p>
+                        </div>
+                        <ChevronRight size={18} className="text-[#9ca3af]" />
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
               {/* Spot Cards */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-[12px] font-semibold text-[#5f6368] uppercase tracking-wider">
                     {selectedStation
-                      ? `${filteredSpots.length} spots near ${selectedStation.replace(' LRT','').replace(' MRT','')}`
-                      : `All available spots (${simulatedSpots.filter(s => s.available).length})`}
+                      ? `${mapNearbySpots.length} spots near ${selectedStation.replace(' LRT','').replace(' MRT','')}`
+                      : `All available spots`}
                   </h3>
                 </div>
-                {/* Show all available spots when no station is selected */}
-                {(selectedStation ? filteredSpots : simulatedSpots.filter(s => s.available)).length === 0 && (
+                {/* Show nearby spots from API when station selected */}
+                {selectedStation && mapNearbySpots.length === 0 && !isNearbyLoading && !nearbyError && (
                   <div className="bg-white rounded-2xl border border-[#e8eaed] p-8 text-center">
                     <MapPin size={32} className="mx-auto text-[#dadce0] mb-2" />
                     <p className="text-[13px] text-[#5f6368] font-medium">No spots available</p>
                     <p className="text-[11px] text-[#9ca3af] mt-1">Try selecting a different station or adjusting filters.</p>
                   </div>
                 )}
-                {(selectedStation ? filteredSpots : simulatedSpots.filter(s => s.available)).map((spot) => (
-                  <div key={spot.id}
-                    onClick={() => navigate(`/commuter/parking/${spot.id}`, { state: { spot: { id: spot.id, lat: spot.lat, lon: spot.lng, address: spot.name, photoUrl: 'https://images.unsplash.com/photo-1590674899484-d5640d9da574?w=400&h=250&fit=crop', price: spot.pricePerHour }, stationCoords: null, stationName: spot.station } })}
-                    className="bg-white rounded-2xl border p-4 flex items-center gap-4 cursor-pointer transition-all duration-150 border-[#e8eaed] hover:border-[#d2d5d9]">
-                    <div className="w-12 h-12 rounded-xl bg-[#eff6ff] flex items-center justify-center shrink-0">
-                      <Home size={20} className="text-[#007AFF]" />
+                {selectedStation ? (
+                  mapNearbySpots.map((spot) => (
+                    <div key={spot.id}
+                      onClick={() => navigate(`/commuter/parking/${spot.id}`, { state: { spot: { id: spot.id, lat: spot.lat, lon: spot.lng, address: spot.name, photoUrl: 'https://images.unsplash.com/photo-1590674899484-d5640d9da574?w=400&h=250&fit=crop', price: spot.pricePerHour }, stationCoords: selectedStationCoords, stationName: spot.station } })}
+                      className="bg-white rounded-2xl border p-4 flex items-center gap-4 cursor-pointer transition-all duration-150 border-[#e8eaed] hover:border-[#d2d5d9]">
+                      <div className="w-12 h-12 rounded-xl bg-[#eff6ff] flex items-center justify-center shrink-0">
+                        <Home size={20} className="text-[#007AFF]" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-[#111] truncate">{spot.name}</p>
+                        <p className="text-[11px] text-[#5f6368]">{spot.distance}m walk &middot; {spot.type} &middot; {spot.owner}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[15px] font-bold text-[#111]">RM {spot.pricePerHour.toFixed(2)}</p>
+                        <p className="text-[10px] text-[#9ca3af]">/hr</p>
+                      </div>
+                      <ChevronRight size={18} className="text-[#9ca3af]" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-semibold text-[#111] truncate">{spot.name}</p>
-                      <p className="text-[11px] text-[#5f6368]">{spot.distance}m walk &middot; {spot.type} &middot; {spot.station}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-[15px] font-bold text-[#111]">RM {spot.pricePerHour.toFixed(2)}</p>
-                      <p className="text-[10px] text-[#9ca3af]">/hr</p>
-                    </div>
-                    <ChevronRight size={18} className="text-[#9ca3af]" />
-                  </div>
-                ))}
+                  ))
+                ) : null}
               </div>
             </div>
           )}

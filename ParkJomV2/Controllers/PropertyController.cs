@@ -1,10 +1,12 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.DTOs;
+using System.Security.Claims;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 
@@ -27,6 +29,7 @@ namespace ParkJomV2.Controllers
         /// <summary>
         /// Create a new property
         /// </summary>
+        [Authorize]
         [HttpPost("create-property")]
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]

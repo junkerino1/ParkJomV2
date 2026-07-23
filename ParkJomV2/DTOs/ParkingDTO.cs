@@ -80,6 +80,7 @@ public class VerificationDocumentDTO
     public string? ResourceType { get; set; }
     public string? Format { get; set; }
     public string? OriginalFileName { get; set; }
+    public string? SecureUrl { get; set; }
     public DateTime UploadedAt { get; set; }
 }
 

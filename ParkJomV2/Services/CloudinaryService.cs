@@ -21,7 +21,7 @@ public class CloudinaryService
         };
     }
 
-    public async Task<ImageUploadResult> UploadImageAsync(IFormFile file, string folder)
+    public async Task<ImageUploadResult> UploadImageAsync(IFormFile file, string folder, string type = "upload")
     {
         using var stream = file.OpenReadStream();
 
@@ -29,6 +29,7 @@ public class CloudinaryService
         {
             File = new FileDescription(file.FileName, stream),
             Folder = folder,
+            Type = type
         };
 
         return await _cloudinary.UploadAsync(uploadParams);

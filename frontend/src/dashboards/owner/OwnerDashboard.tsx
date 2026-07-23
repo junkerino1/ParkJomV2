@@ -12,7 +12,7 @@ import SettingsPanel from './components/SettingsPanel';
 import SupportTickets from './components/SupportTickets';
 import { ParkingBay, Booking, Notification, WalletTransaction } from './types';
 
-const API_BASE = (window as any).VITE_API_BASE ||
+const API_BASE = import.meta.env.VITE_API_BASE ||
   (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
     ? 'https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.azurewebsites.net/api'
     : '/api');
@@ -180,6 +180,48 @@ export default function OwnerDashboard() {
     setScheduleBlocks([]);
   };
 
+  // Config parking: upload images, schedule, pricing → POST /api/parking/config-parking/{id}
+  const handleConfigParking = async (
+    parkingSpotId: string,
+    images: File[],
+    dayType: string,
+    startTime: string,
+    endTime: string,
+    effectiveFrom: string,
+    effectiveUntil: string,
+    monthlyRate?: number,
+    dailyRate?: number
+  ): Promise<boolean> => {
+    try {
+      const token = user?.token ?? '';
+      if (!token) return false;
+
+      const formData = new FormData();
+      images.forEach((file) => formData.append('parkingImage', file));
+      formData.append('dayType', dayType);
+      formData.append('startTime', startTime);
+      formData.append('endTime', endTime);
+      formData.append('effectiveFrom', effectiveFrom);
+      formData.append('effectiveUntil', effectiveUntil);
+      if (monthlyRate !== undefined) formData.append('monthlyPrice', monthlyRate.toString());
+      if (dailyRate !== undefined) formData.append('dailyRate', dailyRate.toString());
+
+      // Extract numeric ID from "b-{id}" format
+      const numericId = parkingSpotId.replace('b-', '');
+
+      const res = await fetch(`${API_BASE}/parking/config-parking/${numericId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await res.json();
+      return data.success === true;
+    } catch {
+      return false;
+    }
+  };
+
   // Register New Parking Spot Near Transit Stations
   // Property creation is now handled by POST /api/property/create-property in PropertyOnboarding
   const handleOnboardProperty = (property: {
@@ -254,6 +296,7 @@ export default function OwnerDashboard() {
               onAddBlock={handleAddScheduleSlot}
               onRemoveBlock={handleRemoveScheduleSlot}
               onBlockAll={handleBlockAllSchedule}
+              onConfigParking={handleConfigParking}
             />
           )}
 
