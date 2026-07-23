@@ -19,7 +19,8 @@ import {
   Settings,
   RefreshCw,
   Activity,
-  AlertTriangle
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { Booking } from '../types';
 
@@ -30,6 +31,7 @@ interface DashboardHomeProps {
   onWithdraw: (amount: number) => void;
   bookings: Booking[];
   bays: ParkingBay[];
+  baysLoading?: boolean;
   activeBank: { name: string; accNo: string; holder: string };
   onResolveDispute: (id: string) => void;
 }
@@ -39,6 +41,7 @@ export default function DashboardHome({
   onWithdraw, 
   bookings, 
   bays,
+  baysLoading = false,
   activeBank,
   onResolveDispute 
 }: DashboardHomeProps) {
@@ -325,23 +328,37 @@ export default function DashboardHome({
           <h2 className="font-bold text-sm md:text-base text-slate-900">My Parking Bays</h2>
           <span className="text-[10px] font-medium text-slate-400 ml-auto">{bays.length} bay{bays.length !== 1 ? 's' : ''}</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {bays.map((bay) => (
-            <div key={bay.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-4 shadow-sm">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                <Building className="w-5 h-5 text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-bold text-slate-900 truncate">{bay.propertyName}</p>
-                <p className="text-[11px] text-slate-500">{bay.bayNumber} &middot; {bay.level} &middot; {bay.stationName}</p>
-                <div className="flex items-center gap-3 mt-1">
-                  <span className="text-[12px] font-bold text-emerald-600">RM {bay.hourlyRate.toFixed(2)}/hr</span>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${bay.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{bay.status}</span>
+
+        {baysLoading ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+            <Loader2 size={28} className="mx-auto text-blue-600 mb-2 animate-spin" />
+            <p className="text-[13px] text-slate-500">Loading your parking bays...</p>
+          </div>
+        ) : bays.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+            <Building className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+            <p className="text-[13px] font-medium text-slate-600">No parking bays yet</p>
+            <p className="text-[11px] text-slate-400 mt-1">Go to Register to onboard your first property.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {bays.map((bay) => (
+              <div key={bay.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-4 shadow-sm">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                  <Building className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-bold text-slate-900 truncate">{bay.propertyName}</p>
+                  <p className="text-[11px] text-slate-500">{bay.bayNumber} &middot; {bay.level} &middot; {bay.stationName}</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="text-[12px] font-bold text-emerald-600">RM {bay.hourlyRate.toFixed(2)}/hr</span>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${bay.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{bay.status}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* IoT Gateways */}

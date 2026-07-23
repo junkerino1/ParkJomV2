@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'motion/react';
@@ -11,8 +12,16 @@ const API_BASE = import.meta.env.VITE_API_BASE ||
 
 export default function GoogleLoginButton() {
   const { setUser } = useAuth();
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+
+  // For new users: pre-select role from URL (e.g. /login?role=Owner)
+  // For existing users: role comes from DB, this default is ignored
+  const roleParam = searchParams.get('role');
+  const defaultRole = roleParam === 'Owner' ? 2 : 3; // 2=Owner, 3=Commuter
+
+  const [pendingUserId, setPendingUserId] = useState<number | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [selectedRole, setSelectedRole] = useState<number>(defaultRole);
   const [isSubmittingPhone, setIsSubmittingPhone] = useState(false);
   const [phoneError, setPhoneError] = useState('');
 
@@ -40,8 +49,8 @@ export default function GoogleLoginButton() {
       const data = await res.json();
 
       // Step 1a: Profile incomplete → show phone verification
-      if (!data.isProfileComplete && data.user?.email) {
-        setPendingEmail(data.user.email);
+      if (!data.isProfileComplete && data.user?.userId) {
+        setPendingUserId(data.user.userId);
         return;
       }
 
@@ -73,8 +82,9 @@ export default function GoogleLoginButton() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: pendingEmail,
+          userId: pendingUserId,
           phoneNumber: trimmed,
+          userType: selectedRole, // 2=Owner, 3=Commuter
         }),
       });
 
@@ -95,7 +105,8 @@ export default function GoogleLoginButton() {
 
   // ---- Finish login: store user and redirect ----
   const finishLogin = (data: any) => {
-    const userTypeMap: Record<number, string> = { 0: 'Commuter', 1: 'Owner', 2: 'Admin' };
+    // Backend enum: Admin=1, PropertyOwner=2, Renter=3
+    const userTypeMap: Record<number, string> = { 1: 'Admin', 2: 'Owner', 3: 'Commuter' };
     const role = userTypeMap[data.user?.userType] ?? 'Commuter';
 
     setUser({
@@ -119,14 +130,47 @@ export default function GoogleLoginButton() {
   };
 
   // ---- Show phone verification form when profile is incomplete ----
-  if (pendingEmail) {
+  if (pendingUserId) {
     return (
       <div className="w-full space-y-4">
         <div className="text-left">
           <p className="text-[13px] font-medium text-[#1d1d1f]">Welcome! One more step.</p>
           <p className="text-[12px] text-[#6e6e73] mt-1">
-            Please verify your phone number to complete your profile.
+            Verify your phone number and choose your role to complete your profile.
           </p>
+        </div>
+
+        {/* Role selector */}
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-semibold text-[#6e6e73]">I am a...</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedRole(3)}
+              className={`px-4 py-3 rounded-xl border text-[13px] font-semibold text-left transition-all
+                ${selectedRole === 3
+                  ? 'bg-[#007AFF] text-white border-[#007AFF] shadow-sm'
+                  : 'bg-white text-[#1d1d1f] border-black/[0.08] hover:border-[#007AFF]/40'
+                }`}
+            >
+              <span className="block text-[15px] mb-0.5">🚗</span>
+              Commuter
+              <span className="block text-[10px] font-normal opacity-70 mt-0.5">I want to find & book parking</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedRole(2)}
+              className={`px-4 py-3 rounded-xl border text-[13px] font-semibold text-left transition-all
+                ${selectedRole === 2
+                  ? 'bg-[#007AFF] text-white border-[#007AFF] shadow-sm'
+                  : 'bg-white text-[#1d1d1f] border-black/[0.08] hover:border-[#007AFF]/40'
+                }`}
+            >
+              <span className="block text-[15px] mb-0.5">🏠</span>
+              Property Owner
+              <span className="block text-[10px] font-normal opacity-70 mt-0.5">I want to list my parking space</span>
+            </button>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -156,7 +200,7 @@ export default function GoogleLoginButton() {
         </motion.button>
 
         <button
-          onClick={() => setPendingEmail(null)}
+          onClick={() => setPendingUserId(null)}
           className="text-[12px] text-[#6e6e73] hover:text-[#1d1d1f] transition-colors"
         >
           ← Use a different account
