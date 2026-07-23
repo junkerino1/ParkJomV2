@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, CalendarDays, PlusSquare, ClipboardList, Sliders } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import BottomNav from '../../components/ui/BottomNav';
@@ -11,7 +12,21 @@ import SettingsPanel from './components/SettingsPanel';
 import SupportTickets from './components/SupportTickets';
 import { ParkingBay, Booking, Notification, WalletTransaction } from './types';
 
+const API_BASE = (window as any).VITE_API_BASE ||
+  (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? 'https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.azurewebsites.net/api'
+    : '/api');
+
+function loadNotifications(): Notification[] {
+  try { const s = localStorage.getItem('parkjom_owner_notifs'); return s ? JSON.parse(s) : []; }
+  catch { return []; }
+}
+function saveNotifications(notifs: Notification[]) {
+  localStorage.setItem('parkjom_owner_notifs', JSON.stringify(notifs));
+}
+
 export default function OwnerDashboard() {
+  const { user } = useAuth();
   // Navigation View Router
   const [activeView, setActiveView] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -19,24 +34,56 @@ export default function OwnerDashboard() {
   // 1. Wallet Balance (RM) — TODO: fetch from backend
   const [walletBalance, setWalletBalance] = useState(0);
 
-  // 2. Active Registered Parking Bays — TODO: fetch from backend
+  // 2. Active Registered Parking Bays — fetched from backend
   const [bays, setBays] = useState<ParkingBay[]>([]);
+  const [baysLoading, setBaysLoading] = useState(true);
 
   // 3. Recent Bookings History — TODO: fetch from backend
   const [bookings, setBookings] = useState<Booking[]>([]);
 
-  // 4. Notifications — TODO: fetch from backend
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  // 4. Notifications — persisted to localStorage
+  const [notifications, setNotifications] = useState<Notification[]>(loadNotifications);
 
   // 5. Weekly calendar schedule blocks — TODO: fetch from backend
   const [scheduleBlocks, setScheduleBlocks] = useState<{ id: string; dayOfWeek: number; startTime: string; endTime: string; rate: number }[]>([]);
 
   // 6. Bank Beneficiary — TODO: fetch from backend
-  const [activeBank, setActiveBank] = useState({
-    name: '-',
-    accNo: '-',
-    holder: '-'
-  });
+  const [activeBank, setActiveBank] = useState({ name: '-', accNo: '-', holder: '-' });
+
+  // ---- Fetch parking spots from backend ----
+  useEffect(() => {
+    async function fetchMyParking() {
+      setBaysLoading(true);
+      try {
+        const token = user?.token ?? '';
+        if (!token) { setBaysLoading(false); return; }
+
+        const res = await fetch(`${API_BASE}/parking/my-parking`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) { setBaysLoading(false); return; }
+
+        const data = await res.json();
+        if (data.success && data.data) {
+          const mapped: ParkingBay[] = data.data.map((ps: any) => ({
+            id: `b-${ps.parkingSpotId}`,
+            propertyName: `Property #${ps.propertyId}`,
+            stationName: '-',
+            bayNumber: ps.parkingLabel ?? `Spot #${ps.parkingSpotId}`,
+            level: '-',
+            status: ps.isPublished ? 'Active' : 'Pending Verification',
+            hourlyRate: ps.dailyRate ?? 0,
+          }));
+          setBays(mapped);
+        }
+      } catch { /* API not available */ }
+      finally { setBaysLoading(false); }
+    }
+    fetchMyParking();
+  }, [user?.token]);
+
+  // Sync notifications to localStorage
+  useEffect(() => { saveNotifications(notifications); }, [notifications]);
 
   // --- INTERACTION ACTION HANDLERS ---
 
@@ -186,6 +233,7 @@ export default function OwnerDashboard() {
               onWithdraw={handleWithdrawFunds}
               bookings={bookings}
               bays={bays}
+              baysLoading={baysLoading}
               activeBank={activeBank}
               onResolveDispute={handleResolveDispute}
             />
