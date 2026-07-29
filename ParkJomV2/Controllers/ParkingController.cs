@@ -800,7 +800,7 @@ namespace ParkJomV2.Controllers
                     .OrderByDescending(ps => ps.CreatedAt)
                     .ToListAsync();
 
-                // return Ok(parkingSpots);
+                 //return Ok(parkingSpots);
 
                 if (!parkingSpots.Any())
                 {
@@ -817,6 +817,8 @@ namespace ParkJomV2.Controllers
                 var result = parkingSpots
                     .Select(ps => MapToDisplayParkingSpotDTO(ps))
                     .ToList();
+
+                //return Ok(result);
 
                 _logger.LogInformation("Retrieved {Count} parking spots for owner {UserId}", result.Count, userId);
 
