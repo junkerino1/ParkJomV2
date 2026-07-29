@@ -257,7 +257,6 @@ namespace ParkJomV2.Controllers
                 NearestStationId = property.NearestStationId,
                 DistanceToStation = property.DistanceToStation,
                 Description = property.Description,
-                VerificationStatus = property.VerificationStatus,
                 CreatedAt = property.CreatedAt,
                 UpdatedAt = property.UpdatedAt
             };

@@ -61,7 +61,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("AccessLogs");
+                    b.ToTable("AccessLogs", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Availability", b =>
@@ -94,7 +94,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("ParkingSpotId");
 
-                    b.ToTable("Availabilities");
+                    b.ToTable("Availabilities", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Booking", b =>
@@ -156,7 +156,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("VehicleId");
 
-                    b.ToTable("Bookings");
+                    b.ToTable("Bookings", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Favorite", b =>
@@ -185,7 +185,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Favorites");
+                    b.ToTable("Favorites", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.IoTDevice", b =>
@@ -230,7 +230,7 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("ParkingSpotId")
                         .IsUnique();
 
-                    b.ToTable("IoTDevices");
+                    b.ToTable("IoTDevices", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.IoTStatusLog", b =>
@@ -265,7 +265,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("IoTDeviceId");
 
-                    b.ToTable("IoTStatusLogs");
+                    b.ToTable("IoTStatusLogs", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.MediaFile", b =>
@@ -317,7 +317,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("UploadedBy");
 
-                    b.ToTable("MediaFiles");
+                    b.ToTable("MediaFiles", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.ParkingSpot", b =>
@@ -363,7 +363,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("PropertyId");
 
-                    b.ToTable("ParkingSpots");
+                    b.ToTable("ParkingSpots", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.ParkingSpotImage", b =>
@@ -398,7 +398,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("ParkingSpotId");
 
-                    b.ToTable("ParkingSpotImages");
+                    b.ToTable("ParkingSpotImages", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.ParkingVerificationRequest", b =>
@@ -440,7 +440,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("SubmittedByUserId");
 
-                    b.ToTable("ParkingVerificationRequests");
+                    b.ToTable("ParkingVerificationRequests", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Property", b =>
@@ -491,7 +491,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("NearestStationId");
 
-                    b.ToTable("Properties");
+                    b.ToTable("Properties", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Review", b =>
@@ -539,7 +539,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("ReviewerId");
 
-                    b.ToTable("Reviews");
+                    b.ToTable("Reviews", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Station", b =>
@@ -563,7 +563,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasKey("StationId");
 
-                    b.ToTable("Stations");
+                    b.ToTable("Stations", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Transaction", b =>
@@ -612,7 +612,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("WalletId");
 
-                    b.ToTable("Transactions");
+                    b.ToTable("Transactions", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.User", b =>
@@ -676,7 +676,7 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Vehicle", b =>
@@ -717,7 +717,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Vehicles");
+                    b.ToTable("Vehicles", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.VerificationDocument", b =>
@@ -753,7 +753,7 @@ namespace ParkJomV2.Migrations
 
                     b.HasIndex("VerificationRequestId");
 
-                    b.ToTable("VerificationDocuments");
+                    b.ToTable("VerificationDocuments", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Wallet", b =>
@@ -788,7 +788,7 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("Wallets");
+                    b.ToTable("Wallets", (string)null);
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.AccessLog", b =>
