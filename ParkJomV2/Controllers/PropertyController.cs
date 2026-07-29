@@ -325,9 +325,4 @@ namespace ParkJomV2.Controllers
             return Ok(MapToDTO(property));
         }
     }
-}
-
-public class RejectRequest
-{
-    public string? Reason { get; set; }
-}
+}      

@@ -91,7 +91,7 @@ namespace ParkJomV2.Controllers
         {
             var property = await _context.Properties.FindAsync(propertyId);
 
-            return Ok(property);
+            //return Ok(property);
 
             if (property == null)
             {
