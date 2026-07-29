@@ -43,6 +43,18 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            // Verify the station exists
+            var station = await _context.Stations.FindAsync(request.NearestStationId);
+            if (station == null)
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = $"Station with ID {request.NearestStationId} not found."
+                });
+            }
+
             var property = new Property
             {
                 PropertyName = request.PropertyName,
@@ -245,9 +257,72 @@ namespace ParkJomV2.Controllers
                 NearestStationId = property.NearestStationId,
                 DistanceToStation = property.DistanceToStation,
                 Description = property.Description,
+                VerificationStatus = property.VerificationStatus,
                 CreatedAt = property.CreatedAt,
                 UpdatedAt = property.UpdatedAt
             };
+        }
+
+        // ---- Admin endpoints ----
+
+        /// <summary>
+        /// GET /api/property/pending — list all properties awaiting admin approval
+        /// </summary>
+        [HttpGet("pending")]
+        public async Task<ActionResult<IEnumerable<PropertyDTO>>> GetPendingProperties()
+        {
+            var pending = await _context.Properties
+                .Where(p => p.VerificationStatus == VerificationStatus.Pending)
+                .OrderByDescending(p => p.CreatedAt)
+                .ToListAsync();
+
+            return Ok(pending.Select(MapToDTO));
+        }
+
+        /// <summary>
+        /// PUT /api/property/{id}/approve — admin approves a pending property
+        /// </summary>
+        [HttpPut("{id}/approve")]
+        public async Task<IActionResult> ApproveProperty(int id)
+        {
+            var property = await _context.Properties.FindAsync(id);
+            if (property == null)
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Property not found"
+                });
+
+            property.VerificationStatus = VerificationStatus.Approved;
+            property.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Property {PropertyId} approved", id);
+            return Ok(MapToDTO(property));
+        }
+
+        /// <summary>
+        /// PUT /api/property/{id}/reject — admin rejects a pending property
+        /// </summary>
+        [HttpPut("{id}/reject")]
+        public async Task<IActionResult> RejectProperty(int id, [FromBody] RejectRequest body)
+        {
+            var property = await _context.Properties.FindAsync(id);
+            if (property == null)
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Property not found"
+                });
+
+            property.VerificationStatus = VerificationStatus.Rejected;
+            property.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Property {PropertyId} rejected. Reason: {Reason}", id, body?.Reason);
+            return Ok(MapToDTO(property));
         }
     }
 }      

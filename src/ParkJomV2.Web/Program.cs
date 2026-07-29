@@ -26,12 +26,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
-// ---------- CORS (allow Vite dev server to access) ----------
+// ---------- CORS (allow Vite dev server and Firebase Hosting) ----------
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCors", policy =>
     {
         policy.WithOrigins("http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+
+    options.AddPolicy("FirebaseCors", policy =>
+    {
+        policy.WithOrigins("https://united-perigee-400000.web.app")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -45,12 +53,19 @@ var client = new Client(apiKey: apiKey);
 // Register the AI client as a singleton service so it's accessible throughout MVC controllers and Minimal APIs
 builder.Services.AddSingleton(client);
 
+// ---------- Persistent user store (file-based JSON) ----------
+builder.Services.AddSingleton<ParkJomV2.Web.Services.UserStoreService>();
+
 var app = builder.Build();
 
 // ---------- Middleware Pipeline ----------
 if (app.Environment.IsDevelopment())
 {
     app.UseCors("DevCors");
+}
+else
+{
+    app.UseCors("FirebaseCors");
 }
 
 app.UseAuthentication();

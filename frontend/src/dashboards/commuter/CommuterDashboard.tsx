@@ -59,127 +59,39 @@ export default function CommuterDashboard() {
   const [isNearbyLoading, setIsNearbyLoading] = useState<boolean>(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   
-  // Wallet state
-  const [walletBalance, setWalletBalance] = useState<number>(45.50);
+  // Wallet state — TODO: fetch from backend
+  const [walletBalance, setWalletBalance] = useState<number>(0);
   const [showTopUpModal, setShowTopUpModal] = useState<boolean>(false);
-  const [topUpAmount, setTopUpAmount] = useState<string>('20');
-  
-  // Vehicles state
-  const [vehicles, setVehicles] = useState<Vehicle[]>([
-    { plate: 'VGV 8899', model: 'Myvi', color: 'Granite Grey', active: true },
-    { plate: 'WND 2841', model: 'Proton X50', color: 'Snow White', active: false },
-  ]);
+  const [topUpAmount, setTopUpAmount] = useState<string>('');
+
+  // Vehicles state — TODO: fetch from backend
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [showAddVehicle, setShowAddVehicle] = useState<boolean>(false);
   const [newPlate, setNewPlate] = useState<string>('');
   const [newModel, setNewModel] = useState<string>('');
   const [newColor, setNewColor] = useState<string>('');
 
-  // Active Reservation / Session states
-  const [activeBooking, setActiveBooking] = useState<Booking | null>({
-    id: 'BK-9921',
-    spot: {
-      id: 'SJ-02',
-      station: 'Subang Jaya LRT',
-      name: 'Casa Subang Condominium - Bay 45',
-      pricePerHour: 3.50,
-      distance: 120,
-      lat: 42,
-      lng: 58,
-      available: true,
-      type: 'Condo Bay',
-      owner: 'Lim K. H.'
-    },
-    startTime: new Date(Date.now() - 30 * 60 * 1000), // started 30 mins ago
-    endTime: new Date(Date.now() + 90 * 60 * 1000), // ends in 1.5 hours
-    vehiclePlate: 'VGV 8899',
-    status: 'Active',
-    totalPaid: 7.00
-  });
+  // Active Reservation / Session — TODO: fetch from backend
+  const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
 
   // IoT Access Control & Bollard states
   const [isBollardUnlocked, setIsBollardUnlocked] = useState<boolean>(false);
   const [bollardAnimationState, setBollardAnimationState] = useState<'raised' | 'lowering' | 'lowered' | 'raising'>('raised');
-  const [gpsVerified, setGpsVerified] = useState<'checking' | 'verified' | 'unverified' | 'idle'>('verified');
+  const [gpsVerified, setGpsVerified] = useState<'checking' | 'verified' | 'unverified' | 'idle'>('idle');
   const [showQRScanner, setShowQRScanner] = useState<boolean>(false);
   const [qrCodeScanned, setQrCodeScanned] = useState<boolean>(false);
   const [scannerCameraActive, setScannerCameraActive] = useState<boolean>(false);
 
-  // Time remaining countdown logic
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(5400); // 1.5 hours in seconds
+  // Time remaining countdown
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
   const [showGraceAlert, setShowGraceAlert] = useState<boolean>(false);
 
-  // Notifications state
-  const [notifications, setNotifications] = useState<AppNotification[]>([
-    {
-      id: 'n1',
-      title: 'Active Session Reminder',
-      message: 'Your booking at Casa Subang Condominium ends in 1 hour 30 mins.',
-      time: 'Just now',
-      read: false,
-      type: 'booking'
-    },
-    {
-      id: 'n2',
-      title: 'Top-up Successful',
-      message: 'RM 30.00 added to your e-wallet. Current balance is RM 45.50.',
-      time: '2 hours ago',
-      read: true,
-      type: 'wallet'
-    },
-    {
-      id: 'n3',
-      title: 'Unlock Bollard Enabled',
-      message: 'You have entered the GPS zone of Casa Subang. Access control is active.',
-      time: '30 mins ago',
-      read: false,
-      type: 'alert'
-    }
-  ]);
+  // Notifications — TODO: fetch from backend
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState<boolean>(false);
 
-  // Completed booking history
-  const [history, setHistory] = useState<Booking[]>([
-    {
-      id: 'BK-9801',
-      spot: {
-        id: 'WM-05',
-        station: 'Wangsa Maju LRT',
-        name: 'PV9 Residences - Parking L6-102',
-        pricePerHour: 3.00,
-        distance: 80,
-        lat: 65,
-        lng: 32,
-        available: false,
-        type: 'Condo Bay',
-        owner: 'Ooi Jun Kang'
-      },
-      startTime: new Date(Date.now() - 28 * 60 * 60 * 1000),
-      endTime: new Date(Date.now() - 25 * 60 * 60 * 1000),
-      vehiclePlate: 'VGV 8899',
-      status: 'Completed',
-      totalPaid: 9.00
-    },
-    {
-      id: 'BK-9750',
-      spot: {
-        id: 'KJ-11',
-        station: 'Kelana Jaya LRT',
-        name: 'Kelana Puteri Condo - Driveway A',
-        pricePerHour: 4.00,
-        distance: 240,
-        lat: 25,
-        lng: 78,
-        available: false,
-        type: 'Landed Driveway',
-        owner: 'Siti Aminah'
-      },
-      startTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
-      endTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000),
-      vehiclePlate: 'WND 2841',
-      status: 'Completed',
-      totalPaid: 16.00
-    }
-  ]);
+  // Booking history — TODO: fetch from backend
+  const [history, setHistory] = useState<Booking[]>([]);
 
   // Video scanner setup
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -542,7 +454,7 @@ export default function CommuterDashboard() {
                 <User size={17} className="text-[#007AFF]" />
               </div>
               <div className="truncate">
-                <p className="text-[13px] font-semibold text-[#111]">{user?.name ?? 'Commuter'}</p>
+                <p className="text-[13px] font-semibold text-[#111]">{user?.firstName ?? 'Commuter'}</p>
                 <p className="text-[11px] text-[#5f6368]">{vehicles.find(v => v.active)?.plate || 'VGV 8899'}</p>
               </div>
             </div>

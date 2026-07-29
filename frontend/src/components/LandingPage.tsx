@@ -159,8 +159,8 @@ function HeroSection() {
           transition={{ delay: 0.45, duration: 0.5 }}
           className="flex flex-col sm:flex-row gap-3"
         >
-          <PrimaryButton href="/login?redirect=/commuter">Find Parking <MapPin size={17} /></PrimaryButton>
-          <HeroSecondaryButton href="/login?redirect=/owner">List My Space <Home size={17} /></HeroSecondaryButton>
+          <PrimaryButton href="/login?role=Commuter">Find Parking <MapPin size={17} /></PrimaryButton>
+          <HeroSecondaryButton href="/login?role=Owner">List My Space <Home size={17} /></HeroSecondaryButton>
         </motion.div>
 
         {/* Trust indicators */}

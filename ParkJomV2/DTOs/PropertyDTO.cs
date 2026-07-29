@@ -71,6 +71,7 @@ public class PropertyDTO
     public int NearestStationId { get; set; }
     public decimal DistanceToStation { get; set; }
     public string? Description { get; set; }
+    public VerificationStatus VerificationStatus { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

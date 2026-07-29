@@ -169,6 +169,8 @@ public class DisplayParkingSpotDTO
     public int OwnerId { get; set; }
     public string? ParkingLabel { get; set; }
     public AvailabilityStatus AvailabilityStatus { get; set; }
+    
+    public VerificationStatus VerificationStatus { get; set; }
     public decimal? MonthlyRate { get; set; }
     public decimal? DailyRate { get; set; }
     public bool IsPublished { get; set; }

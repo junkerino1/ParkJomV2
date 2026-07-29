@@ -2,12 +2,16 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 
 // ---- Types ----
 interface AuthUser {
-  userId: string;
+  userId: number;
   email: string;
-  name: string;
-  picture: string;
-  role: string;
-  token: string; // Backend JWT
+  firstName: string;
+  lastName: string;
+  picture: string;       // profilePictureURL from backend
+  phoneNumber: string;
+  userType: number;       // enum: Renter=0, Owner=1, Admin=2
+  role: string;           // derived: 'Commuter' | 'Owner' | 'Admin'
+  token: string;          // backend JWT (jwtToken)
+  isProfileComplete: boolean;
 }
 
 interface AuthContextValue {

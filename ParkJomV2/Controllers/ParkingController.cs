@@ -794,8 +794,9 @@ namespace ParkJomV2.Controllers
                     });
                 }
 
-                var parkingSpots = await _context.ParkingSpots  
+                var parkingSpots = await _context.ParkingSpots
                     .Where(ps => ps.OwnerId == userId)
+                    .Include(ps => ps.VerificationRequests)
                     .OrderByDescending(ps => ps.CreatedAt)
                     .ToListAsync();
 
@@ -848,6 +849,7 @@ namespace ParkJomV2.Controllers
                 OwnerId = parkingSpot.OwnerId,
                 ParkingLabel = parkingSpot.ParkingLabel,
                 AvailabilityStatus = parkingSpot.AvailabilityStatus,
+                VerificationStatus = parkingSpot.VerificationRequests.Single(v => v.IsCurrent).VerificationStatus,
                 MonthlyRate = parkingSpot.MonthlyRate,
                 DailyRate = parkingSpot.DailyRate,
                 IsPublished = parkingSpot.IsPublished,
