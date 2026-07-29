@@ -5,6 +5,7 @@ using ParkJomV2.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,6 +37,37 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwt["SecretKey"]!))
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = context =>
+            {
+                context.HandleResponse();
+
+                var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+
+                var (statusCode, message) = context.AuthenticateFailure switch
+                {
+                    SecurityTokenExpiredException => (StatusCodes.Status401Unauthorized, "Your session has expired. Please log in again."),
+                    SecurityTokenException => (StatusCodes.Status401Unauthorized, "Invalid token. Please provide a valid authentication token."),
+                    _ when string.IsNullOrEmpty(authHeader) => (StatusCodes.Status401Unauthorized, "Authentication required. Please provide a valid authentication token."),
+                    _ when !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) => (StatusCodes.Status401Unauthorized, "Invalid authorization header format."),
+                    _ => (StatusCodes.Status401Unauthorized, "Authentication failed. The provided token could not be validated.")
+                };
+
+                context.Response.StatusCode = statusCode;
+                context.Response.ContentType = "application/json";
+
+                var response = JsonSerializer.Serialize(new
+                {
+                    Code = statusCode,
+                    Success = false,
+                    Message = message
+                });
+
+                return context.Response.WriteAsync(response);
+            }
         };
     });
 
