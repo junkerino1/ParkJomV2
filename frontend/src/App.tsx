@@ -10,7 +10,7 @@ import CommuterDashboard from './dashboards/commuter/CommuterDashboard';
 import ParkingDetail from './dashboards/commuter/components/ParkingDetail';
 
 export default function App() {
-  const { isLoggedIn, loading, setUser } = useAuth();
+  const { isLoggedIn, loading, user } = useAuth();
 
   if (loading) {
     return <SplashScreen />;
@@ -28,18 +28,35 @@ export default function App() {
     );
   }
 
+  const rolePath =
+    user?.role === 'Admin' ? '/admin' : user?.role === 'Owner' ? '/owner' : '/commuter';
+
   return (
     <div className="page-shell">
       <Routes>
         <Route path="/login" element={<LoginRedirect />} />
-        <Route path="/" element={<Navigate to="/commuter" replace />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/owner" element={<OwnerDashboard />} />
-        <Route path="/commuter" element={<CommuterDashboard />} />
-        <Route path="/commuter/parking/:id" element={<ParkingDetail />} />
+        {/* Redirect / to the user's actual role */}
+        <Route path="/" element={<Navigate to={rolePath} replace />} />
+        {/* Role-guarded routes */}
+        <Route path="/admin" element={<RequireRole role="Admin"><AdminDashboard /></RequireRole>} />
+        <Route path="/owner" element={<RequireRole role="Owner"><OwnerDashboard /></RequireRole>} />
+        <Route path="/commuter" element={<RequireRole role="Commuter"><CommuterDashboard /></RequireRole>} />
+        <Route path="/commuter/parking/:id" element={<RequireRole role="Commuter"><ParkingDetail /></RequireRole>} />
+        <Route path="*" element={<Navigate to={rolePath} replace />} />
       </Routes>
     </div>
   );
+}
+
+/** Blocks access if the logged-in user doesn't match the required role. */
+function RequireRole({ role, children }: { role: string; children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user || user.role !== role) {
+    const redirectTo =
+      user?.role === 'Admin' ? '/admin' : user?.role === 'Owner' ? '/owner' : '/commuter';
+    return <Navigate to={redirectTo} replace />;
+  }
+  return <>{children}</>;
 }
 
 function LoginPage() {
@@ -73,12 +90,16 @@ function LoginPage() {
                 whileTap={{ scale: 0.96 }}
                 onClick={() =>
                   setUser({
-                    userId: 'demo-' + role.toLowerCase(),
+                    userId: 0,
                     email: `${role.toLowerCase()}@demo.parkjom`,
-                    name: `Demo ${role}`,
+                    firstName: `Demo`,
+                    lastName: role,
                     picture: '',
+                    phoneNumber: '',
+                    userType: role === 'Admin' ? 1 : role === 'Owner' ? 2 : 3,
                     role,
                     token: 'demo-token',
+                    isProfileComplete: true,
                   })
                 }
                 className="flex-1 py-2.5 bg-[#f5f5f7] hover:bg-[#ebebed] text-xs font-semibold text-[#1d1d1f] rounded-xl border border-black/[0.06] transition-colors"
@@ -99,14 +120,10 @@ function LoginPage() {
 
 function LoginRedirect() {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
-  const redirectParam = searchParams.get('redirect');
 
-  if (redirectParam) {
-    return <Navigate to={redirectParam} replace />;
-  }
-
+  // Role is ALWAYS from the database — URL params cannot override it
   const rolePath =
     user?.role === 'Admin' ? '/admin' : user?.role === 'Owner' ? '/owner' : '/commuter';
+
   return <Navigate to={rolePath} replace />;
 }

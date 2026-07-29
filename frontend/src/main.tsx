@@ -7,7 +7,7 @@ import App from './App';
 import './index.css';
 
 // Google OAuth Client ID
-const GOOGLE_CLIENT_ID = '681911813064-uk2mmra0532rp7gcmq3frfj5h37siq5d.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '917128720686-vrm50eevjakijmkftq8dj4qj7itl8d5m.apps.googleusercontent.com';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

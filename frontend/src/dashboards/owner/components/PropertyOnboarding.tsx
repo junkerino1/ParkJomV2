@@ -1,6 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UploadCloud, CheckCircle, FileText, Landmark, ShieldCheck, HelpCircle, FileCheck, Map, Train, Loader2, Search } from 'lucide-react';
+import { UploadCloud, CheckCircle, FileText, Landmark, ShieldCheck, HelpCircle, FileCheck, Map, Train, Loader2, Search, AlertCircle } from 'lucide-react';
+import { useAuth } from '../../../contexts/AuthContext';
 import OwnerRegistrationMap from './OwnerRegistrationMap';
+
+// Backend API URL — matches the pattern used in GoogleLoginButton
+const API_BASE = (window as any).VITE_API_BASE ||
+  (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? 'https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.azurewebsites.net/api'
+    : '/api');
+
+interface StationLookup {
+  stationId: number;
+  stationName: string;
+  latitude: number;
+  longitude: number;
+}
 
 interface PropertyOnboardingProps {
   onOnboardProperty: (property: {
@@ -15,14 +29,21 @@ interface PropertyOnboardingProps {
 }
 
 export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboardingProps) {
+  const { user } = useAuth();
   // Form states
   const [propName, setPropName] = useState('');
+  const [propertyType, setPropertyType] = useState<number>(1); // 1=Condominium, 2=Apartment
+  const [address, setAddress] = useState('');
+  const [description, setDescription] = useState('');
   const [stationName, setStationName] = useState('');
+  const [nearestStationId, setNearestStationId] = useState<number | null>(null);
+  const [distanceToStation, setDistanceToStation] = useState<number>(0);
   const [bayNumber, setBayNumber] = useState('');
   const [level, setLevel] = useState('');
 
   // Auto-detect station state
   const [allStops, setAllStops] = useState<{ name: string; lat: number; lon: number }[]>([]);
+  const [stations, setStations] = useState<StationLookup[]>([]);
   const [isSearchingStation, setIsSearchingStation] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
@@ -31,15 +52,20 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
   const [mapLon, setMapLon] = useState<number | undefined>();
   const [showMap, setShowMap] = useState(false);
 
+  // API submit state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   // Upload States
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; size: string } | null>(null);
+  const [uploadedFileObject, setUploadedFileObject] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ---- Fetch rail stop data on mount for nearest-station lookup ----
+  // ---- Fetch rail stop data + backend stations on mount ----
   useEffect(() => {
     async function loadStops() {
       try {
@@ -55,7 +81,26 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
         console.error('Failed to load rail stops:', err);
       }
     }
+    async function loadStations() {
+      try {
+        const res = await fetch(`${API_BASE}/property/stations`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setStations(
+            data.map((s: any) => ({
+              stationId: s.stationId,
+              stationName: s.stationName,
+              latitude: s.latitude,
+              longitude: s.longitude,
+            }))
+          );
+        }
+      } catch (err) {
+        console.error('Failed to load stations from API:', err);
+      }
+    }
     loadStops();
+    loadStations();
   }, []);
 
   // ---- Haversine (straight-line meters) ----
@@ -119,6 +164,27 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
       }
 
       setStationName(closest.name);
+      setDistanceToStation(Math.round(minDist));
+
+      // Look up station ID from the backend stations list
+      const matched = stations.find(
+        (s) => s.stationName.toLowerCase() === closest.name.toLowerCase()
+      );
+      if (matched) {
+        setNearestStationId(matched.stationId);
+      } else {
+        // Fallback: try a fuzzy match
+        const fuzzyMatch = stations.find(
+          (s) =>
+            closest.name.toLowerCase().includes(s.stationName.toLowerCase()) ||
+            s.stationName.toLowerCase().includes(closest.name.toLowerCase())
+        );
+        if (fuzzyMatch) {
+          setNearestStationId(fuzzyMatch.stationId);
+        } else {
+          console.warn('No matching station ID found for:', closest.name);
+        }
+      }
     } catch (err) {
       setSearchError('Network error. Please check your connection and try again.');
     } finally {
@@ -136,10 +202,11 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
     setIsDragOver(false);
   };
 
-  const simulateUpload = (name: string, sizeBytes: number) => {
+  const simulateUpload = (name: string, sizeBytes: number, file?: File) => {
     setIsUploading(true);
     setUploadProgress(0);
     setUploadedFile(null);
+    setUploadedFileObject(file ?? null);
 
     const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(2) + ' MB';
 
@@ -161,47 +228,122 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      simulateUpload(file.name, file.size);
+      simulateUpload(file.name, file.size, file);
     }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      simulateUpload(file.name, file.size);
+      simulateUpload(file.name, file.size, file);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!uploadedFile) {
+    if (!uploadedFile || !uploadedFileObject) {
       alert('Please upload your Strata Title or Identification document for verification.');
       return;
     }
+    if (!nearestStationId) {
+      alert('Could not determine nearest station. Please ensure the property name is correct and try again.');
+      return;
+    }
 
-    onOnboardProperty({
-      propertyName: propName,
-      stationName,
-      bayNumber,
-      level,
-      docName: uploadedFile.name,
-      lat: mapLat,
-      lon: mapLon,
-    });
+    setIsSubmitting(true);
+    setSubmitError(null);
 
-    // Alert feedback
-    alert(
-      `Onboarding Submission Successful!\n\nProperty: ${propName}\nBay: ${bayNumber} (Level ${level})\nStation: ${stationName}\nCoordinates: ${mapLat ? `[${mapLat.toFixed(5)}, ${mapLon?.toFixed(5)}]` : 'Not mapped'}\nStrata File: ${uploadedFile.name}\n\nOur compliance administrators will verify property ownership. Once approved, we will ship your ESP32 smart bollard bundle.`
-    );
+    try {
+      // Step 1: Create Property
+      const propRes = await fetch(`${API_BASE}/property/create-property`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          propertyName: propName,
+          propertyType,
+          address: address || propName,
+          latitude: mapLat ?? 0,
+          longitude: mapLon ?? 0,
+          nearestStationId,
+          distanceToStation: parseFloat((distanceToStation / 1000).toFixed(2)),
+          description: description || null,
+        }),
+      });
 
-    // Reset Form
-    setPropName('');
-    setStationName('');
-    setBayNumber('');
-    setLevel('');
-    setMapLat(undefined);
-    setMapLon(undefined);
-    setUploadedFile(null);
+      if (!propRes.ok) {
+        const errData = await propRes.json().catch(() => null);
+        throw new Error(errData?.message || `Property creation failed (${propRes.status})`);
+      }
+
+      const createdProperty = await propRes.json();
+      const propertyId = createdProperty.propertyId;
+
+      // Step 2: Register Parking Spot with document
+      const formData = new FormData();
+      formData.append('propertyId', propertyId.toString());
+      formData.append('bayNumber', bayNumber);
+      formData.append('Level', level);
+      formData.append('DocumentType', '1'); // 1 = Strata Title / Ownership document
+      formData.append('Document', uploadedFileObject);
+
+      const token = user?.token ?? '';
+      const parkRes = await fetch(`${API_BASE}/parking/register-parking`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // ⚠️ Don't set Content-Type — browser sets it with boundary for FormData
+        },
+        body: formData,
+      });
+
+      if (!parkRes.ok) {
+        const errData = await parkRes.json().catch(() => null);
+        throw new Error(errData?.message || `Parking registration failed (${parkRes.status})`);
+      }
+
+      const parkResult = await parkRes.json();
+
+      // Notify parent
+      onOnboardProperty({
+        propertyName: propName,
+        stationName,
+        bayNumber,
+        level,
+        docName: uploadedFile.name,
+        lat: mapLat,
+        lon: mapLon,
+      });
+
+      // Success feedback
+      alert(
+        `✅ Property & Parking Registered!\n\n` +
+        `Property: ${propName} (ID: ${propertyId})\n` +
+        `Parking Spot ID: ${parkResult.parkingSpotId}\n` +
+        `Bay: ${bayNumber} (Level ${level})\n` +
+        `Station: ${stationName}\n\n` +
+        `Admin will review your documents.`
+      );
+
+      // Reset Form
+      setPropName('');
+      setPropertyType(1);
+      setAddress('');
+      setDescription('');
+      setStationName('');
+      setNearestStationId(null);
+      setDistanceToStation(0);
+      setBayNumber('');
+      setLevel('');
+      setMapLat(undefined);
+      setMapLon(undefined);
+      setUploadedFile(null);
+      setUploadedFileObject(null);
+    } catch (err: any) {
+      console.error('❌ Registration failed:', err.message);
+      setSubmitError(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -229,21 +371,20 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Property Name + Type row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Condominium Name — press Enter to auto-detect nearest station */}
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5">Condominium / Property Name *</label>
                   <div className="relative">
                     <input
                       type="text"
-                      placeholder='e.g. "PV9 Condominium, Setapak" or "Casa Subang, Subang Jaya"'
+                      placeholder='e.g. "PV9 Condominium, Setapak"'
                       value={propName}
                       onChange={(e) => { setPropName(e.target.value); setSearchError(null); }}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handlePropertySearch(); } }}
                       className="w-full text-xs border border-slate-200 rounded-lg pl-3 pr-10 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-600"
                       required
                     />
-                    {/* Search icon — also clickable */}
                     <button
                       type="button"
                       onClick={handlePropertySearch}
@@ -264,7 +405,23 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
                   )}
                 </div>
 
-                {/* Transit station — auto-detected, read-only */}
+                {/* Property Type */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1.5">Property Type *</label>
+                  <select
+                    value={propertyType}
+                    onChange={(e) => setPropertyType(Number(e.target.value))}
+                    className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-600 bg-white"
+                    required
+                  >
+                    <option value={1}>Condominium</option>
+                    <option value={2}>Apartment</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Transit station + Distance row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5">
                     Closest RapidKL Transit Station *
@@ -288,14 +445,58 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
                   </div>
                   {stationName && (
                     <p className="text-[10px] text-emerald-600 mt-1 flex items-center gap-1">
-                      <CheckCircle size={11} /> Nearest station auto-detected. Re‑enter property name to change.
+                      <CheckCircle size={11} /> {distanceToStation > 1000
+                        ? `${(distanceToStation / 1000).toFixed(2)} km`
+                        : `${Math.round(distanceToStation)} m`}{' '}
+                      from station{nearestStationId ? ` (ID: ${nearestStationId})` : ''}
                     </p>
                   )}
                 </div>
+
+                {/* Distance to station (read-only, auto-calculated) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1.5">
+                    Distance to Station (km)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={distanceToStation > 0 ? parseFloat((distanceToStation / 1000).toFixed(2)) : ''}
+                    readOnly
+                    disabled
+                    placeholder="Auto-calculated from coordinates"
+                    className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2.5 bg-slate-50 text-slate-700 cursor-not-allowed disabled:opacity-70"
+                  />
+                </div>
               </div>
 
+              {/* Address */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1.5">Full Address *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Jln Langkawi, Taman Setapak, 53000 Kuala Lumpur"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-600"
+                  required
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1.5">Description (optional)</label>
+                <textarea
+                  placeholder="e.g. Covered walkway, 24-hour security, CCTV monitored"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                  className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-600 resize-none"
+                />
+              </div>
+
+              {/* Bay Number + Level row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Bay Number */}
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5">Exact Bay Number *</label>
                   <input
@@ -307,8 +508,6 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
                     required
                   />
                 </div>
-
-                {/* Level */}
                 <div>
                   <label className="block text-xs font-bold text-slate-600 mb-1.5">Level / Floor *</label>
                   <input
@@ -402,14 +601,27 @@ export default function PropertyOnboarding({ onOnboardProperty }: PropertyOnboar
                 </div>
               </div>
 
+              {/* Submit error */}
+              {submitError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-[11px] text-rose-700">
+                  <AlertCircle size={14} className="shrink-0" />
+                  {submitError}
+                </div>
+              )}
+
               {/* Submit Action */}
               <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
-                  className="bg-[#0f172a] hover:bg-[#1e293b] text-white font-bold text-xs py-3 px-6 rounded-xl transition-colors shadow flex items-center gap-2 cursor-pointer"
+                  disabled={isSubmitting}
+                  className="bg-[#0f172a] hover:bg-[#1e293b] disabled:bg-slate-400 text-white font-bold text-xs py-3 px-6 rounded-xl transition-colors shadow flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  <Landmark className="w-4 h-4 text-blue-400" />
-                  Submit Onboarding Request
+                  {isSubmitting ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Landmark className="w-4 h-4 text-blue-400" />
+                  )}
+                  {isSubmitting ? 'Submitting...' : 'Submit Onboarding Request'}
                 </button>
               </div>
             </form>

@@ -35,6 +35,8 @@ public class Property
     [StringLength(1000)]
     public string? Description { get; set; }
 
+    public VerificationStatus VerificationStatus { get; set; } = VerificationStatus.Pending;
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

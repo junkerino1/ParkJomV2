@@ -20,7 +20,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../src/ParkJomV2.Web/wwwroot',
+    outDir: 'dist',
     emptyOutDir: true,
   },
 });

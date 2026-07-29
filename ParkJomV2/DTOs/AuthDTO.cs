@@ -17,6 +17,9 @@ public class CompleteProfileRequest
     [Required]
     [Phone(ErrorMessage = "Invalid phone number")]
     public string PhoneNumber { get; set; } = string.Empty;
+
+    /// <summary>Optional: set role during registration. 1=Admin, 2=Owner, 3=Renter/Commuter</summary>
+    public UserType? UserType { get; set; }
 }
 
 public class UserDTO

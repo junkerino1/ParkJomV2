@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "src/ParkJomV2.Web/wwwroot",
+    "public": "frontend/dist",
     "ignore": [
       "firebase.json",
       ".firebaserc",

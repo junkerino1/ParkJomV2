@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, CalendarDays, PlusSquare, ClipboardList, Sliders } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import BottomNav from '../../components/ui/BottomNav';
@@ -11,52 +12,78 @@ import SettingsPanel from './components/SettingsPanel';
 import SupportTickets from './components/SupportTickets';
 import { ParkingBay, Booking, Notification, WalletTransaction } from './types';
 
+const API_BASE = (window as any).VITE_API_BASE ||
+  (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? 'https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.azurewebsites.net/api'
+    : '/api');
+
+function loadNotifications(): Notification[] {
+  try { const s = localStorage.getItem('parkjom_owner_notifs'); return s ? JSON.parse(s) : []; }
+  catch { return []; }
+}
+function saveNotifications(notifs: Notification[]) {
+  localStorage.setItem('parkjom_owner_notifs', JSON.stringify(notifs));
+}
+
 export default function OwnerDashboard() {
+  const { user } = useAuth();
   // Navigation View Router
   const [activeView, setActiveView] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // 1. Wallet Balance (RM)
-  const [walletBalance, setWalletBalance] = useState(450.00);
+  // 1. Wallet Balance (RM) — TODO: fetch from backend
+  const [walletBalance, setWalletBalance] = useState(0);
 
-  // 2. Active Registered Parking Bays
-  const [bays, setBays] = useState<ParkingBay[]>([
-    { id: 'b-104', propertyName: 'Wangsa Latian Condominium', stationName: 'Wangsa Maju LRT', bayNumber: 'Bay 104', level: 'Level 3 (Basement A)', status: 'Active', hourlyRate: 2.00 },
-    { id: 'b-208', propertyName: 'Gombak Height Residence', stationName: 'Gombak LRT', bayNumber: 'Bay 208', level: 'Level 1 (Ground)', status: 'Active', hourlyRate: 2.00 },
-  ]);
+  // 2. Active Registered Parking Bays — fetched from backend
+  const [bays, setBays] = useState<ParkingBay[]>([]);
+  const [baysLoading, setBaysLoading] = useState(true);
 
-  // 3. Recent Bookings History (realistic dummy data in Malaysian context)
-  const [bookings, setBookings] = useState<Booking[]>([
-    { id: 'bk-01', date: '05 Jul 2026', renterPlate: 'VCS 8824', renterName: 'Mohd Fadhil', bayId: 'b-104', bayInfo: 'Bay 104', duration: '08:00 AM - 06:00 PM (10.0 hrs)', totalEarned: 18.00, commissionPaid: 2.00, status: 'Completed' },
-    { id: 'bk-02', date: '04 Jul 2026', renterPlate: 'WRA 9031', renterName: 'Chong Wei Min', bayId: 'b-104', bayInfo: 'Bay 104', duration: '09:00 AM - 05:00 PM (8.0 hrs)', totalEarned: 14.40, commissionPaid: 1.60, status: 'Completed' },
-    { id: 'bk-03', date: '03 Jul 2026', renterPlate: 'ALL 5110', renterName: 'Arul Dev', bayId: 'b-208', bayInfo: 'Bay 208', duration: '08:00 AM - 06:00 PM (10.0 hrs)', totalEarned: 20.00, commissionPaid: 2.00, status: 'Disputed', disputeReason: 'Vehicle overstayed by 23 minutes. ESP32 ultrasonic telemetry logged physical presence past reservation block.' },
-    { id: 'bk-04', date: '02 Jul 2026', renterPlate: 'VDE 6729', renterName: 'Siti Aminah', bayId: 'b-104', bayInfo: 'Bay 104', duration: '07:30 AM - 04:30 PM (9.0 hrs)', totalEarned: 16.20, commissionPaid: 1.80, status: 'Completed' },
-    { id: 'bk-05', date: '30 Jun 2026', renterPlate: 'PMD 3020', renterName: 'Tan Kok Seng', bayId: 'b-208', bayInfo: 'Bay 208', duration: '08:00 AM - 05:00 PM (9.0 hrs)', totalEarned: 16.20, commissionPaid: 1.80, status: 'Completed' },
-  ]);
+  // 3. Recent Bookings History — TODO: fetch from backend
+  const [bookings, setBookings] = useState<Booking[]>([]);
 
-  // 4. Notifications Dropdown list
-  const [notifications, setNotifications] = useState<Notification[]>([
-    { id: 'n-1', title: 'Withdrawal Success', message: 'RM 120.00 transferred successfully to your Maybank Account.', time: '1h ago', unread: true, type: 'payment' },
-    { id: 'n-2', title: 'New Booking Confirmed', message: 'Mohd Fadhil booked Bay 104 today 08:00 AM - 06:00 PM.', time: '3h ago', unread: true, type: 'booking' },
-    { id: 'n-3', title: 'Smart Spot Disputed', message: 'Dispute raised for Bay 208. Renter ALL 5110 overstayed over booking time limit.', time: '1d ago', unread: false, type: 'dispute' },
-  ]);
+  // 4. Notifications — persisted to localStorage
+  const [notifications, setNotifications] = useState<Notification[]>(loadNotifications);
 
-  // 5. Weekly calendar schedule blocks
-  // (dayOfWeek: 0 = Sun, 1-5 = Mon-Fri, 6 = Sat)
-  const [scheduleBlocks, setScheduleBlocks] = useState([
-    { id: 'sc-1', dayOfWeek: 1, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-    { id: 'sc-2', dayOfWeek: 2, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-    { id: 'sc-3', dayOfWeek: 3, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-    { id: 'sc-4', dayOfWeek: 4, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-    { id: 'sc-5', dayOfWeek: 5, startTime: '08:00', endTime: '18:00', rate: 2.00 },
-  ]);
+  // 5. Weekly calendar schedule blocks — TODO: fetch from backend
+  const [scheduleBlocks, setScheduleBlocks] = useState<{ id: string; dayOfWeek: number; startTime: string; endTime: string; rate: number }[]>([]);
 
-  // 6. Configured Bank Beneficiary Payout (Defaults)
-  const [activeBank, setActiveBank] = useState({
-    name: 'Malayan Banking Berhad (Maybank)',
-    accNo: '114012345678',
-    holder: 'CHAW CHUN JIA'
-  });
+  // 6. Bank Beneficiary — TODO: fetch from backend
+  const [activeBank, setActiveBank] = useState({ name: '-', accNo: '-', holder: '-' });
+
+  // ---- Fetch parking spots from backend ----
+  useEffect(() => {
+    async function fetchMyParking() {
+      setBaysLoading(true);
+      try {
+        const token = user?.token ?? '';
+        if (!token) { setBaysLoading(false); return; }
+
+        const res = await fetch(`${API_BASE}/parking/my-parking`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) { setBaysLoading(false); return; }
+
+        const data = await res.json();
+        if (data.success && data.data) {
+          const mapped: ParkingBay[] = data.data.map((ps: any) => ({
+            id: `b-${ps.parkingSpotId}`,
+            propertyName: `Property #${ps.propertyId}`,
+            stationName: '-',
+            bayNumber: ps.parkingLabel ?? `Spot #${ps.parkingSpotId}`,
+            level: '-',
+            status: ps.isPublished ? 'Active' : 'Pending Verification',
+            hourlyRate: ps.dailyRate ?? 0,
+          }));
+          setBays(mapped);
+        }
+      } catch { /* API not available */ }
+      finally { setBaysLoading(false); }
+    }
+    fetchMyParking();
+  }, [user?.token]);
+
+  // Sync notifications to localStorage
+  useEffect(() => { saveNotifications(notifications); }, [notifications]);
 
   // --- INTERACTION ACTION HANDLERS ---
 
@@ -146,6 +173,7 @@ export default function OwnerDashboard() {
   };
 
   // Register New Parking Spot Near Transit Stations
+  // Property creation is now handled by POST /api/property/create-property in PropertyOnboarding
   const handleOnboardProperty = (property: {
     propertyName: string;
     stationName: string;
@@ -153,25 +181,13 @@ export default function OwnerDashboard() {
     level: string;
     docName: string;
   }) => {
-    const newBay: ParkingBay = {
-      id: `b-${Date.now()}`,
-      propertyName: property.propertyName,
-      stationName: property.stationName,
-      bayNumber: property.bayNumber,
-      level: property.level,
-      status: 'Pending Verification',
-      hourlyRate: 2.00,
-      verificationDocName: property.docName,
-      verificationProgress: 0
-    };
+    // TODO: Refresh bays list from backend after successful property creation
+    // const newBay = await fetch('/api/parking-spots', { ... })
 
-    setBays(prev => [...prev, newBay]);
-
-    // Push notification
     const newNotif: Notification = {
       id: `n-${Date.now()}`,
-      title: 'Registration Pending Review',
-      message: `Your bay ${property.bayNumber} at ${property.propertyName} was successfully uploaded. Administrator is verifying compliance papers.`,
+      title: 'Registration Submitted',
+      message: `${property.propertyName} (${property.bayNumber}) submitted for admin verification.`,
       time: 'Just now',
       unread: true,
       type: 'system'
@@ -217,6 +233,7 @@ export default function OwnerDashboard() {
               onWithdraw={handleWithdrawFunds}
               bookings={bookings}
               bays={bays}
+              baysLoading={baysLoading}
               activeBank={activeBank}
               onResolveDispute={handleResolveDispute}
             />

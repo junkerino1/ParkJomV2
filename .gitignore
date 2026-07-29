@@ -20,6 +20,16 @@ appsettings.Local.json
 # NuGet packages
 **/packages/
 
+# Node
+node_modules/
+
+# Frontend build
+frontend/dist/
+
+# Firebase
+.firebase/
+firebase-debug.log
+
 # Environment files
 .env
 
