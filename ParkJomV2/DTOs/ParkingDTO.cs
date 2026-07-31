@@ -5,26 +5,6 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ParkJomV2.DTOs;
 
-public class ParkingDTO
-{
-    [Required]
-    public int PropertyId { get; set; }
-
-    [Required]
-    [StringLength(50)]
-    public string BayNumber { get; set; } = string.Empty;
-
-    [Required]
-    [StringLength(50)]
-    public string Level { get; set; } = string.Empty;
-
-    [Required]
-    public VerificationDocumentType DocumentType { get; set; }
-
-    [Required]
-    public IFormFile Document { get; set; } = null!;
-}
-
 public class CloudinaryUploadResponse
 {
     public string PublicId { get; set; } = string.Empty;
@@ -41,6 +21,44 @@ public class ParkingRegistrationResponse
     public string Message { get; set; } = string.Empty;
     public int? ParkingSpotId { get; set; }
     public int? VerificationRequestId { get; set; }
+}
+
+public class ParkingRegistrationRequest
+{
+    [Required(ErrorMessage = "Property name is required")]
+    [StringLength(100)]
+    public string PropertyName { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Property type is required")]
+    public PropertyType PropertyType { get; set; }
+
+    [Required]
+    public int osmId { get; set; }
+
+    [Required(ErrorMessage = "Address is required")]
+    [StringLength(255)]
+    public string Address { get; set; } = string.Empty;
+
+    [StringLength(1000)]
+    public string? Description { get; set; }
+
+    [Required(ErrorMessage = "Nearest station is required")]
+    public string NearestStationName { get; set; } = string.Empty;
+
+    // ── Parking spot fields ──
+    [Required(ErrorMessage = "Bay number is required")]
+    [StringLength(50)]
+    public string BayNumber { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Level is required")]
+    [StringLength(50)]
+    public string Level { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Document type is required")]
+    public VerificationDocumentType DocumentType { get; set; }
+
+    [Required(ErrorMessage = "Document is required")]
+    public IFormFile Document { get; set; } = null!;
 }
 
 public class VerificationRequestDTO
@@ -94,6 +112,15 @@ public class ApprovalRequest
 {
     [Required(ErrorMessage = "IsApproved is required")]
     public bool IsApproved { get; set; }
+}
+
+public class DecisionRequest
+{
+    [Required(ErrorMessage = "Decision is required")]
+    public string Decision { get; set; } = string.Empty; // "approved" or "rejected"
+
+    [StringLength(500)]
+    public string? ReviewNotes { get; set; }
 }
 
 public class ApprovalResponse
@@ -168,9 +195,8 @@ public class DisplayParkingSpotDTO
     public int PropertyId { get; set; }
     public int OwnerId { get; set; }
     public string? ParkingLabel { get; set; }
-    public AvailabilityStatus AvailabilityStatus { get; set; }
-    
-    public VerificationStatus VerificationStatus { get; set; }
+    public string AvailabilityStatus { get; set; } = string.Empty;
+    public string VerificationStatus { get; set; } = string.Empty;
     public decimal? MonthlyRate { get; set; }
     public decimal? DailyRate { get; set; }
     public bool IsPublished { get; set; }

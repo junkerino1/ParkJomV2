@@ -1,9 +1,10 @@
-using Microsoft.EntityFrameworkCore;
-using ParkJomV2.Models;
-using ParkJomV2.Data;
-using ParkJomV2.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using ParkJomV2.Data;
+using ParkJomV2.Models;
+using ParkJomV2.Services;
 using System.Text;
 using System.Text.Json;
 
@@ -19,6 +20,19 @@ builder.Services.AddScoped<GoogleAuthService>();
 builder.Services.AddScoped<JwtTokenService>();
 
 builder.Services.AddScoped<CloudinaryService>();
+
+builder.Services.AddHttpClient<OsrmService>(client =>
+{
+    client.BaseAddress = new Uri("https://router.project-osrm.org/");
+});
+
+builder.Services.AddHttpClient<NominatimService>(client =>
+{
+    client.BaseAddress = new Uri("https://nominatim.openstreetmap.org/");
+    client.DefaultRequestHeaders.Add("User-Agent", "ParkJomV2/1.0");
+});
+
+builder.Services.AddScoped<IPropertyService, PropertyService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -73,7 +87,32 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler =
+            System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    });
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState
+            .Where(x => x.Value?.Errors.Count > 0)
+            .ToDictionary(
+                x => x.Key,
+                x => x.Value!.Errors.Select(e => e.ErrorMessage).ToArray()
+            );
+
+        return new BadRequestObjectResult(new
+        {
+            code = StatusCodes.Status400BadRequest,
+            message = "One or more validation errors occurred.",
+            errors = errors
+        });
+    };
+});
 
 builder.Services.AddHttpClient();
 

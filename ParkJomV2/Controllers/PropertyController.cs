@@ -7,6 +7,7 @@ using ParkJomV2.Models.Enums;
 using ParkJomV2.DTOs;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
+using ParkJomV2.Services;
 
 namespace ParkJomV2.Controllers
 {
@@ -17,11 +18,15 @@ namespace ParkJomV2.Controllers
 
         private readonly ApplicationDbContext _context;
         private readonly ILogger<PropertyController> _logger;
+        private readonly OsrmService _osrmService;
+        private readonly NominatimService _nominatimService;
 
-        public PropertyController(ApplicationDbContext context, ILogger<PropertyController> logger)
+        public PropertyController(ApplicationDbContext context, ILogger<PropertyController> logger, OsrmService osrmService, NominatimService nominatimService)
         {
             _context = context;
             _logger = logger;
+            _osrmService = osrmService;
+            _nominatimService = nominatimService;
         }
 
         /// <summary>
@@ -55,6 +60,11 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            // Auto-calculate distance and time from station to property via OSRM
+            var (distKm, timeMin) = await _osrmService.GetWalkingDistanceAsync(
+                (double)station.Latitude, (double)station.Longitude,
+                (double)request.Latitude, (double)request.Longitude);
+
             var property = new Property
             {
                 PropertyName = request.PropertyName,
@@ -63,7 +73,8 @@ namespace ParkJomV2.Controllers
                 Latitude = request.Latitude,
                 Longitude = request.Longitude,
                 NearestStationId = request.NearestStationId,
-                DistanceToStation = request.DistanceToStation,
+                DistanceToStation = (decimal)(distKm ?? 0),
+                TimeToStation = (decimal)(timeMin ?? 0),
                 Description = request.Description,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -131,6 +142,7 @@ namespace ParkJomV2.Controllers
             return Ok(property);
         }
 
+        
         /// <summary>
         /// Get all properties
         /// </summary>
@@ -140,68 +152,6 @@ namespace ParkJomV2.Controllers
         {
             var properties = await _context.Properties.ToListAsync();
             return Ok(properties.Select(MapToDTO));
-        }
-
-        /// <summary>
-        /// Update an existing property
-        /// </summary>
-        [HttpPut("{id}")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<PropertyDTO>> UpdateProperty(int id, [FromBody] UpdatePropertyRequest request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "Invalid request."
-                });
-            }
-
-            var property = await _context.Properties.FindAsync(id);
-            if (property == null)
-            {
-                return NotFound(new ErrorResponse
-                {
-                    Code = StatusCodes.Status404NotFound,
-                    Success = false,
-                    Message = "Property not found"
-                });
-            }
-
-            property.PropertyName = request.PropertyName ?? property.PropertyName;
-            property.PropertyType = request.PropertyType ?? property.PropertyType;
-            property.Address = request.Address ?? property.Address;
-            property.Latitude = request.Latitude ?? property.Latitude;
-            property.Longitude = request.Longitude ?? property.Longitude;
-            property.NearestStationId = request.NearestStationId;
-            property.DistanceToStation = request.DistanceToStation;
-            property.Description = request.Description ?? property.Description;
-            property.UpdatedAt = DateTime.UtcNow;
-
-            try
-            {
-                _context.Properties.Update(property);
-                await _context.SaveChangesAsync();
-
-                _logger.LogInformation("Property updated successfully with ID: {PropertyId}", property.PropertyId);
-
-                return Ok(MapToDTO(property));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating property");
-                return StatusCode(StatusCodes.Status500InternalServerError,
-                    new ErrorResponse
-                    {
-                        Code = StatusCodes.Status500InternalServerError,
-                        Success = false,
-                        Message = "An error occurred while updating the property"
-                    });
-            }
         }
 
         /// <summary>
@@ -256,6 +206,7 @@ namespace ParkJomV2.Controllers
                 Longitude = property.Longitude,
                 NearestStationId = property.NearestStationId,
                 DistanceToStation = property.DistanceToStation,
+                TimeToStation = property.TimeToStation,
                 Description = property.Description,
                 CreatedAt = property.CreatedAt,
                 UpdatedAt = property.UpdatedAt
