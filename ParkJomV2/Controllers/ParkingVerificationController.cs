@@ -258,6 +258,7 @@ public class ParkingVerificationController : ControllerBase
 
             verificationRequest.ReviewedAt = DateTime.UtcNow;
             verificationRequest.UpdatedAt = DateTime.UtcNow;
+            verificationRequest.ReviewNotes = request.ReviewNotes;
 
             _context.ParkingVerificationRequests.Update(verificationRequest);
             await _context.SaveChangesAsync();

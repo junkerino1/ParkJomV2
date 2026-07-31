@@ -25,6 +25,8 @@ public class ParkingVerificationRequest
 
     public DateTime? ReviewedAt { get; set; }
 
+    public string? ReviewNotes { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }
