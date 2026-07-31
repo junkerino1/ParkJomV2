@@ -21,6 +21,8 @@ builder.Services.AddScoped<JwtTokenService>();
 
 builder.Services.AddScoped<CloudinaryService>();
 
+builder.Services.AddScoped<StripeService>();
+
 builder.Services.AddHttpClient<OsrmService>(client =>
 {
     client.BaseAddress = new Uri("https://router.project-osrm.org/");

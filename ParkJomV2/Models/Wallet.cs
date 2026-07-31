@@ -31,4 +31,6 @@ public class Wallet
     public User User { get; set; } = null!;
 
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
+
+    public ICollection<Payment> Payments { get; set; } = new List<Payment>();
 }
