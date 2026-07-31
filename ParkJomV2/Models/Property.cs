@@ -32,6 +32,11 @@ public class Property
     [Column(TypeName = "decimal(5,2)")]
     public decimal DistanceToStation { get; set; }
 
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal TimeToStation { get; set; }
+
+    public long? OsmId { get; set; }
+
     [StringLength(1000)]
     public string? Description { get; set; }
     public DateTime CreatedAt { get; set; }

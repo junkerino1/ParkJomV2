@@ -27,8 +27,8 @@ public class CreatePropertyRequest
     [Required(ErrorMessage = "Nearest Station is required")]
     public int NearestStationId { get; set; }
 
-    [Range(0, 99.99, ErrorMessage = "Distance to station must be between 0 and 99.99")]
-    public decimal DistanceToStation { get; set; }
+    [Required(ErrorMessage = "OSM ID is required")]
+    public long OsmId { get; set; }
 
     [StringLength(1000, ErrorMessage = "Description cannot exceed 1000 characters")]
     public string? Description { get; set; }
@@ -50,11 +50,9 @@ public class UpdatePropertyRequest
     [Range(-180, 180, ErrorMessage = "Longitude must be between -180 and 180")]
     public decimal? Longitude { get; set; }
 
-    [Required(ErrorMessage = "Nearest station is required")]
-    public int NearestStationId { get; set; }
+    public int? NearestStationId { get; set; }
 
-    [Range(0, 99.99, ErrorMessage = "Distance to station must be between 0 and 99.99")]
-    public decimal DistanceToStation { get; set; }
+    public long? OsmId { get; set; }
 
     [StringLength(1000, ErrorMessage = "Description cannot exceed 1000 characters")]
     public string? Description { get; set; }
@@ -70,6 +68,8 @@ public class PropertyDTO
     public decimal Longitude { get; set; }
     public int NearestStationId { get; set; }
     public decimal DistanceToStation { get; set; }
+    public decimal TimeToStation { get; set; }
+    public long? OsmId { get; set; }
     public string? Description { get; set; }
     public VerificationStatus VerificationStatus { get; set; }
     public DateTime CreatedAt { get; set; }

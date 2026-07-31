@@ -1,0 +1,68 @@
+using ParkJomV2.Models.Enums;
+using System.ComponentModel.DataAnnotations;
+
+namespace ParkJomV2.DTOs;
+
+public class CreateBookingRequest
+{
+    [Required]
+    public int ParkingSpotId { get; set; }
+
+    [Required]
+    public int VehicleId { get; set; }
+
+    [Required]
+    public DateTime StartDate { get; set; }
+
+    [Required]
+    public DateTime EndDate { get; set; }
+}
+
+public class CancelBookingRequest
+{
+    [StringLength(500)]
+    public string? CancellationReason { get; set; }
+}
+
+public class BookingResponseDTO
+{
+    public int BookingId { get; set; }
+    public string BookingReference { get; set; } = string.Empty;
+    public int RenterId { get; set; }
+    public int ParkingSpotId { get; set; }
+    public string? ParkingLabel { get; set; }
+    public int VehicleId { get; set; }
+    public DateTime StartDate { get; set; }
+    public DateTime EndDate { get; set; }
+    public string BookingStatus { get; set; } = string.Empty;
+    public decimal TotalAmount { get; set; }
+    public string? CancellationReason { get; set; }
+    public DateTime? CancelledAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class BookingListResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<BookingResponseDTO> Data { get; set; } = new();
+}
+
+public class BookingDetailResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public BookingResponseDTO? Data { get; set; }
+}
+
+public class CancelBookingResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int BookingId { get; set; }
+    public string BookingStatus { get; set; } = string.Empty;
+    public DateTime? CancelledAt { get; set; }
+}

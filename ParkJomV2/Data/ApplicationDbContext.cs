@@ -164,6 +164,11 @@ public class ApplicationDbContext : DbContext
             .Property(p => p.PropertyType)
             .HasConversion<string>();
 
+        modelBuilder.Entity<Property>()
+            .HasIndex(p => p.OsmId)
+            .IsUnique()
+            .HasFilter("[OsmId] IS NOT NULL");
+
         modelBuilder.Entity<ParkingSpot>()
             .Property(p => p.AvailabilityStatus)
             .HasConversion<string>();
