@@ -21,6 +21,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<Wallet> Wallets => Set<Wallet>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
+    public DbSet<Payment> Payments => Set<Payment>();
 
     public DbSet<ParkingVerificationRequest> ParkingVerificationRequests => Set<ParkingVerificationRequest>();
     public DbSet<VerificationDocument> VerificationDocuments => Set<VerificationDocument>();
@@ -176,6 +177,26 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Wallet>()
             .Property(w => w.Status)
             .HasConversion<string>();
+
+        modelBuilder.Entity<Payment>()
+            .Property(p => p.Status)
+            .HasConversion<string>();
+
+        // =========================
+        // Payment
+        // =========================
+
+        modelBuilder.Entity<Payment>()
+            .HasOne(p => p.User)
+            .WithMany()
+            .HasForeignKey(p => p.UserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Payment>()
+            .HasOne(p => p.Wallet)
+            .WithMany(w => w.Payments)
+            .HasForeignKey(p => p.WalletId)
+            .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<Booking>()
             .Property(b => b.BookingStatus)
