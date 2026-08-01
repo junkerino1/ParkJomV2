@@ -153,11 +153,11 @@ public class VerificationRequestDetailResponse
 
 public class ConfigParkingRequest
 {
-    public int parkingSpotId { get; set; }
+    public int ParkingSpotId { get; set; }
 
     public List<IFormFile> ParkingImage { get; set; } = new();
 
-    public DayType DayType { get; set; }
+    public string DayType { get; set; } = string.Empty;
 
     public TimeOnly StartTime { get; set; }
 
@@ -169,7 +169,7 @@ public class ConfigParkingRequest
 
     public decimal? DailyRate { get; set; }
 
-    public decimal? MonthlyPrice { get; set; }
+    public decimal? MonthlyRate { get; set; }
 }
 
 public class ParkingSpotImageDTO
@@ -211,4 +211,40 @@ public class DisplayMyParkingResponse
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
     public List<DisplayParkingSpotDTO> Data { get; set; } = new();
+}
+
+public class UpdateAvailabilityRequest
+{
+    [Required]
+    public int ParkingSpotId { get; set; }
+
+    [Required]
+    public string AvailabilityStatus { get; set; } = string.Empty; 
+}
+
+public class UpdateAvailabilityResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ParkingSpotId { get; set; }
+    public string AvailabilityStatus { get; set; } = string.Empty;
+}
+
+public class PublishParkingRequest
+{
+    [Required]
+    public int ParkingSpotId { get; set; }
+
+    [Required]
+    public bool IsPublished { get; set; }
+}
+
+public class PublishParkingResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ParkingSpotId { get; set; }
+    public bool IsPublished { get; set; }
 }

@@ -110,7 +110,7 @@ public class ParkingController : ControllerBase
     /// then use the property id to create a new parking spot
     /// </summary>
     [Authorize]
-    [HttpPost("create-parking")]
+    [HttpPost("create")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ParkingRegistrationResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -136,7 +136,6 @@ public class ParkingController : ControllerBase
 
         if (user == null)
         {
-            _logger.LogWarning("User {UserId} not found.", userId);
             return NotFound(new ErrorResponse
             {
                 Code = StatusCodes.Status404NotFound,
@@ -145,7 +144,7 @@ public class ParkingController : ControllerBase
             });
         }
 
-        if (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Renter)
+        if (user.UserType != UserType.PropertyOwner)
         {
             return BadRequest(new ErrorResponse
             {
@@ -293,7 +292,7 @@ public class ParkingController : ControllerBase
     /// Update info of a parking spot
     /// </summary>
     [Authorize]
-    [HttpPut("edit-parking/{id}")]
+    [HttpPut("edit/{id}")]
     [ProducesResponseType(typeof(UpdateParkingSpotResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
@@ -345,12 +344,6 @@ public class ParkingController : ControllerBase
 
             if (request.DailyRate.HasValue)
                 spot.DailyRate = request.DailyRate;
-
-            if (request.IsPublished.HasValue)
-                spot.IsPublished = request.IsPublished.Value;
-
-            if (request.AvailabilityStatus.HasValue)
-                spot.AvailabilityStatus = request.AvailabilityStatus.Value;
 
             spot.UpdatedAt = DateTime.UtcNow;
 
@@ -552,19 +545,21 @@ public class ParkingController : ControllerBase
     /// Configure a parking spot (pricing, availability, images) — Owner only
     /// </summary>
     [Authorize]
-    [HttpPost("config-parking/{id}")]
+    [HttpPost("configuration")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ConfigParkingResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ConfigParkingResponse>> ConfigParking(int id, [FromForm] ConfigParkingRequest request)
+    public async Task<ActionResult<ConfigParkingResponse>> ConfigParking([FromForm] ConfigParkingRequest request)
     {
         try
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+
+            // return Ok(request);
 
             if (user == null)
             {
@@ -589,11 +584,11 @@ public class ParkingController : ControllerBase
             }
 
             var parkingSpot = await _context.ParkingSpots
-                .FirstOrDefaultAsync(p => p.ParkingSpotId == id);
+                .FirstOrDefaultAsync(p => p.ParkingSpotId == request.ParkingSpotId);
 
             if (parkingSpot == null || parkingSpot.OwnerId != userId)
             {
-                _logger.LogWarning("Parking spot {ParkingSpotId} not found or unauthorized. UserId={UserId}", id, userId);
+                _logger.LogWarning("Parking spot {ParkingSpotId} not found or unauthorized. UserId={UserId}", request.ParkingSpotId, userId);
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -604,11 +599,11 @@ public class ParkingController : ControllerBase
 
             var pvq = await _context.ParkingVerificationRequests
                 .Include(vr => vr.VerificationDocuments)
-                .FirstOrDefaultAsync(vr => vr.ParkingSpotId == id);
+                .FirstOrDefaultAsync(vr => vr.ParkingSpotId == request.ParkingSpotId);
 
             if (pvq == null || pvq.VerificationStatus != VerificationStatus.Approved)
             {
-                _logger.LogWarning("Parking spot {ParkingSpotId} is not verified. UserId={UserId}", id, userId);
+                _logger.LogWarning("Parking spot {ParkingSpotId} is not verified. UserId={UserId}", request.ParkingSpotId, userId);
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -645,7 +640,7 @@ public class ParkingController : ControllerBase
                 if (request.ParkingImage != null && request.ParkingImage.Count > 0)
                 {
                     var existingImages = await _context.ParkingSpotImages
-                        .Where(psi => psi.ParkingSpotId == id)
+                        .Where(psi => psi.ParkingSpotId == request.ParkingSpotId)
                         .ToListAsync();
 
                     displayOrder = existingImages.Any() ? existingImages.Max(psi => psi.DisplayOrder) + 1 : 1;
@@ -683,7 +678,7 @@ public class ParkingController : ControllerBase
 
                         var parkingSpotImage = new ParkingSpotImage
                         {
-                            ParkingSpotId = id,
+                            ParkingSpotId = request.ParkingSpotId,
                             MediaFileId = mediaFile.MediaFileId,
                             DisplayOrder = displayOrder,
                             IsPrimary = isPrimary,
@@ -707,10 +702,34 @@ public class ParkingController : ControllerBase
                     });
                 }
 
+                if (Enum.TryParse<DayType>(request.DayType, true, out var dayType))
+                {
+                    switch (dayType)
+                    {
+                        case DayType.Weekday:
+                            break;
+
+                        case DayType.Weekend:
+                            break;
+
+                        case DayType.Everyday:
+                            break;
+                    }
+                }
+                else
+                {
+                    return StatusCode(StatusCodes.Status400BadRequest, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status400BadRequest,
+                        Success = false,
+                        Message = "Invalid day type."
+                    });
+                }
+
                 var availability = new Availability
                 {
-                    ParkingSpotId = id,
-                    DayType = request.DayType,
+                    ParkingSpotId = request.ParkingSpotId,
+                    DayType = dayType,
                     StartTime = request.StartTime,
                     EndTime = request.EndTime,
                     EffectiveFrom = request.EffectiveFrom,
@@ -719,34 +738,34 @@ public class ParkingController : ControllerBase
 
                 _context.Availabilities.Add(availability);
 
-                if (request.DayType == DayType.Weekday || request.DayType == DayType.Weekend)
+                if (dayType == DayType.Weekday || dayType == DayType.Weekend)
                 {
                     if (request.DailyRate.HasValue)
                     {
                         parkingSpot.DailyRate = request.DailyRate;
                     }
                 }
-                else if (request.DayType == DayType.Everyday)
+                else if (dayType == DayType.Everyday)
                 {
-                    if (request.MonthlyPrice.HasValue)
+                    if (request.MonthlyRate.HasValue)
                     {
-                        parkingSpot.MonthlyRate = request.MonthlyPrice;
+                        parkingSpot.MonthlyRate = request.MonthlyRate;
                     }
                 }
 
                 parkingSpot.AvailabilityStatus = AvailabilityStatus.Available;
-                parkingSpot.IsPublished = true;
+                parkingSpot.IsPublished = false; // Set to false until the owner decides to publish it
                 parkingSpot.UpdatedAt = DateTime.UtcNow;
 
                 _context.ParkingSpots.Update(parkingSpot);
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation("Parking spot configured. ParkingSpotId={ParkingSpotId}, DayType={DayType}, AvailabilityStatus={Status}",
-                    id, request.DayType, parkingSpot.AvailabilityStatus);
+                    request.ParkingSpotId, request.DayType, parkingSpot.AvailabilityStatus);
 
                 await transaction.CommitAsync();
 
-                _logger.LogInformation("Parking configuration completed successfully. ParkingSpotId={ParkingSpotId}", id);
+                _logger.LogInformation("Parking configuration completed successfully. ParkingSpotId={ParkingSpotId}", request.ParkingSpotId);
 
                 return Ok(new ConfigParkingResponse
                 {
@@ -759,7 +778,7 @@ public class ParkingController : ControllerBase
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                _logger.LogError(ex, "Parking configuration failed for UserId={UserId}, ParkingSpotId={ParkingSpotId}", userId, id);
+                _logger.LogError(ex, "Parking configuration failed for UserId={UserId}, ParkingSpotId={ParkingSpotId}", userId, request.ParkingSpotId);
 
                 return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
                 {
@@ -771,12 +790,243 @@ public class ParkingController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error in config-parking endpoint for ParkingSpotId={ParkingSpotId}", id);
+            _logger.LogError(ex, "Error in config-parking endpoint for ParkingSpotId={ParkingSpotId}", request.ParkingSpotId);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
                 Success = false,
                 Message = "An error occurred while configuring the parking spot"
+            });
+        }
+    }
+
+    
+    /// <summary>
+    /// Update the availability status of a parking spot (Owner/Admin only)
+    /// PUT /api/parking/availability
+    /// </summary>
+    [Authorize]
+    [HttpPut("availability")]
+    [ProducesResponseType(typeof(UpdateAvailabilityResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<UpdateAvailabilityResponse>> UpdateAvailability([FromBody] UpdateAvailabilityRequest request)
+    {
+        try
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+
+            if (user == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "User not found"
+                });
+            }
+
+            var spot = await _context.ParkingSpots.FirstOrDefaultAsync(ps => ps.ParkingSpotId == request.ParkingSpotId);
+
+            if (spot == null)
+            {
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Parking spot not found"
+                });
+            }
+
+            if (spot.OwnerId != userId && user.UserType != UserType.Admin)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to update this parking spot"
+                });
+            }
+
+            var verificationRequest = await _context.ParkingVerificationRequests
+                .FirstOrDefaultAsync(vr => vr.ParkingSpotId == request.ParkingSpotId && vr.IsCurrent);
+
+            if (verificationRequest == null || verificationRequest.VerificationStatus != VerificationStatus.Approved)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Parking verification has not been approved. You are not allowed to perform this action."
+                });
+            }
+
+            if (Enum.TryParse<AvailabilityStatus>(request.AvailabilityStatus, true, out var availabilityStatus))
+            {
+                switch (availabilityStatus)
+                {
+                    case AvailabilityStatus.Available:
+                        break;
+
+                    case AvailabilityStatus.Inactive:
+                        break;
+
+                    case AvailabilityStatus.Deleted:
+                        break;
+
+                    case AvailabilityStatus.Occupied:
+                        break;
+                }
+            }
+            else{
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Invalid availability status"
+                });
+            }
+
+
+            if (availabilityStatus == AvailabilityStatus.Deleted)
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Cannot modify availability of a deleted parking spot"
+                });
+            }
+
+            spot.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Parking spot availability updated. ParkingSpotId={ParkingSpotId}, AvailabilityStatus={Status}",
+                spot.ParkingSpotId, spot.AvailabilityStatus);
+
+            return Ok(new UpdateAvailabilityResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = $"Parking spot availability updated from {spot.AvailabilityStatus.ToString()} to {availabilityStatus.ToString()} successfully",
+                ParkingSpotId = spot.ParkingSpotId,
+                AvailabilityStatus = availabilityStatus.ToString()
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating parking spot availability {ParkingSpotId}", request.ParkingSpotId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while updating the parking spot availability"
+            });
+        }
+    }
+
+    /// <summary>
+    /// Publish or unpublish a parking spot (Owner/Admin only)
+    /// PUT /api/parking/publish
+    /// </summary>
+    [Authorize]
+    [HttpPut("publish")]
+    [ProducesResponseType(typeof(PublishParkingResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<PublishParkingResponse>> PublishParking([FromBody] PublishParkingRequest request)
+    {
+        try
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+
+            if (user == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "User not found"
+                });
+            }
+
+            var spot = await _context.ParkingSpots.FirstOrDefaultAsync(ps => ps.ParkingSpotId == request.ParkingSpotId);
+
+            if (spot == null)
+            {
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Parking spot not found"
+                });
+            }
+
+            if (spot.OwnerId != userId && user.UserType != UserType.Admin)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to update this parking spot"
+                });
+            }
+
+            var verificationRequest = await _context.ParkingVerificationRequests
+                .FirstOrDefaultAsync(vr => vr.ParkingSpotId == request.ParkingSpotId && vr.IsCurrent);
+
+            if (verificationRequest == null || verificationRequest.VerificationStatus != VerificationStatus.Approved)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Parking verification has not been approved. You are not allowed to perform this action."
+                });
+            }
+
+            if (spot.AvailabilityStatus == AvailabilityStatus.Deleted)
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Cannot modify publish status of a deleted parking spot"
+                });
+            }
+
+            spot.IsPublished = request.IsPublished;
+            spot.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Parking spot publish status updated. ParkingSpotId={ParkingSpotId}, IsPublished={IsPublished}",
+                spot.ParkingSpotId, spot.IsPublished);
+
+            return Ok(new PublishParkingResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = request.IsPublished ? "Parking spot published successfully" : "Parking spot unpublished successfully",
+                ParkingSpotId = spot.ParkingSpotId,
+                IsPublished = spot.IsPublished
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating parking spot publish status {ParkingSpotId}", request.ParkingSpotId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while updating the parking spot publish status"
             });
         }
     }
@@ -798,4 +1048,4 @@ public class ParkingController : ControllerBase
             UpdatedAt = parkingSpot.UpdatedAt
         };
     }
-}
+}   
