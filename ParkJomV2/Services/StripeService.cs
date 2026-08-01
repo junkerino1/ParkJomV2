@@ -62,8 +62,8 @@ public class StripeService
         var apiBaseUrl = _configuration["ApiBaseUrl"]?.TrimEnd('/')
             ?? throw new InvalidOperationException("ApiBaseUrl is not configured.");
 
-        var localhost = _configuration["localhost"]?.TrimEnd('/')
-            ?? throw new InvalidOperationException("localhost is not configured.");
+        // var localhost = _configuration["localhost"]?.TrimEnd('/')
+        //     ?? throw new InvalidOperationException("localhost is not configured.");
 
         var successUrl = $"{apiBaseUrl}/api/wallet/topup/success?session_id={{CHECKOUT_SESSION_ID}}";
         var cancelUrl = $"{apiBaseUrl}/api/wallet/topup/cancel";
