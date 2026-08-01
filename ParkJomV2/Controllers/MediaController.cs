@@ -86,7 +86,7 @@ namespace ParkJomV2.Controllers
                         cloudinaryUrl = cloudinaryUrl + "." + media.Format;
                     }
 
-                return Ok(cloudinaryUrl);
+                // return Ok(cloudinaryUrl);
 
                 var client = _httpClientFactory.CreateClient();
 
