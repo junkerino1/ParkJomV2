@@ -66,7 +66,7 @@ namespace ParkJomV2.Controllers
 
                 var media = await _context.MediaFiles.FirstOrDefaultAsync(m => m.MediaFileId == mediaFileId);
 
-                //return Ok(media);
+                // return Ok(media);
 
                 if (media == null)
                 {
@@ -82,7 +82,11 @@ namespace ParkJomV2.Controllers
                     media.PublicId,
                     media.ResourceType);
 
-                //return Ok(cloudinaryUrl);
+                    if(media.ResourceType == "image"){
+                        cloudinaryUrl = cloudinaryUrl + "." + media.Format;
+                    }
+
+                return Ok(cloudinaryUrl);
 
                 var client = _httpClientFactory.CreateClient();
 

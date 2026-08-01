@@ -88,6 +88,7 @@ public class VerificationRequestListDTO
     public string? SubmittedByName { get; set; }
     public string? VerificationStatus { get; set; }
     public DateTime SubmittedAt { get; set; }
+    public List<VerificationDocumentDTO>? Documents { get; set; }
 }
 
 public class VerificationDocumentDTO

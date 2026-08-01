@@ -191,15 +191,7 @@ public class ParkingController : ControllerBase
 
             dynamic uploadResult;
 
-            if (request.Document.ContentType.StartsWith("image"))
-            {
-                uploadResult = await _cloudinaryService.UploadImageAsync(request.Document, folder);
-            }
-            else
-            {
-                uploadResult = await _cloudinaryService.UploadPdfAsync(request.Document, folder);
-            }
-
+            uploadResult = await _cloudinaryService.UploadPrivateDocumentAsync(request.Document, folder);
             if (uploadResult == null)
             {
                 throw new Exception("Cloudinary upload failed.");
@@ -221,7 +213,6 @@ public class ParkingController : ControllerBase
             };
 
             _context.MediaFiles.Add(mediaFile);
-            _logger.LogInformation("MediaFile created. MediaFileId={MediaFileId}", mediaFile.MediaFileId);
 
             // Create ParkingSpot
             var parkingSpot = new ParkingSpot

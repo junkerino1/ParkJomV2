@@ -34,7 +34,7 @@ public class CloudinaryService
         return await _cloudinary.UploadAsync(uploadParams);
     }
 
-    public async Task<RawUploadResult> UploadPdfAsync(IFormFile file, string folder)
+    public async Task<RawUploadResult> UploadPrivateDocumentAsync(IFormFile file, string folder)
     {
         using var stream = file.OpenReadStream();
 
