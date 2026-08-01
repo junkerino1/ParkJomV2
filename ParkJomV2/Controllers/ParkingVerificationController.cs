@@ -65,6 +65,8 @@ public class ParkingVerificationController : ControllerBase
                 .Include(vr => vr.ParkingSpot)
                 .ThenInclude(ps => ps.Property)
                 .Include(vr => vr.SubmittedByUser)
+                .Include(vr => vr.VerificationDocuments)
+                    .ThenInclude(vd => vd.MediaFile)
                 .OrderByDescending(vr => vr.SubmittedAt)
                 .ToListAsync();
 
@@ -303,7 +305,17 @@ public class ParkingVerificationController : ControllerBase
             SubmittedByEmail = request.SubmittedByUser?.Email,
             SubmittedByName = $"{request.SubmittedByUser?.FirstName} {request.SubmittedByUser?.LastName}".Trim(),
             VerificationStatus = request.VerificationStatus.ToString(),
-            SubmittedAt = request.SubmittedAt
+            SubmittedAt = request.SubmittedAt,
+            Documents = request.VerificationDocuments?.Select(vd => new VerificationDocumentDTO
+            {
+                VerificationDocumentId = vd.VerificationDocumentId,
+                DocumentType = vd.DocumentType,
+                MediaFileId = vd.MediaFile?.MediaFileId ?? 0,
+                ResourceType = vd.MediaFile?.ResourceType,
+                Format = vd.MediaFile?.Format,
+                OriginalFileName = vd.MediaFile?.OriginalFileName,
+                UploadedAt = vd.UploadedAt
+            }).ToList() ?? new List<VerificationDocumentDTO>()
         };
     }
 
