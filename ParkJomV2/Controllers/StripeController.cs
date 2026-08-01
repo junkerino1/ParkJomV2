@@ -30,6 +30,8 @@ public class StripeController : ControllerBase
         using var reader = new StreamReader(Request.Body, Encoding.UTF8);
         var payload = await reader.ReadToEndAsync();
 
+        _logger.LogInformation("Received Stripe webhook. Payload: {Payload}, Signature: {Signature}", payload, signature);
+
         try
         {
             var webhookSecret = _configuration["Stripe:WebhookSecret"];
