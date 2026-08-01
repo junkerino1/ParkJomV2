@@ -65,11 +65,11 @@ public class StripeService
         var localhost = _configuration["localhost"]?.TrimEnd('/')
             ?? throw new InvalidOperationException("localhost is not configured.");
 
-        // var successUrl = $"{apiBaseUrl}/api/wallet/topup/success?session_id={{CHECKOUT_SESSION_ID}}";
-        // var cancelUrl = $"{apiBaseUrl}/api/wallet/topup/cancel";
+        var successUrl = $"{apiBaseUrl}/api/wallet/topup/success?session_id={{CHECKOUT_SESSION_ID}}";
+        var cancelUrl = $"{apiBaseUrl}/api/wallet/topup/cancel";
 
-        var successUrl = $"{localhost}/api/wallet/topup/success?session_id={{CHECKOUT_SESSION_ID}}";
-        var cancelUrl = $"{localhost}/api/wallet/topup/cancel";
+        // var successUrl = $"{localhost}/api/wallet/topup/success?session_id={{CHECKOUT_SESSION_ID}}";
+        // var cancelUrl = $"{localhost}/api/wallet/topup/cancel";
         
         var description = string.IsNullOrWhiteSpace(request.Description)
             ? $"Wallet Top Up - RM{request.Amount:0.00}"
