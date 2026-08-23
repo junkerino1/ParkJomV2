@@ -17,11 +17,13 @@ public class ParkingVerificationController : ControllerBase
     private const int PageSize = 100;
 
     private readonly ApplicationDbContext _context;
+    private readonly AccessLogService _accessLogService;
     private readonly ILogger<ParkingVerificationController> _logger;
 
-    public ParkingVerificationController(ApplicationDbContext context, ILogger<ParkingVerificationController> logger)
+    public ParkingVerificationController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<ParkingVerificationController> logger)
     {
         _context = context;
+        _accessLogService = accessLogService;
         _logger = logger;
     }
 
@@ -50,6 +52,7 @@ public class ParkingVerificationController : ControllerBase
             if (user == null)
             {
                 _logger.LogWarning("User {UserId} not found", userId);
+                await _accessLogService.LogAsync(User, "GetVerificationRequests", false, "User not found");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -60,6 +63,7 @@ public class ParkingVerificationController : ControllerBase
 
             if (user.UserType != UserType.Admin)
             {
+                await _accessLogService.LogAsync(User, "GetVerificationRequests", false, "Not an admin");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -127,6 +131,8 @@ public class ParkingVerificationController : ControllerBase
                 "Retrieved {Count} verification requests (page {Page}/{TotalPages}, status '{Status}') for admin user {UserId}",
                 result.Count, page, totalPages, normalizedStatus, userId);
 
+            await _accessLogService.LogAsync(User, "GetVerificationRequests", true, $"total={total} status={normalizedStatus}");
+
             return Ok(new VerificationRequestListResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -143,6 +149,7 @@ public class ParkingVerificationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving verification requests");
+            await _accessLogService.LogAsync(User, "GetVerificationRequests", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -171,6 +178,7 @@ public class ParkingVerificationController : ControllerBase
             if (user == null)
             {
                 _logger.LogWarning("User {UserId} not found", userId);
+                await _accessLogService.LogAsync(User, "GetVerificationRequestById", false, $"User not found (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -182,6 +190,7 @@ public class ParkingVerificationController : ControllerBase
             if (user.UserType != UserType.Admin)
             {
                 _logger.LogWarning("Unauthorized access attempt. UserId={UserId}, UserType={UserType}", userId, user.UserType);
+                await _accessLogService.LogAsync(User, "GetVerificationRequestById", false, $"Not an admin (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -201,6 +210,7 @@ public class ParkingVerificationController : ControllerBase
             if (verificationRequest == null)
             {
                 _logger.LogWarning("Verification request {VerificationRequestId} not found", id);
+                await _accessLogService.LogAsync(User, "GetVerificationRequestById", false, $"Verification request not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -213,6 +223,8 @@ public class ParkingVerificationController : ControllerBase
 
             _logger.LogInformation("Retrieved verification request {VerificationRequestId} for admin user {UserId}", id, userId);
 
+            await _accessLogService.LogAsync(User, "GetVerificationRequestById", true, $"VerificationRequestId={id}");
+
             return Ok(new VerificationRequestDetailResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -224,6 +236,7 @@ public class ParkingVerificationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving verification request {VerificationRequestId}", id);
+            await _accessLogService.LogAsync(User, "GetVerificationRequestById", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -253,6 +266,7 @@ public class ParkingVerificationController : ControllerBase
             if (user == null)
             {
                 _logger.LogWarning("User {UserId} not found", userId);
+                await _accessLogService.LogAsync(User, "DecideVerificationRequest", false, $"User not found (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -264,6 +278,7 @@ public class ParkingVerificationController : ControllerBase
             if (user.UserType != UserType.Admin)
             {
                 _logger.LogWarning("Unauthorized approval attempt. UserId={UserId}, UserType={UserType}", userId, user.UserType);
+                await _accessLogService.LogAsync(User, "DecideVerificationRequest", false, $"Not an admin (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -279,6 +294,7 @@ public class ParkingVerificationController : ControllerBase
             if (verificationRequest == null)
             {
                 _logger.LogWarning("Verification request {VerificationRequestId} not found", id);
+                await _accessLogService.LogAsync(User, "DecideVerificationRequest", false, $"Verification request not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -289,6 +305,7 @@ public class ParkingVerificationController : ControllerBase
 
             if (verificationRequest.VerificationStatus != VerificationStatus.Pending)
             {
+                await _accessLogService.LogAsync(User, "DecideVerificationRequest", false, $"Already processed (id={id})");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -300,6 +317,7 @@ public class ParkingVerificationController : ControllerBase
             var normalizedDecision = request.Decision.Trim().ToLowerInvariant();
             if (normalizedDecision != "approved" && normalizedDecision != "rejected")
             {
+                await _accessLogService.LogAsync(User, "DecideVerificationRequest", false, $"Invalid decision '{request.Decision}'");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -325,6 +343,8 @@ public class ParkingVerificationController : ControllerBase
                 "Verification request {VerificationRequestId} status updated from {PreviousStatus} to {NewStatus} by admin {UserId}",
                 id, previousStatus, verificationRequest.VerificationStatus, user.FirstName + user.LastName);
 
+            await _accessLogService.LogAsync(User, "DecideVerificationRequest", true, $"VerificationRequestId={id} {normalizedDecision}");
+
             return Ok(new ApprovalResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -339,6 +359,7 @@ public class ParkingVerificationController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error approving/rejecting verification request {VerificationRequestId}", id);
+            await _accessLogService.LogAsync(User, "DecideVerificationRequest", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,

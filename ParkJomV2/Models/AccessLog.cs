@@ -9,18 +9,15 @@ public class AccessLog
     [Key]
     public int AccessLogId { get; set; }
 
-    [Required]
-    public int BookingId { get; set; }
+    public int? BookingId { get; set; }
 
-    [Required]
-    public int UserId { get; set; }
+    public int? UserId { get; set; }
 
-    [Required]
-    public int IoTDeviceId { get; set; }
+    public int? IoTDeviceId { get; set; }
 
 
     [StringLength(1000)]
-    public string Actions { get; set; }
+    public string Actions { get; set; } = string.Empty;
 
     public DateTime AccessedAt { get; set; }
 
@@ -31,11 +28,11 @@ public class AccessLog
     // Navigation Properties
 
     [ForeignKey(nameof(BookingId))]
-    public Booking Booking { get; set; } = null!;
+    public Booking? Booking { get; set; }
 
     [ForeignKey(nameof(UserId))]
-    public User User { get; set; } = null!;
+    public User? User { get; set; }
 
     [ForeignKey(nameof(IoTDeviceId))]
-    public IoTDevice IoTDevice { get; set; } = null!;
+    public IoTDevice? IoTDevice { get; set; }
 }

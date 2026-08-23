@@ -16,14 +16,17 @@ public class ParkingController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
     private readonly CloudinaryService _cloudinaryService;
+    private readonly AccessLogService _accessLogService;
     private readonly ILogger<ParkingController> _logger;
     private readonly IPropertyService _propertyService;
 
     public ParkingController(ApplicationDbContext context, CloudinaryService cloudinaryService,
+        AccessLogService accessLogService,
         ILogger<ParkingController> logger, IPropertyService propertyService)
     {
         _context = context;
         _cloudinaryService = cloudinaryService;
+        _accessLogService = accessLogService;
         _logger = logger;
         _propertyService = propertyService;
     }
@@ -49,6 +52,7 @@ public class ParkingController : ControllerBase
 
             if (spot == null)
             {
+                await _accessLogService.LogAsync(User, "GetParkingSpot", false, $"Parking spot not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -84,6 +88,8 @@ public class ParkingController : ControllerBase
                 }).ToList()
             };
 
+            await _accessLogService.LogAsync(User, "GetParkingSpot", true, $"ParkingSpotId={id}");
+
             return Ok(new ParkingSpotDetailResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -95,6 +101,7 @@ public class ParkingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving parking spot {ParkingSpotId}", id);
+            await _accessLogService.LogAsync(User, "GetParkingSpot", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -118,10 +125,10 @@ public class ParkingController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ParkingRegistrationResponse>> RegisterParking([FromForm] ParkingRegistrationRequest request)
     {
-
         // check if request is valid
         if (!ModelState.IsValid)
         {
+            await _accessLogService.LogAsync(User, "RegisterParking", false, "Invalid request");
             return BadRequest(new ErrorResponse
             {
                 Code = StatusCodes.Status400BadRequest,
@@ -136,6 +143,7 @@ public class ParkingController : ControllerBase
 
         if (user == null)
         {
+            await _accessLogService.LogAsync(User, "RegisterParking", false, "User not found");
             return NotFound(new ErrorResponse
             {
                 Code = StatusCodes.Status404NotFound,
@@ -146,6 +154,7 @@ public class ParkingController : ControllerBase
 
         if (user.UserType != UserType.PropertyOwner)
         {
+            await _accessLogService.LogAsync(User, "RegisterParking", false, "Not a property owner");
             return BadRequest(new ErrorResponse
             {
                 Code = StatusCodes.Status400BadRequest,
@@ -159,6 +168,7 @@ public class ParkingController : ControllerBase
 
         if (!allowedTypes.Contains(request.Document.ContentType.ToLower()))
         {
+            await _accessLogService.LogAsync(User, "RegisterParking", false, "Invalid file type");
             return BadRequest(new ErrorResponse
             {
                 Code = StatusCodes.Status400BadRequest,
@@ -171,6 +181,7 @@ public class ParkingController : ControllerBase
         var property = await _propertyService.ResolvePropertyAsync(request);
         if (property == null)
         {
+            await _accessLogService.LogAsync(User, "RegisterParking", false, "Could not resolve property");
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -265,6 +276,7 @@ public class ParkingController : ControllerBase
             _logger.LogInformation("Verification request submitted successfully. ParkingSpotId={ParkingSpotId}, VerificationRequestId={VerificationRequestId}",
                 parkingSpot.ParkingSpotId, verificationRequest.VerificationRequestId);
 
+            await _accessLogService.LogAsync(User, "RegisterParking", true, $"ParkingSpotId={parkingSpot.ParkingSpotId} VerificationRequestId={verificationRequest.VerificationRequestId}");
             return Ok(new ParkingRegistrationResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -278,6 +290,7 @@ public class ParkingController : ControllerBase
         {
             await transaction.RollbackAsync();
             _logger.LogError(ex, "Verification request submission failed for UserId={UserId}", userId);
+            await _accessLogService.LogAsync(User, "RegisterParking", false, ex.Message);
 
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
@@ -306,6 +319,7 @@ public class ParkingController : ControllerBase
 
             if (user == null)
             {
+                await _accessLogService.LogAsync(User, "UpdateParkingSpot", false, $"User not found (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -318,6 +332,7 @@ public class ParkingController : ControllerBase
 
             if (spot == null)
             {
+                await _accessLogService.LogAsync(User, "UpdateParkingSpot", false, $"Parking spot not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -328,6 +343,7 @@ public class ParkingController : ControllerBase
 
             if (spot.OwnerId != userId)
             {
+                await _accessLogService.LogAsync(User, "UpdateParkingSpot", false, $"Not authorized (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -351,6 +367,7 @@ public class ParkingController : ControllerBase
 
             _logger.LogInformation("Parking spot updated. ParkingSpotId={ParkingSpotId}", spot.ParkingSpotId);
 
+            await _accessLogService.LogAsync(User, "UpdateParkingSpot", true, $"ParkingSpotId={spot.ParkingSpotId}");
             return Ok(new UpdateParkingSpotResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -362,6 +379,7 @@ public class ParkingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating parking spot {ParkingSpotId}", id);
+            await _accessLogService.LogAsync(User, "UpdateParkingSpot", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -388,6 +406,7 @@ public class ParkingController : ControllerBase
 
             if (user == null)
             {
+                await _accessLogService.LogAsync(User, "DeleteParkingSpot", false, $"User not found (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -403,6 +422,7 @@ public class ParkingController : ControllerBase
 
             if (spot == null)
             {
+                await _accessLogService.LogAsync(User, "DeleteParkingSpot", false, $"Parking spot not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -413,6 +433,7 @@ public class ParkingController : ControllerBase
 
             if (spot.OwnerId != userId && user.UserType != UserType.Admin)
             {
+                await _accessLogService.LogAsync(User, "DeleteParkingSpot", false, $"Not authorized (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -423,6 +444,7 @@ public class ParkingController : ControllerBase
 
             if (spot.Bookings.Any(b => b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Pending))
             {
+                await _accessLogService.LogAsync(User, "DeleteParkingSpot", false, $"Active bookings exist (id={id})");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -438,6 +460,7 @@ public class ParkingController : ControllerBase
 
             _logger.LogInformation("Parking spot deleted. ParkingSpotId={ParkingSpotId}", id);
 
+            await _accessLogService.LogAsync(User, "DeleteParkingSpot", true, $"ParkingSpotId={id}");
             return Ok(new DeleteParkingSpotResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -448,6 +471,7 @@ public class ParkingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting parking spot {ParkingSpotId}", id);
+            await _accessLogService.LogAsync(User, "DeleteParkingSpot", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -476,6 +500,7 @@ public class ParkingController : ControllerBase
             if (user == null)
             {
                 _logger.LogWarning("User {UserId} not found", userId);
+                await _accessLogService.LogAsync(User, "GetMySpots", false, "User not found");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -487,6 +512,7 @@ public class ParkingController : ControllerBase
             if (user.UserType != UserType.PropertyOwner)
             {
                 _logger.LogWarning("Unauthorized access attempt. UserId={UserId}, UserType={UserType}", userId, user.UserType);
+                await _accessLogService.LogAsync(User, "GetMySpots", false, "Not a property owner");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -506,6 +532,7 @@ public class ParkingController : ControllerBase
             if (!parkingSpots.Any())
             {
                 _logger.LogInformation("No parking spots found for user {UserId}", userId);
+                await _accessLogService.LogAsync(User, "GetMySpots", true, "0 spots");
                 return Ok(new DisplayMyParkingResponse
                 {
                     Code = StatusCodes.Status200OK,
@@ -521,6 +548,7 @@ public class ParkingController : ControllerBase
 
             _logger.LogInformation("Retrieved {Count} parking spots for owner {UserId}", result.Count, userId);
 
+            await _accessLogService.LogAsync(User, "GetMySpots", true, $"{result.Count} spot(s)");
             return Ok(new DisplayMyParkingResponse
                 {
                     Code = StatusCodes.Status200OK,
@@ -532,6 +560,7 @@ public class ParkingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving user's parking spots");
+            await _accessLogService.LogAsync(User, "GetMySpots", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -564,6 +593,7 @@ public class ParkingController : ControllerBase
             if (user == null)
             {
                 _logger.LogWarning("User {UserId} not found", userId);
+                await _accessLogService.LogAsync(User, "ConfigParking", false, "User not found");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -575,6 +605,7 @@ public class ParkingController : ControllerBase
             if (user.UserType != UserType.PropertyOwner)
             {
                 _logger.LogWarning("Unauthorized config attempt. UserId={UserId}, UserType={UserType}", userId, user.UserType);
+                await _accessLogService.LogAsync(User, "ConfigParking", false, "Not a property owner");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -589,6 +620,7 @@ public class ParkingController : ControllerBase
             if (parkingSpot == null || parkingSpot.OwnerId != userId)
             {
                 _logger.LogWarning("Parking spot {ParkingSpotId} not found or unauthorized. UserId={UserId}", request.ParkingSpotId, userId);
+                await _accessLogService.LogAsync(User, "ConfigParking", false, $"Spot not found/unauthorized (id={request.ParkingSpotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -604,6 +636,7 @@ public class ParkingController : ControllerBase
             if (pvq == null || pvq.VerificationStatus != VerificationStatus.Approved)
             {
                 _logger.LogWarning("Parking spot {ParkingSpotId} is not verified. UserId={UserId}", request.ParkingSpotId, userId);
+                await _accessLogService.LogAsync(User, "ConfigParking", false, $"Not verified (id={request.ParkingSpotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -620,6 +653,7 @@ public class ParkingController : ControllerBase
                 {
                     if (!allowedTypes.Contains(file.ContentType.ToLower()))
                     {
+                        await _accessLogService.LogAsync(User, "ConfigParking", false, "Invalid image file type");
                         return BadRequest(new ErrorResponse
                         {
                             Code = StatusCodes.Status400BadRequest,
@@ -694,6 +728,7 @@ public class ParkingController : ControllerBase
                 }
                 else
                 {
+                    await _accessLogService.LogAsync(User, "ConfigParking", false, "No parking images uploaded");
                     return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
                     {
                         Code = StatusCodes.Status500InternalServerError,
@@ -718,6 +753,7 @@ public class ParkingController : ControllerBase
                 }
                 else
                 {
+                    await _accessLogService.LogAsync(User, "ConfigParking", false, $"Invalid day type '{request.DayType}'");
                     return StatusCode(StatusCodes.Status400BadRequest, new ErrorResponse
                     {
                         Code = StatusCodes.Status400BadRequest,
@@ -767,6 +803,7 @@ public class ParkingController : ControllerBase
 
                 _logger.LogInformation("Parking configuration completed successfully. ParkingSpotId={ParkingSpotId}", request.ParkingSpotId);
 
+                await _accessLogService.LogAsync(User, "ConfigParking", true, $"ParkingSpotId={parkingSpot.ParkingSpotId}");
                 return Ok(new ConfigParkingResponse
                 {
                     Code = StatusCodes.Status200OK,
@@ -779,6 +816,7 @@ public class ParkingController : ControllerBase
             {
                 await transaction.RollbackAsync();
                 _logger.LogError(ex, "Parking configuration failed for UserId={UserId}, ParkingSpotId={ParkingSpotId}", userId, request.ParkingSpotId);
+                await _accessLogService.LogAsync(User, "ConfigParking", false, ex.Message);
 
                 return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
                 {
@@ -791,6 +829,7 @@ public class ParkingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in config-parking endpoint for ParkingSpotId={ParkingSpotId}", request.ParkingSpotId);
+            await _accessLogService.LogAsync(User, "ConfigParking", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -821,6 +860,7 @@ public class ParkingController : ControllerBase
 
             if (user == null)
             {
+                await _accessLogService.LogAsync(User, "UpdateAvailability", false, "User not found");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -833,6 +873,7 @@ public class ParkingController : ControllerBase
 
             if (spot == null)
             {
+                await _accessLogService.LogAsync(User, "UpdateAvailability", false, $"Parking spot not found (id={request.ParkingSpotId})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -843,6 +884,7 @@ public class ParkingController : ControllerBase
 
             if (spot.OwnerId != userId && user.UserType != UserType.Admin)
             {
+                await _accessLogService.LogAsync(User, "UpdateAvailability", false, $"Not authorized (id={request.ParkingSpotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -856,6 +898,7 @@ public class ParkingController : ControllerBase
 
             if (verificationRequest == null || verificationRequest.VerificationStatus != VerificationStatus.Approved)
             {
+                await _accessLogService.LogAsync(User, "UpdateAvailability", false, $"Not verified (id={request.ParkingSpotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -882,6 +925,7 @@ public class ParkingController : ControllerBase
                 }
             }
             else{
+                await _accessLogService.LogAsync(User, "UpdateAvailability", false, $"Invalid status '{request.AvailabilityStatus}'");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -893,6 +937,7 @@ public class ParkingController : ControllerBase
 
             if (availabilityStatus == AvailabilityStatus.Deleted)
             {
+                await _accessLogService.LogAsync(User, "UpdateAvailability", false, $"Deleted spot (id={request.ParkingSpotId})");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -908,6 +953,7 @@ public class ParkingController : ControllerBase
             _logger.LogInformation("Parking spot availability updated. ParkingSpotId={ParkingSpotId}, AvailabilityStatus={Status}",
                 spot.ParkingSpotId, spot.AvailabilityStatus);
 
+            await _accessLogService.LogAsync(User, "UpdateAvailability", true, $"ParkingSpotId={spot.ParkingSpotId} -> {availabilityStatus}");
             return Ok(new UpdateAvailabilityResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -920,6 +966,7 @@ public class ParkingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating parking spot availability {ParkingSpotId}", request.ParkingSpotId);
+            await _accessLogService.LogAsync(User, "UpdateAvailability", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -949,6 +996,7 @@ public class ParkingController : ControllerBase
 
             if (user == null)
             {
+                await _accessLogService.LogAsync(User, "PublishParking", false, "User not found");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -961,6 +1009,7 @@ public class ParkingController : ControllerBase
 
             if (spot == null)
             {
+                await _accessLogService.LogAsync(User, "PublishParking", false, $"Parking spot not found (id={request.ParkingSpotId})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -971,6 +1020,7 @@ public class ParkingController : ControllerBase
 
             if (spot.OwnerId != userId && user.UserType != UserType.Admin)
             {
+                await _accessLogService.LogAsync(User, "PublishParking", false, $"Not authorized (id={request.ParkingSpotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -984,6 +1034,7 @@ public class ParkingController : ControllerBase
 
             if (verificationRequest == null || verificationRequest.VerificationStatus != VerificationStatus.Approved)
             {
+                await _accessLogService.LogAsync(User, "PublishParking", false, $"Not verified (id={request.ParkingSpotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -994,6 +1045,7 @@ public class ParkingController : ControllerBase
 
             if (spot.AvailabilityStatus == AvailabilityStatus.Deleted)
             {
+                await _accessLogService.LogAsync(User, "PublishParking", false, $"Deleted spot (id={request.ParkingSpotId})");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -1010,6 +1062,7 @@ public class ParkingController : ControllerBase
             _logger.LogInformation("Parking spot publish status updated. ParkingSpotId={ParkingSpotId}, IsPublished={IsPublished}",
                 spot.ParkingSpotId, spot.IsPublished);
 
+            await _accessLogService.LogAsync(User, "PublishParking", true, $"ParkingSpotId={spot.ParkingSpotId} published={spot.IsPublished}");
             return Ok(new PublishParkingResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -1022,6 +1075,7 @@ public class ParkingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating parking spot publish status {ParkingSpotId}", request.ParkingSpotId);
+            await _accessLogService.LogAsync(User, "PublishParking", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,

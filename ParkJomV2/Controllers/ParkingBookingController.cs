@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
 using ParkJomV2.DTOs;
 using ParkJomV2.Models;
+using ParkJomV2.Services;
 using ParkJomV2.Models.Enums;
 using System.Security.Claims;
 
@@ -14,11 +15,13 @@ namespace ParkJomV2.Controllers;
 public class ParkingBookingController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly AccessLogService _accessLogService;
     private readonly ILogger<ParkingBookingController> _logger;
 
-    public ParkingBookingController(ApplicationDbContext context, ILogger<ParkingBookingController> logger)
+    public ParkingBookingController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<ParkingBookingController> logger)
     {
         _context = context;
+        _accessLogService = accessLogService;
         _logger = logger;
     }
 
@@ -40,6 +43,7 @@ public class ParkingBookingController : ControllerBase
 
             if (user == null)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "User not found");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -50,6 +54,7 @@ public class ParkingBookingController : ControllerBase
 
             if (user.UserType != UserType.Renter && user.UserType != UserType.PropertyOwner)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "User is not a renter/owner");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -64,6 +69,7 @@ public class ParkingBookingController : ControllerBase
 
             if (spot == null)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "Parking spot not found");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -74,6 +80,7 @@ public class ParkingBookingController : ControllerBase
 
             if (!spot.IsPublished || spot.AvailabilityStatus != AvailabilityStatus.Available)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "Parking spot not available");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -85,6 +92,7 @@ public class ParkingBookingController : ControllerBase
             var isVerified = spot.VerificationRequests.Any(vr => vr.VerificationStatus == VerificationStatus.Approved);
             if (!isVerified)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "Parking spot not verified");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -95,6 +103,7 @@ public class ParkingBookingController : ControllerBase
 
             if (request.StartDate >= request.EndDate)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "Start date must be before end date");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -105,6 +114,7 @@ public class ParkingBookingController : ControllerBase
 
             if (request.StartDate < DateTime.UtcNow)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "Start date cannot be in the past");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -122,6 +132,7 @@ public class ParkingBookingController : ControllerBase
 
             if (hasOverlap)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "Parking spot already booked for the period");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -135,6 +146,7 @@ public class ParkingBookingController : ControllerBase
 
             if (vehicle == null)
             {
+                await _accessLogService.LogAsync(User, "CreateBooking", false, "Vehicle not found or not owned by user");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -171,6 +183,8 @@ public class ParkingBookingController : ControllerBase
                 "Booking created. BookingId={BookingId}, Reference={Reference}, SpotId={SpotId}, UserId={UserId}",
                 booking.BookingId, booking.BookingReference, request.ParkingSpotId, userId);
 
+            await _accessLogService.LogAsync(User, "CreateBooking", true, $"BookingId={booking.BookingId}", booking.BookingId);
+
             return Ok(new BookingDetailResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -182,6 +196,7 @@ public class ParkingBookingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating booking");
+            await _accessLogService.LogAsync(User, "CreateBooking", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -215,6 +230,8 @@ public class ParkingBookingController : ControllerBase
 
             _logger.LogInformation("Retrieved {Count} bookings for user {UserId}", result.Count, userId);
 
+            await _accessLogService.LogAsync(User, "GetMyBookings", true, $"{result.Count} booking(s)");
+
             return Ok(new BookingListResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -228,6 +245,7 @@ public class ParkingBookingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving user's bookings");
+            await _accessLogService.LogAsync(User, "GetMyBookings", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -255,6 +273,7 @@ public class ParkingBookingController : ControllerBase
 
             if (user == null)
             {
+                await _accessLogService.LogAsync(User, $"GetBookingById", false, $"User not found (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -271,6 +290,7 @@ public class ParkingBookingController : ControllerBase
 
             if (booking == null)
             {
+                await _accessLogService.LogAsync(User, "GetBookingById", false, $"Booking not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -284,6 +304,7 @@ public class ParkingBookingController : ControllerBase
                 booking.ParkingSpot.OwnerId != userId &&
                 user.UserType != UserType.Admin)
             {
+                await _accessLogService.LogAsync(User, "GetBookingById", false, $"Not authorized (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -293,6 +314,8 @@ public class ParkingBookingController : ControllerBase
             }
 
             _logger.LogInformation("Retrieved booking {BookingId} for user {UserId}", id, userId);
+
+            await _accessLogService.LogAsync(User, "GetBookingById", true, $"BookingId={id}", id);
 
             return Ok(new BookingDetailResponse
             {
@@ -305,6 +328,7 @@ public class ParkingBookingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving booking {BookingId}", id);
+            await _accessLogService.LogAsync(User, "GetBookingById", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -333,6 +357,7 @@ public class ParkingBookingController : ControllerBase
 
             if (user == null)
             {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"User not found (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -347,6 +372,7 @@ public class ParkingBookingController : ControllerBase
 
             if (booking == null)
             {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Booking not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -358,6 +384,7 @@ public class ParkingBookingController : ControllerBase
             // Only the renter who made the booking or the spot owner can cancel
             if (booking.RenterId != userId && booking.ParkingSpot.OwnerId != userId && user.UserType != UserType.Admin)
             {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Not authorized (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
                     Code = StatusCodes.Status403Forbidden,
@@ -368,6 +395,7 @@ public class ParkingBookingController : ControllerBase
 
             if (booking.BookingStatus == BookingStatus.Cancelled)
             {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Already cancelled (id={id})");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -378,6 +406,7 @@ public class ParkingBookingController : ControllerBase
 
             if (booking.BookingStatus == BookingStatus.Completed)
             {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Cannot cancel completed booking (id={id})");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -397,6 +426,8 @@ public class ParkingBookingController : ControllerBase
                 "Booking cancelled. BookingId={BookingId}, UserId={UserId}, Reason={Reason}",
                 id, userId, request.CancellationReason);
 
+            await _accessLogService.LogAsync(User, "CancelBooking", true, $"BookingId={id}", id);
+
             return Ok(new CancelBookingResponse
             {
                 Code = StatusCodes.Status200OK,
@@ -410,6 +441,7 @@ public class ParkingBookingController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error cancelling booking {BookingId}", id);
+            await _accessLogService.LogAsync(User, "CancelBooking", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,

@@ -12,12 +12,14 @@ namespace ParkJomV2.Controllers;
 public class StripeController : ControllerBase
 {
     private readonly StripeService _stripeService;
+    private readonly AccessLogService _accessLogService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<StripeController> _logger;
 
-    public StripeController(StripeService stripeService, IConfiguration configuration, ILogger<StripeController> logger)
+    public StripeController(StripeService stripeService, AccessLogService accessLogService, IConfiguration configuration, ILogger<StripeController> logger)
     {
         _stripeService = stripeService;
+        _accessLogService = accessLogService;
         _configuration = configuration;
         _logger = logger;
     }
@@ -35,6 +37,7 @@ public class StripeController : ControllerBase
             var webhookSecret = _configuration["Stripe:WebhookSecret"];
             if (string.IsNullOrWhiteSpace(webhookSecret))
             {
+                await _accessLogService.LogAsync((int?)null, "StripeWebhook", false, "Webhook secret not configured");
                 return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
                 {
                     Code = StatusCodes.Status500InternalServerError,
@@ -49,11 +52,13 @@ public class StripeController : ControllerBase
 
             await _stripeService.ProcessWebhookAsync(stripeEvent);
 
+            await _accessLogService.LogAsync((int?)null, "StripeWebhook", true, $"EventType={stripeEvent.Type}");
             return Ok(new { received = true, processed = true });
         }
         catch (StripeException ex)
         {
             _logger.LogError(ex, "Invalid Stripe webhook signature");
+            await _accessLogService.LogAsync((int?)null, "StripeWebhook", false, "Invalid signature");
             return BadRequest(new ErrorResponse
             {
                 Code = StatusCodes.Status400BadRequest,
@@ -64,6 +69,7 @@ public class StripeController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error handling Stripe webhook");
+            await _accessLogService.LogAsync((int?)null, "StripeWebhook", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,

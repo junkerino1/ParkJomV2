@@ -15,17 +15,20 @@ namespace ParkJomV2.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly CloudinaryService _cloudinaryService;
+        private readonly AccessLogService _accessLogService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<MediaController> _logger;
 
         public MediaController(
             ApplicationDbContext context,
             CloudinaryService cloudinaryService,
+            AccessLogService accessLogService,
             IHttpClientFactory httpClientFactory,
             ILogger<MediaController> logger)
         {
             _context = context;
             _cloudinaryService = cloudinaryService;
+            _accessLogService = accessLogService;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
         }
@@ -46,6 +49,7 @@ namespace ParkJomV2.Controllers
 
                 if (user == null)
                 {
+                    await _accessLogService.LogAsync(User, "ViewMedia", false, $"Unauthorized (mediaFileId={mediaFileId})");
                     return Unauthorized(new ErrorResponse
                     {
                         Code = StatusCodes.Status401Unauthorized,
@@ -56,6 +60,7 @@ namespace ParkJomV2.Controllers
 
                 if (user.UserType != UserType.Admin)
                 {
+                    await _accessLogService.LogAsync(User, "ViewMedia", false, $"Forbidden (mediaFileId={mediaFileId})");
                     return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                     {
                         Code = StatusCodes.Status403Forbidden,
@@ -70,6 +75,7 @@ namespace ParkJomV2.Controllers
 
                 if (media == null)
                 {
+                    await _accessLogService.LogAsync(User, "ViewMedia", false, $"Media not found (mediaFileId={mediaFileId})");
                     return NotFound(new ErrorResponse
                     {
                         Code = StatusCodes.Status404NotFound,
@@ -101,6 +107,7 @@ namespace ParkJomV2.Controllers
                         response.StatusCode,
                         mediaFileId);
 
+                    await _accessLogService.LogAsync(User, "ViewMedia", false, $"Cloudinary status {(int)response.StatusCode}");
                     return StatusCode((int)response.StatusCode, new ErrorResponse
                     {
                         Code = (int)response.StatusCode,
@@ -127,6 +134,8 @@ namespace ParkJomV2.Controllers
                     "X-Content-Type-Options",
                     "nosniff");
 
+                await _accessLogService.LogAsync(User, "ViewMedia", true, $"MediaFileId={mediaFileId}");
+
                 return File(
                     stream,
                     resourceType + "/" + media.Format,
@@ -138,6 +147,7 @@ namespace ParkJomV2.Controllers
                     "Failed to retrieve media {MediaFileId}",
                     mediaFileId);
 
+                await _accessLogService.LogAsync(User, "ViewMedia", false, ex.Message);
                 return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
                 {
                     Code = StatusCodes.Status500InternalServerError,
@@ -153,6 +163,7 @@ namespace ParkJomV2.Controllers
             var media = await _context.MediaFiles.FirstOrDefaultAsync(m => m.MediaFileId == mediaFileId);
             if (media == null)
             {
+                await _accessLogService.LogAsync(User, "ViewImage", false, $"Media not found (mediaFileId={mediaFileId})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -171,6 +182,7 @@ namespace ParkJomV2.Controllers
                     "Cloudinary returned {StatusCode} for MediaFileId={MediaFileId}",
                     response.StatusCode,
                     mediaFileId);
+                await _accessLogService.LogAsync(User, "ViewImage", false, $"Cloudinary status {(int)response.StatusCode}");
                 return StatusCode((int)response.StatusCode, new ErrorResponse
                 {
                     Code = (int)response.StatusCode,
@@ -191,6 +203,7 @@ namespace ParkJomV2.Controllers
             Response.Headers.Append(
                 "X-Content-Type-Options",
                 "nosniff");
+            await _accessLogService.LogAsync(User, "ViewImage", true, $"MediaFileId={mediaFileId}");
             return File(
                 stream,
                 resourceType + "/" + media.Format,
