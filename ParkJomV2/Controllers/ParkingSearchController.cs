@@ -124,7 +124,7 @@ public class ParkingSearchController : ControllerBase
                 PageSize = pageSize
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
