@@ -14,6 +14,8 @@ namespace ParkJomV2.Controllers;
 [Route("api/parking")]
 public class ParkingVerificationController : ControllerBase
 {
+    private const int PageSize = 100;
+
     private readonly ApplicationDbContext _context;
     private readonly ILogger<ParkingVerificationController> _logger;
 
@@ -26,14 +28,19 @@ public class ParkingVerificationController : ControllerBase
     
 
     /// <summary>
-    /// Get all parking verification requests (Admin only)
+    /// Get all parking verification requests (Admin only), with optional status filter and paging.
+    /// status: pending | completed (approved + rejected) | approved | rejected (default: all)
+    /// page: 1-based, 100 results per page.
     /// </summary>
     [Authorize]
     [HttpGet("verification-requests")]
     [ProducesResponseType(typeof(VerificationRequestListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<VerificationRequestListResponse>> GetVerificationRequests()
+    public async Task<ActionResult<VerificationRequestListResponse>> GetVerificationRequests(
+        [FromQuery] string? status = null,
+        [FromQuery] int page = 1)
     {
         try
         {
@@ -61,27 +68,76 @@ public class ParkingVerificationController : ControllerBase
                 });
             }
 
-            var verificationRequests = await _context.ParkingVerificationRequests
+            // Normalize the status filter (case-insensitive)
+            var normalizedStatus = string.IsNullOrWhiteSpace(status)
+                ? string.Empty
+                : status.Trim().ToLowerInvariant();
+
+            if (normalizedStatus.Length > 0
+                && normalizedStatus is not ("pending" or "completed" or "approved" or "rejected"))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Status must be one of: pending, completed, approved, rejected"
+                });
+            }
+
+            if (page < 1)
+            {
+                page = 1;
+            }
+
+            var query = _context.ParkingVerificationRequests.AsNoTracking();
+
+            // pending = Pending only; completed = Approved + Rejected
+            query = normalizedStatus switch
+            {
+                "pending" => query.Where(vr => vr.VerificationStatus == VerificationStatus.Pending),
+                "approved" => query.Where(vr => vr.VerificationStatus == VerificationStatus.Approved),
+                "rejected" => query.Where(vr => vr.VerificationStatus == VerificationStatus.Rejected),
+                "completed" => query.Where(vr => vr.VerificationStatus == VerificationStatus.Approved
+                                              || vr.VerificationStatus == VerificationStatus.Rejected),
+                _ => query
+            };
+
+            var total = await query.CountAsync();
+            var totalPages = PageSize > 0
+                ? (int)Math.Ceiling(total / (double)PageSize)
+                : 0;
+
+            var verificationRequests = await query
+                .OrderByDescending(vr => vr.SubmittedAt)
+                .Skip((page - 1) * PageSize)
+                .Take(PageSize)
+                .AsSplitQuery()
                 .Include(vr => vr.ParkingSpot)
-                .ThenInclude(ps => ps.Property)
+                    .ThenInclude(ps => ps.Property)
                 .Include(vr => vr.SubmittedByUser)
                 .Include(vr => vr.VerificationDocuments)
                     .ThenInclude(vd => vd.MediaFile)
-                .OrderByDescending(vr => vr.SubmittedAt)
                 .ToListAsync();
 
             var result = verificationRequests
                 .Select(MapToVerificationRequestListDTO)
                 .ToList();
 
-            _logger.LogInformation("Retrieved {Count} verification requests for admin user {UserId}", result.Count, userId);
+            _logger.LogInformation(
+                "Retrieved {Count} verification requests (page {Page}/{TotalPages}, status '{Status}') for admin user {UserId}",
+                result.Count, page, totalPages, normalizedStatus, userId);
 
             return Ok(new VerificationRequestListResponse
             {
                 Code = StatusCodes.Status200OK,
                 Success = true,
                 Message = "Verification requests retrieved successfully",
-                Data = result
+                Data = result,
+                Page = page,
+                PageSize = PageSize,
+                Total = total,
+                TotalPages = totalPages,
+                Status = normalizedStatus
             });
         }
         catch (Exception ex)

@@ -113,6 +113,8 @@ public class WalletTopUpController : ControllerBase
 		}
 	}
 
+
+	// frontend poll status of the topup, if success, then show success message, if failed, then show failed message
 	[Authorize]
 	[HttpGet("topup/status")]
 	[ProducesResponseType(typeof(WalletTopUpStatusResponse), StatusCodes.Status200OK)]
