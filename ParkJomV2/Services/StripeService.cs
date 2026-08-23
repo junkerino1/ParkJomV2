@@ -31,6 +31,14 @@ public class StripeService
             throw new InvalidOperationException($"Top up amount must be between RM{MinTopUpAmount:0.00} and RM{MaxTopUpAmount:0.00}.");
         }
 
+        var returnTarget = string.IsNullOrWhiteSpace(request.ReturnTarget)
+            ? "web"
+            : request.ReturnTarget.Trim().ToLowerInvariant();
+        if (returnTarget is not ("web" or "native"))
+        {
+            throw new InvalidOperationException("ReturnTarget must be either 'web' or 'native'.");
+        }
+
         var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
         if (wallet == null)
         {
@@ -62,14 +70,10 @@ public class StripeService
         var apiBaseUrl = _configuration["ApiBaseUrl"]?.TrimEnd('/')
             ?? throw new InvalidOperationException("ApiBaseUrl is not configured.");
 
-        // var localhost = _configuration["localhost"]?.TrimEnd('/')
-        //     ?? throw new InvalidOperationException("localhost is not configured.");
-
-        var successUrl = $"{apiBaseUrl}/api/wallet/topup/success?session_id={{CHECKOUT_SESSION_ID}}";
-        var cancelUrl = $"{apiBaseUrl}/api/wallet/topup/cancel";
-
-        // var successUrl = $"{localhost}/api/wallet/topup/success?session_id={{CHECKOUT_SESSION_ID}}";
-        // var cancelUrl = $"{localhost}/api/wallet/topup/cancel";
+        // Stripe returns to HTTPS bridge endpoints. The bridge then redirects only
+        // to the configured ParkJom web URL or registered native app scheme.
+        var successUrl = $"{apiBaseUrl}/api/wallet/topup/success?returnTarget={returnTarget}&session_id={{CHECKOUT_SESSION_ID}}";
+        var cancelUrl = $"{apiBaseUrl}/api/wallet/topup/cancel?returnTarget={returnTarget}";
         
         var description = string.IsNullOrWhiteSpace(request.Description)
             ? $"Wallet Top Up - RM{request.Amount:0.00}"
@@ -118,6 +122,183 @@ public class StripeService
             PaymentId = payment.PaymentId,
             SessionId = session.Id,
             CheckoutUrl = session.Url ?? string.Empty
+        };
+    }
+
+    public async Task<WalletSummaryResponse> GetWalletAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        var wallet = await _context.Wallets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(w => w.UserId == userId, cancellationToken);
+
+        if (wallet == null)
+        {
+            throw new KeyNotFoundException("Wallet not found for the current user.");
+        }
+
+        return new WalletSummaryResponse
+        {
+            Code = StatusCodes.Status200OK,
+            Success = true,
+            Message = "Wallet retrieved successfully.",
+            WalletId = wallet.WalletId,
+            Balance = wallet.Balance,
+            OnHold = wallet.OnHold,
+            Status = wallet.Status.ToString(),
+            UpdatedAt = wallet.UpdatedAt
+        };
+    }
+
+    public async Task<WalletTopUpStatusResponse> GetTopUpStatusAsync(
+        int userId,
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        sessionId = sessionId.Trim();
+        if (sessionId.Length == 0 || sessionId.Length > 100)
+        {
+            throw new InvalidOperationException("A valid Stripe checkout session ID is required.");
+        }
+
+        // Resolve through the signed-in user's payment before contacting Stripe so
+        // one account can never inspect another account's Checkout Session.
+        var payment = await _context.Payments
+            .Include(p => p.Wallet)
+            .FirstOrDefaultAsync(
+                p => p.UserId == userId && p.StripeSessionId == sessionId,
+                cancellationToken);
+
+        if (payment == null)
+        {
+            throw new KeyNotFoundException("Wallet top-up session was not found.");
+        }
+
+        // Completed is authoritative in ParkJom because only the verified webhook
+        // writes this state and credits the wallet.
+        if (payment.Status == PaymentStatus.Completed)
+        {
+            return BuildTopUpStatusResponse(
+                payment,
+                state: "completed",
+                checkoutStatus: "complete",
+                stripePaymentStatus: "paid",
+                message: "This top-up has been credited to your wallet.");
+        }
+
+        if (payment.Status == PaymentStatus.Cancelled)
+        {
+            return BuildTopUpStatusResponse(
+                payment,
+                state: "cancelled",
+                checkoutStatus: "closed",
+                stripePaymentStatus: "unpaid",
+                message: "This top-up was cancelled. Start a new top-up to continue.");
+        }
+
+        if (payment.Status == PaymentStatus.Failed)
+        {
+            return BuildTopUpStatusResponse(
+                payment,
+                state: "failed",
+                checkoutStatus: "closed",
+                stripePaymentStatus: "unpaid",
+                message: "This top-up failed. Start a new top-up to try again.");
+        }
+
+        ConfigureStripe();
+
+        var sessionService = new SessionService();
+        var session = await sessionService.GetAsync(sessionId, cancellationToken: cancellationToken);
+        var checkoutStatus = session.Status?.Trim().ToLowerInvariant() ?? "unknown";
+        var stripePaymentStatus = session.PaymentStatus?.Trim().ToLowerInvariant() ?? "unknown";
+
+        if (checkoutStatus == "expired" && payment.Status == PaymentStatus.Pending)
+        {
+            payment.Status = PaymentStatus.Cancelled;
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        var isAwaitingWebhook = checkoutStatus == "complete"
+            && stripePaymentStatus is "paid" or "no_payment_required";
+        var canContinue = payment.Status == PaymentStatus.Pending
+            && checkoutStatus == "open"
+            && !string.IsNullOrWhiteSpace(session.Url);
+
+        var (state, message) = (payment.Status, checkoutStatus, isAwaitingWebhook) switch
+        {
+            (_, _, true) => (
+                "processing",
+                "Payment was received and is waiting for the secure wallet webhook to finish."),
+            (PaymentStatus.Pending, "open", _) => (
+                "open",
+                "Checkout is still open and can be continued."),
+            (PaymentStatus.Cancelled, "expired", _) => (
+                "expired",
+                "This checkout session has expired. Start a new top-up to continue."),
+            (PaymentStatus.Cancelled, _, _) => (
+                "cancelled",
+                "This top-up was cancelled. Start a new top-up to continue."),
+            (PaymentStatus.Failed, _, _) => (
+                "failed",
+                "This top-up failed. Start a new top-up to try again."),
+            _ => (
+                "unavailable",
+                "The current checkout cannot be continued. Start a new top-up to try again.")
+        };
+
+        return BuildTopUpStatusResponse(
+            payment,
+            state,
+            checkoutStatus,
+            stripePaymentStatus,
+            message,
+            canContinue,
+            canContinue ? session.Url : null,
+            session.ExpiresAt);
+    }
+
+    private void ConfigureStripe()
+    {
+        var secretKey = _configuration["Stripe:SecretKey"];
+        if (string.IsNullOrWhiteSpace(secretKey))
+        {
+            throw new InvalidOperationException("Stripe secret key is not configured.");
+        }
+
+        StripeConfiguration.ApiKey = secretKey;
+    }
+
+    private static WalletTopUpStatusResponse BuildTopUpStatusResponse(
+        Payment payment,
+        string state,
+        string checkoutStatus,
+        string stripePaymentStatus,
+        string message,
+        bool canContinue = false,
+        string? checkoutUrl = null,
+        DateTime? expiresAt = null)
+    {
+        return new WalletTopUpStatusResponse
+        {
+            Code = StatusCodes.Status200OK,
+            Success = true,
+            Message = message,
+            PaymentId = payment.PaymentId,
+            SessionId = payment.StripeSessionId ?? string.Empty,
+            Amount = payment.Amount,
+            Currency = payment.Currency,
+            State = state,
+            PaymentStatus = payment.Status.ToString(),
+            CheckoutStatus = checkoutStatus,
+            StripePaymentStatus = stripePaymentStatus,
+            IsCredited = payment.Status == PaymentStatus.Completed,
+            CanContinue = canContinue,
+            CheckoutUrl = checkoutUrl,
+            ExpiresAt = expiresAt,
+            WalletBalance = payment.Wallet.Balance,
+            WalletUpdatedAt = payment.Wallet.UpdatedAt
         };
     }
 
