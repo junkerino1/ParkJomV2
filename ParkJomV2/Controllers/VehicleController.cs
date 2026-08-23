@@ -298,6 +298,135 @@ namespace ParkJomV2.Controllers
             }
         }
 
+        /// <summary>
+        /// Get all vehicles owned by the authenticated user.
+        /// </summary>
+        [Authorize]
+        [HttpGet("my-vehicle")]
+        [ProducesResponseType(typeof(VehicleListResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<VehicleListResponse>> GetMyVehicles()
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+
+                if (user == null)
+                {
+                    await _accessLogService.LogAsync(User, "GetMyVehicles", false, "User not found");
+                    return NotFound(new ErrorResponse
+                    {
+                        Code = StatusCodes.Status404NotFound,
+                        Success = false,
+                        Message = "User not found."
+                    });
+                }
+
+                var vehicles = await _context.Vehicles
+                    .AsNoTracking()
+                    .Where(v => v.UserId == userId)
+                    .Include(v => v.User)
+                    .OrderByDescending(v => v.CreatedAt)
+                    .ToListAsync();
+
+                var result = vehicles.Select(MapToDTO).ToList();
+
+                await _accessLogService.LogAsync(User, "GetMyVehicles", true, $"{result.Count} vehicle(s)");
+                return Ok(new VehicleListResponse
+                {
+                    Code = StatusCodes.Status200OK,
+                    Success = true,
+                    Message = result.Count > 0
+                        ? $"Retrieved {result.Count} vehicle(s) successfully"
+                        : "No vehicles found",
+                    Data = result
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving user's vehicles");
+                await _accessLogService.LogAsync(User, "GetMyVehicles", false, ex.Message);
+                return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+                {
+                    Code = StatusCodes.Status500InternalServerError,
+                    Success = false,
+                    Message = "An error occurred while retrieving your vehicles."
+                });
+            }
+        }
+
+        /// <summary>
+        /// Get all vehicles in the system (Admin only).
+        /// </summary>
+        [Authorize]
+        [HttpGet("all")]
+        [ProducesResponseType(typeof(VehicleListResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<VehicleListResponse>> GetAllVehicles()
+        {
+            try
+            {
+                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+
+                if (user == null)
+                {
+                    await _accessLogService.LogAsync(User, "GetAllVehicles", false, "User not found");
+                    return NotFound(new ErrorResponse
+                    {
+                        Code = StatusCodes.Status404NotFound,
+                        Success = false,
+                        Message = "User not found."
+                    });
+                }
+
+                if (user.UserType != UserType.Admin)
+                {
+                    await _accessLogService.LogAsync(User, "GetAllVehicles", false, "Not an admin");
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Only administrators can view all vehicles."
+                    });
+                }
+
+                var vehicles = await _context.Vehicles
+                    .AsNoTracking()
+                    .Include(v => v.User)
+                    .OrderByDescending(v => v.CreatedAt)
+                    .ToListAsync();
+
+                var result = vehicles.Select(MapToDTO).ToList();
+
+                await _accessLogService.LogAsync(User, "GetAllVehicles", true, $"{result.Count} vehicle(s)");
+                return Ok(new VehicleListResponse
+                {
+                    Code = StatusCodes.Status200OK,
+                    Success = true,
+                    Message = result.Count > 0
+                        ? $"Retrieved {result.Count} vehicle(s) successfully"
+                        : "No vehicles found",
+                    Data = result
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving all vehicles");
+                await _accessLogService.LogAsync(User, "GetAllVehicles", false, ex.Message);
+                return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+                {
+                    Code = StatusCodes.Status500InternalServerError,
+                    Success = false,
+                    Message = "An error occurred while retrieving all vehicles."
+                });
+            }
+        }
+
         private static VehicleResponseDTO MapToDTO(Vehicle vehicle)
         {
             return new VehicleResponseDTO
@@ -308,7 +437,9 @@ namespace ParkJomV2.Controllers
                 VehicleModel = vehicle.VehicleModel,
                 VehicleColor = vehicle.VehicleColor,
                 CreatedAt = vehicle.CreatedAt,
-                UpdatedAt = vehicle.UpdatedAt
+                UpdatedAt = vehicle.UpdatedAt,
+                OwnerEmail = vehicle.User?.Email,
+                OwnerName = $"{vehicle.User?.FirstName} {vehicle.User?.LastName}".Trim()
             };
         }
     }
