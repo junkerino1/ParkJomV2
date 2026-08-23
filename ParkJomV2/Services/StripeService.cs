@@ -24,6 +24,7 @@ public class StripeService
         _logger = logger;
     }
 
+    // stripe redirect browser back after payment, this is to create a checkout session for the user to pay
     public async Task<WalletTopUpResponse> CreateTopUpSessionAsync(int userId, StripeTopUpRequest request)
     {
         if (request.Amount < MinTopUpAmount || request.Amount > MaxTopUpAmount)

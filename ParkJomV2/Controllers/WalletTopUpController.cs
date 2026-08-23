@@ -12,15 +12,18 @@ namespace ParkJomV2.Controllers;
 public class WalletTopUpController : ControllerBase
 {
 	private readonly StripeService _stripeService;
+	private readonly AccessLogService _accessLogService;
 	private readonly IConfiguration _configuration;
 	private readonly ILogger<WalletTopUpController> _logger;
 
 	public WalletTopUpController(
 		StripeService stripeService,
+		AccessLogService accessLogService,
 		IConfiguration configuration,
 		ILogger<WalletTopUpController> logger)
 	{
 		_stripeService = stripeService;
+		_accessLogService = accessLogService;
 		_configuration = configuration;
 		_logger = logger;
 	}
@@ -35,20 +38,25 @@ public class WalletTopUpController : ControllerBase
 	{
 		if (!TryGetUserId(out var userId))
 		{
+			await _accessLogService.LogAsync(User, "GetWallet", false, "Authentication required");
 			return Unauthorized(CreateError(StatusCodes.Status401Unauthorized, "Authentication required."));
 		}
 
 		try
 		{
-			return Ok(await _stripeService.GetWalletAsync(userId, cancellationToken));
+			var summary = await _stripeService.GetWalletAsync(userId, cancellationToken);
+			await _accessLogService.LogAsync(User, "GetWallet", true, $"WalletId={summary.WalletId}");
+			return Ok(summary);
 		}
 		catch (KeyNotFoundException ex)
 		{
+			await _accessLogService.LogAsync(User, "GetWallet", false, ex.Message);
 			return NotFound(CreateError(StatusCodes.Status404NotFound, ex.Message));
 		}
 		catch (Exception ex)
 		{
 			_logger.LogError(ex, "Error retrieving wallet for user {UserId}", userId);
+			await _accessLogService.LogAsync(User, "GetWallet", false, ex.Message);
 			return StatusCode(
 				StatusCodes.Status500InternalServerError,
 				CreateError(StatusCodes.Status500InternalServerError, "An error occurred while retrieving the wallet."));
@@ -65,6 +73,7 @@ public class WalletTopUpController : ControllerBase
 	{
 		if (!ModelState.IsValid)
 		{
+			await _accessLogService.LogAsync(User, "TopUp", false, "Invalid request");
 			return BadRequest(new ErrorResponse
 			{
 				Code = StatusCodes.Status400BadRequest,
@@ -77,11 +86,13 @@ public class WalletTopUpController : ControllerBase
 		{
 			if (!TryGetUserId(out var userId))
 			{
+				await _accessLogService.LogAsync(User, "TopUp", false, "Authentication required");
 				return Unauthorized(CreateError(StatusCodes.Status401Unauthorized, "Authentication required."));
 			}
 
 			var result = await _stripeService.CreateTopUpSessionAsync(userId, request);
 
+			await _accessLogService.LogAsync(User, "TopUp", true, $"PaymentId={result.PaymentId}");
 			return Ok(new WalletTopUpResponse
 			{
 				Code = StatusCodes.Status200OK,
@@ -94,6 +105,7 @@ public class WalletTopUpController : ControllerBase
 		}
 		catch (InvalidOperationException ex)
 		{
+			await _accessLogService.LogAsync(User, "TopUp", false, ex.Message);
 			return BadRequest(new ErrorResponse
 			{
 				Code = StatusCodes.Status400BadRequest,
@@ -104,6 +116,7 @@ public class WalletTopUpController : ControllerBase
 		catch (Exception ex)
 		{
 			_logger.LogError(ex, "Error creating wallet top-up session");
+			await _accessLogService.LogAsync(User, "TopUp", false, ex.Message);
 			return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
 			{
 				Code = StatusCodes.Status500InternalServerError,
@@ -113,6 +126,8 @@ public class WalletTopUpController : ControllerBase
 		}
 	}
 
+
+	// frontend poll status of the topup, if success, then show success message, if failed, then show failed message
 	[Authorize]
 	[HttpGet("topup/status")]
 	[ProducesResponseType(typeof(WalletTopUpStatusResponse), StatusCodes.Status200OK)]
@@ -126,11 +141,13 @@ public class WalletTopUpController : ControllerBase
 	{
 		if (!TryGetUserId(out var userId))
 		{
+			await _accessLogService.LogAsync(User, "GetTopUpStatus", false, "Authentication required");
 			return Unauthorized(CreateError(StatusCodes.Status401Unauthorized, "Authentication required."));
 		}
 
 		if (string.IsNullOrWhiteSpace(sessionId))
 		{
+			await _accessLogService.LogAsync(User, "GetTopUpStatus", false, "Session ID required");
 			return BadRequest(CreateError(
 				StatusCodes.Status400BadRequest,
 				"A Stripe checkout session ID is required."));
@@ -138,17 +155,21 @@ public class WalletTopUpController : ControllerBase
 
 		try
 		{
-			return Ok(await _stripeService.GetTopUpStatusAsync(
+			var status = await _stripeService.GetTopUpStatusAsync(
 				userId,
 				sessionId,
-				cancellationToken));
+				cancellationToken);
+			await _accessLogService.LogAsync(User, "GetTopUpStatus", true, $"state={status.State}");
+			return Ok(status);
 		}
 		catch (KeyNotFoundException ex)
 		{
+			await _accessLogService.LogAsync(User, "GetTopUpStatus", false, ex.Message);
 			return NotFound(CreateError(StatusCodes.Status404NotFound, ex.Message));
 		}
 		catch (InvalidOperationException ex)
 		{
+			await _accessLogService.LogAsync(User, "GetTopUpStatus", false, ex.Message);
 			return BadRequest(CreateError(StatusCodes.Status400BadRequest, ex.Message));
 		}
 		catch (Exception ex)
@@ -158,6 +179,7 @@ public class WalletTopUpController : ControllerBase
 				"Error retrieving wallet top-up status for user {UserId}, session {SessionId}",
 				userId,
 				sessionId);
+			await _accessLogService.LogAsync(User, "GetTopUpStatus", false, ex.Message);
 			return StatusCode(
 				StatusCodes.Status500InternalServerError,
 				CreateError(StatusCodes.Status500InternalServerError, "An error occurred while checking the wallet top-up."));
@@ -171,7 +193,7 @@ public class WalletTopUpController : ControllerBase
 	[HttpGet("topup/success")]
 	[ProducesResponseType(StatusCodes.Status302Found)]
 	[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
-	public IActionResult TopUpSuccess(
+	public async Task<IActionResult> TopUpSuccess(
 		[FromQuery(Name = "session_id")] string? sessionId,
 		[FromQuery] string? returnTarget)
 	{
@@ -188,11 +210,14 @@ public class WalletTopUpController : ControllerBase
 				query["session_id"] = sessionId.Trim();
 			}
 
-			return Redirect(QueryHelpers.AddQueryString(GetReturnUrl(returnTarget), query));
+			var redirectUrl = QueryHelpers.AddQueryString(GetReturnUrl(returnTarget), query);
+			await _accessLogService.LogAsync(User, "TopUpSuccess", true, $"sessionId={sessionId}");
+			return Redirect(redirectUrl);
 		}
 		catch (InvalidOperationException ex)
 		{
 			_logger.LogError(ex, "Wallet top-up success return URL is not configured correctly");
+			await _accessLogService.LogAsync(User, "TopUpSuccess", false, ex.Message);
 			return StatusCode(
 				StatusCodes.Status500InternalServerError,
 				CreateError(StatusCodes.Status500InternalServerError, "The ParkJom return URL is not configured."));
@@ -206,7 +231,7 @@ public class WalletTopUpController : ControllerBase
 	[HttpGet("topup/cancel")]
 	[ProducesResponseType(StatusCodes.Status302Found)]
 	[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
-	public IActionResult TopUpCancel([FromQuery] string? returnTarget)
+	public async Task<IActionResult> TopUpCancel([FromQuery] string? returnTarget)
 	{
 		try
 		{
@@ -216,11 +241,14 @@ public class WalletTopUpController : ControllerBase
 				["topup"] = "cancelled"
 			};
 
-			return Redirect(QueryHelpers.AddQueryString(GetReturnUrl(returnTarget), query));
+			var redirectUrl = QueryHelpers.AddQueryString(GetReturnUrl(returnTarget), query);
+			await _accessLogService.LogAsync(User, "TopUpCancel", true);
+			return Redirect(redirectUrl);
 		}
 		catch (InvalidOperationException ex)
 		{
 			_logger.LogError(ex, "Wallet top-up cancel return URL is not configured correctly");
+			await _accessLogService.LogAsync(User, "TopUpCancel", false, ex.Message);
 			return StatusCode(
 				StatusCodes.Status500InternalServerError,
 				CreateError(StatusCodes.Status500InternalServerError, "The ParkJom return URL is not configured."));

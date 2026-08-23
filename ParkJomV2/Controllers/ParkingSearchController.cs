@@ -14,12 +14,14 @@ namespace ParkJomV2.Controllers;
 public class ParkingSearchController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly AccessLogService _accessLogService;
     private readonly ILogger<ParkingSearchController> _logger;
     private readonly OsrmService _osrmService;
 
-    public ParkingSearchController(ApplicationDbContext context, ILogger<ParkingSearchController> logger, OsrmService osrmService)
+    public ParkingSearchController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<ParkingSearchController> logger, OsrmService osrmService)
     {
         _context = context;
+        _accessLogService = accessLogService;
         _logger = logger;
         _osrmService = osrmService;
     }
@@ -124,7 +126,6 @@ public class ParkingSearchController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error searching parking spots");
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -231,6 +232,7 @@ public class ParkingSearchController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error finding nearby parking spots");
+            await _accessLogService.LogAsync(User, "GetNearbyParking", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -342,6 +344,8 @@ public class ParkingSearchController : ControllerBase
             }).ToList();
 
             _logger.LogInformation("Filter returned {Count} results (total {TotalCount})", result.Count, totalCount);
+
+            await _accessLogService.LogAsync(User, "FilterParking", true, $"total={totalCount}");
 
             return Ok(new SearchParkingResponse
             {

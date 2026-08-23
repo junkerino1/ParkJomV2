@@ -5,6 +5,7 @@ using ParkJomV2.Data;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.DTOs;
+using ParkJomV2.Services;
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations;
 
@@ -16,11 +17,13 @@ namespace ParkJomV2.Controllers
     {
 
         private readonly ApplicationDbContext _context;
+        private readonly AccessLogService _accessLogService;
         private readonly ILogger<StationController> _logger;
 
-        public StationController(ApplicationDbContext context, ILogger<StationController> logger)
+        public StationController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<StationController> logger)
         {
             _context = context;
+            _accessLogService = accessLogService;
             _logger = logger;
         }
 
@@ -39,6 +42,7 @@ namespace ParkJomV2.Controllers
 
             if (station == null)
             {
+                await _accessLogService.LogAsync(User, "GetPropertyByStationId", false, $"Station not found (id={stationId})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -63,6 +67,7 @@ namespace ParkJomV2.Controllers
 
             if (properties.Count == 0)
             {
+                await _accessLogService.LogAsync(User, "GetPropertyByStationId", false, $"No properties (stationId={stationId})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -72,6 +77,7 @@ namespace ParkJomV2.Controllers
             }
             else
             {
+                await _accessLogService.LogAsync(User, "GetPropertyByStationId", true, $"StationId={stationId}");
                 return Ok(new
                 {
                     Code = StatusCodes.Status200OK,
@@ -95,6 +101,7 @@ namespace ParkJomV2.Controllers
 
             if (property == null)
             {
+                await _accessLogService.LogAsync(User, "GetParkingSpotByPropertyId", false, $"Property not found (id={propertyId})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -105,6 +112,7 @@ namespace ParkJomV2.Controllers
 
             if (property.ParkingSpots == null || property.ParkingSpots.Count == 0)
             {
+                await _accessLogService.LogAsync(User, "GetParkingSpotByPropertyId", false, $"No parking spots (propertyId={propertyId})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -117,6 +125,8 @@ namespace ParkJomV2.Controllers
                 .Where(ps => ps.AvailabilityStatus == AvailabilityStatus.Available)
                 .Where(ps => ps.IsPublished == true)
                 .ToList();
+
+            await _accessLogService.LogAsync(User, "GetParkingSpotByPropertyId", true, $"PropertyId={propertyId}");
 
             return Ok(new
             {

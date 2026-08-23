@@ -19,17 +19,20 @@ namespace ParkJomV2.Controllers
         private readonly ApplicationDbContext _context;
         private readonly GoogleAuthService _googleService;
         private readonly JwtTokenService _jwtService;
+        private readonly AccessLogService _accessLogService;
         private readonly ILogger<AuthController> _logger;
 
         public AuthController(
             ApplicationDbContext context,
             GoogleAuthService googleService,
             JwtTokenService jwtService,
+            AccessLogService accessLogService,
             ILogger<AuthController> logger)
         {
             _context = context;
             _googleService = googleService;
             _jwtService = jwtService;
+            _accessLogService = accessLogService;
             _logger = logger;
         }
 
@@ -38,6 +41,7 @@ namespace ParkJomV2.Controllers
         {
             if (!ModelState.IsValid)
             {
+                await _accessLogService.LogAsync(User, "GoogleLogin", false, "Invalid request");
                 return BadRequest(new AuthResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -51,6 +55,7 @@ namespace ParkJomV2.Controllers
 
             if (googleUser == null)
             {
+                await _accessLogService.LogAsync(User, "GoogleLogin", false, "Invalid Google token");
                 return Unauthorized(new AuthResponse
                 {
                     Code = StatusCodes.Status401Unauthorized,
@@ -109,6 +114,7 @@ namespace ParkJomV2.Controllers
             // Step 4 - Profile incomplete
             if (!user.IsProfileComplete)
             {
+                await _accessLogService.LogAsync(User, "GoogleLogin", true, "Profile incomplete");
                 return Ok(new AuthResponse
                 {
                     Code = StatusCodes.Status200OK,
@@ -122,6 +128,8 @@ namespace ParkJomV2.Controllers
             // Step 5 - Generate JWT
 
             var token = _jwtService.GenerateToken(user);
+
+            await _accessLogService.LogAsync(User, "GoogleLogin", true, $"UserId={user.UserId}");
 
             return Ok(new AuthResponse
             {
@@ -139,6 +147,7 @@ namespace ParkJomV2.Controllers
         {
             if (!ModelState.IsValid)
             {
+                await _accessLogService.LogAsync(User, "CompleteProfile", false, "Invalid request");
                 return BadRequest(new AuthResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -153,6 +162,7 @@ namespace ParkJomV2.Controllers
 
             if (user == null)
             {
+                await _accessLogService.LogAsync(User, "CompleteProfile", false, $"User not found (id={request.UserId})");
                 return NotFound(new AuthResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -186,6 +196,8 @@ namespace ParkJomV2.Controllers
             await _context.SaveChangesAsync();
 
             var token = _jwtService.GenerateToken(user);
+
+            await _accessLogService.LogAsync(User, "CompleteProfile", true, $"UserId={user.UserId}");
 
             return Ok(new AuthResponse
             {

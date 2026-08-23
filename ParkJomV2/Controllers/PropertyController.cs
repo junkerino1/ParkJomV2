@@ -17,13 +17,15 @@ namespace ParkJomV2.Controllers
     {
 
         private readonly ApplicationDbContext _context;
+        private readonly AccessLogService _accessLogService;
         private readonly ILogger<PropertyController> _logger;
         private readonly OsrmService _osrmService;
         private readonly NominatimService _nominatimService;
 
-        public PropertyController(ApplicationDbContext context, ILogger<PropertyController> logger, OsrmService osrmService, NominatimService nominatimService)
+        public PropertyController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<PropertyController> logger, OsrmService osrmService, NominatimService nominatimService)
         {
             _context = context;
+            _accessLogService = accessLogService;
             _logger = logger;
             _osrmService = osrmService;
             _nominatimService = nominatimService;
@@ -40,6 +42,7 @@ namespace ParkJomV2.Controllers
         {
             if (!ModelState.IsValid)
             {
+                await _accessLogService.LogAsync(User, "CreateProperty", false, "Invalid request");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -52,6 +55,7 @@ namespace ParkJomV2.Controllers
             var station = await _context.Stations.FindAsync(request.NearestStationId);
             if (station == null)
             {
+                await _accessLogService.LogAsync(User, "CreateProperty", false, $"Station not found (id={request.NearestStationId})");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
@@ -87,12 +91,14 @@ namespace ParkJomV2.Controllers
 
                 _logger.LogInformation("Property created successfully with ID: {PropertyId}", property.PropertyId);
 
+                await _accessLogService.LogAsync(User, "CreateProperty", true, $"PropertyId={property.PropertyId}");
                 return CreatedAtAction(nameof(GetProperty), new { id = property.PropertyId },
                     MapToDTO(property));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating property");
+                await _accessLogService.LogAsync(User, "CreateProperty", false, ex.Message);
                 return StatusCode(StatusCodes.Status500InternalServerError,
                     new ErrorResponse
                     {
@@ -114,6 +120,7 @@ namespace ParkJomV2.Controllers
             var property = await _context.Properties.FindAsync(id);
             if (property == null)
             {
+                await _accessLogService.LogAsync(User, "GetProperty", false, $"Property not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -122,6 +129,7 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            await _accessLogService.LogAsync(User, "GetProperty", true, $"PropertyId={id}");
             return Ok(MapToDTO(property));
         }
 
@@ -131,6 +139,7 @@ namespace ParkJomV2.Controllers
             var property = await _context.Stations.ToListAsync();
             if (property == null)
             {
+                await _accessLogService.LogAsync(User, "GetAllStations", false, "No stations");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -139,6 +148,7 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            await _accessLogService.LogAsync(User, "GetAllStations", true);
             return Ok(property);
         }
 
@@ -151,6 +161,7 @@ namespace ParkJomV2.Controllers
         public async Task<ActionResult<IEnumerable<PropertyDTO>>> GetAllProperties()
         {
             var properties = await _context.Properties.ToListAsync();
+            await _accessLogService.LogAsync(User, "GetAllProperties", true);
             return Ok(properties.Select(MapToDTO));
         }
 
@@ -165,6 +176,7 @@ namespace ParkJomV2.Controllers
             var property = await _context.Properties.FindAsync(id);
             if (property == null)
             {
+                await _accessLogService.LogAsync(User, "DeleteProperty", false, $"Property not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -180,11 +192,13 @@ namespace ParkJomV2.Controllers
 
                 _logger.LogInformation("Property deleted successfully with ID: {PropertyId}", id);
 
+                await _accessLogService.LogAsync(User, "DeleteProperty", true, $"PropertyId={id}");
                 return NoContent();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting property");
+                await _accessLogService.LogAsync(User, "DeleteProperty", false, ex.Message);
                 return StatusCode(StatusCodes.Status500InternalServerError,
                     new ErrorResponse
                     {
