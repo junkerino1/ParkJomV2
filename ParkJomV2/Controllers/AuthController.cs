@@ -176,6 +176,7 @@ namespace ParkJomV2.Controllers
                 _context.Wallets.Add(new Wallet
                 {
                     UserId = user.UserId,
+                    Status = WalletStatus.Active,
                     Balance = 0,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
