@@ -46,6 +46,16 @@ public class VehicleResponseDTO
     public string? VehicleColor { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public string? OwnerEmail { get; set; }
+    public string? OwnerName { get; set; }
+}
+
+public class VehicleListResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<VehicleResponseDTO> Data { get; set; } = new();
 }
 
 public class AddVehicleResponse
