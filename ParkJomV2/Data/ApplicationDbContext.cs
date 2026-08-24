@@ -19,6 +19,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ParkingSpotImage> ParkingSpotImages => Set<ParkingSpotImage>();
 
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<BookingQuote> BookingQuotes => Set<BookingQuote>();
     public DbSet<Wallet> Wallets => Set<Wallet>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<Payment> Payments => Set<Payment>();
@@ -90,6 +91,30 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(b => b.ParkingSpotId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        modelBuilder.Entity<Booking>()
+            .HasOne(b => b.BookingQuote)
+            .WithOne(q => q.Booking)
+            .HasForeignKey<Booking>(b => b.BookingQuoteId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<BookingQuote>()
+            .HasOne(q => q.Renter)
+            .WithMany()
+            .HasForeignKey(q => q.RenterId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<BookingQuote>()
+            .HasOne(q => q.ParkingSpot)
+            .WithMany(p => p.BookingQuotes)
+            .HasForeignKey(q => q.ParkingSpotId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<BookingQuote>()
+            .HasOne(q => q.Vehicle)
+            .WithMany()
+            .HasForeignKey(q => q.VehicleId)
+            .OnDelete(DeleteBehavior.NoAction);
+
         modelBuilder.Entity<Station>()
             .HasMany(s => s.Properties)
             .WithOne(p => p.Station)
@@ -153,6 +178,11 @@ public class ApplicationDbContext : DbContext
             .HasIndex(b => b.BookingReference)
             .IsUnique();
 
+        modelBuilder.Entity<Booking>()
+            .HasIndex(b => new { b.RenterId, b.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("[IdempotencyKey] IS NOT NULL");
+
         // =========================
         // Store enums as strings
         // =========================
@@ -200,6 +230,14 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<Booking>()
             .Property(b => b.BookingStatus)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<Booking>()
+            .Property(b => b.RateType)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<BookingQuote>()
+            .Property(q => q.RateType)
             .HasConversion<string>();
 
         modelBuilder.Entity<Transaction>()

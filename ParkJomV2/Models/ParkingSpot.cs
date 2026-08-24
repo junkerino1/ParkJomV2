@@ -19,6 +19,12 @@ public class ParkingSpot
     [StringLength(50)]
     public string? ParkingLabel { get; set; }
 
+    [StringLength(2000)]
+    public string? Description { get; set; }
+
+    [StringLength(2000)]
+    public string? ParkingInstructions { get; set; }
+
     [Required]
     public AvailabilityStatus AvailabilityStatus { get; set; }
 
@@ -29,6 +35,10 @@ public class ParkingSpot
     public decimal? DailyRate { get; set; }
 
     public bool IsPublished { get; set; }
+
+    public bool IsConfigurationComplete { get; set; }
+
+    public DateTime? ConfiguredAt { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
@@ -48,6 +58,8 @@ public class ParkingSpot
     public IoTDevice? IoTDevice { get; set; }
 
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
+
+    public ICollection<BookingQuote> BookingQuotes { get; set; } = new List<BookingQuote>();
 
     public ICollection<ParkingSpotImage> ParkingSpotImages { get; set; } = new List<ParkingSpotImage>();
 
