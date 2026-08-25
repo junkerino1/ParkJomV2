@@ -58,7 +58,7 @@ public class ParkingRegistrationRequest
     public VerificationDocumentType DocumentType { get; set; }
 
     [Required(ErrorMessage = "Document is required")]
-    public IFormFile Document { get; set; } = null!;
+    public IFormFile? Document { get; set; } = null!;
 }
 
 public class VerificationRequestDTO

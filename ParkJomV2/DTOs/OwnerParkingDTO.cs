@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace ParkJomV2.DTOs;
 
@@ -51,4 +52,59 @@ public class OwnerParkingImagesResponse
     public string Message { get; set; } = string.Empty;
     public int ParkingSpotId { get; set; }
     public List<OwnerParkingImageResponse> Data { get; set; } = new();
+}
+
+public class CreateOwnerAvailabilityRulesRequest
+{
+    [Required]
+    public List<CreateOwnerAvailabilityRuleRequest> Rules { get; set; } = new();
+}
+
+public class CreateOwnerAvailabilityRuleRequest
+{
+    [Required]
+    [RegularExpression("^\\d{4}-\\d{2}-\\d{2}$", ErrorMessage = "fromDate must use YYYY-MM-DD format.")]
+    public string FromDate { get; set; } = string.Empty;
+
+    [Required]
+    [RegularExpression("^\\d{4}-\\d{2}-\\d{2}$", ErrorMessage = "toDate must use YYYY-MM-DD format.")]
+    public string ToDate { get; set; } = string.Empty;
+
+    [Required]
+    [RegularExpression("^(?:[01]\\d|2[0-3]):[0-5]\\d$", ErrorMessage = "fromTime must use HH:mm format.")]
+    public string FromTime { get; set; } = string.Empty;
+
+    [Required]
+    [RegularExpression("^(?:[01]\\d|2[0-3]):[0-5]\\d$", ErrorMessage = "toTime must use HH:mm format.")]
+    public string ToTime { get; set; } = string.Empty;
+
+    [Required]
+    public OwnerAvailabilityDayPattern? DayPattern { get; set; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<OwnerAvailabilityDayPattern>))]
+public enum OwnerAvailabilityDayPattern
+{
+    Weekdays = 1,
+    Everyday = 2
+}
+
+public class OwnerAvailabilityRuleResponse
+{
+    public int AvailabilityRuleId { get; set; }
+    public string FromDate { get; set; } = string.Empty;
+    public string ToDate { get; set; } = string.Empty;
+    public string FromTime { get; set; } = string.Empty;
+    public string ToTime { get; set; } = string.Empty;
+    public OwnerAvailabilityDayPattern DayPattern { get; set; }
+}
+
+public class OwnerAvailabilityRulesResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ParkingSpotId { get; set; }
+    public string TimeZone { get; set; } = "Asia/Kuala_Lumpur";
+    public List<OwnerAvailabilityRuleResponse> Data { get; set; } = new();
 }

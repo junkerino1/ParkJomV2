@@ -6,6 +6,7 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using System.Globalization;
 using System.Security.Claims;
 
 namespace ParkJomV2.Controllers;
@@ -52,9 +53,20 @@ public class OwnerParkingController : ControllerBase
             return BadRequest(new ErrorResponse { Code = 400, Success = false, Message = "Invalid request." });
         }
 
-        var allowedTypes = new[] { "application/pdf", "image/jpeg", "image/jpg", "image/png" };
-        if (!allowedTypes.Contains(request.Document.ContentType.ToLowerInvariant()))
+        if (request.Document is null)
         {
+            return BadRequest(new ErrorResponse { Code = 400, Success = false, Message = "Document is required." });
+        }
+
+        var detectedContentType = await DetectFileContentType(request.Document);
+        var allowedTypes = new[] { "application/pdf", "image/jpeg", "image/png" };
+        if (!allowedTypes.Contains(detectedContentType))
+        {
+            _logger.LogWarning(
+                "Rejected parking verification document. FileName={FileName}, ClientContentType={ClientContentType}, DetectedContentType={DetectedContentType}",
+                request.Document.FileName,
+                request.Document.ContentType,
+                detectedContentType);
             return BadRequest(new ErrorResponse { Code = 400, Success = false, Message = "Only PDF, JPG and PNG files are allowed." });
         }
 
@@ -99,6 +111,7 @@ public class OwnerParkingController : ControllerBase
                 ParkingLabel = $"{request.BayNumber}/{request.Level}",
                 AvailabilityStatus = AvailabilityStatus.Inactive,
                 IsPublished = false,
+                IsConfigurationComplete = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -175,16 +188,19 @@ public class OwnerParkingController : ControllerBase
         }
 
         const long maxImageBytes = 10 * 1024 * 1024;
-        var allowedTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/webp" };
-        if (images.Any(image => image.Length == 0 || image.Length > maxImageBytes ||
-                                !allowedTypes.Contains(image.ContentType.ToLowerInvariant())))
+        var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp" };
+        foreach (var image in images)
         {
-            return BadRequest(new ErrorResponse
+            var detectedContentType = await DetectFileContentType(image);
+            if (image.Length == 0 || image.Length > maxImageBytes || !allowedTypes.Contains(detectedContentType))
             {
-                Code = 400,
-                Success = false,
-                Message = "Images must be JPG, PNG, or WebP files no larger than 10 MB."
-            });
+                return BadRequest(new ErrorResponse
+                {
+                    Code = 400,
+                    Success = false,
+                    Message = "Images must be JPG, PNG, or WebP files no larger than 10 MB."
+                });
+            }
         }
 
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -455,6 +471,310 @@ public class OwnerParkingController : ControllerBase
         });
     }
 
+    [HttpPost("{spotId:int}/availability-rules")]
+    [ProducesResponseType(typeof(OwnerAvailabilityRulesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OwnerAvailabilityRulesResponse>> CreateAvailabilityRules(
+        int spotId,
+        [FromBody] CreateOwnerAvailabilityRulesRequest request)
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        if (request.Rules.Count == 0)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "At least one availability rule is required."
+            });
+        }
+
+        var spot = await _context.ParkingSpots
+            .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.ParkingAvailabilities)
+            .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
+
+        if (spot == null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "Parking spot not found."
+            });
+        }
+
+        if (spot.OwnerId != userId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "You are not authorized to manage this parking spot's availability."
+            });
+        }
+
+        if (spot.AvailabilityStatus == AvailabilityStatus.Deleted)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "A deleted parking spot cannot have availability rules."
+            });
+        }
+
+        if (!spot.VerificationRequests.Any(v => v.VerificationStatus == VerificationStatus.Approved))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Availability rules can be added only after verification is approved."
+            });
+        }
+
+        var malaysiaToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
+        var requestedRuleKeys = new HashSet<(DateOnly FromDate, DateOnly ToDate, TimeOnly FromTime, TimeOnly ToTime, DayType DayType)>();
+        var availabilityRules = new List<Availability>();
+
+        for (var index = 0; index < request.Rules.Count; index++)
+        {
+            var requestedRule = request.Rules[index];
+
+            if (!DateOnly.TryParseExact(
+                    requestedRule.FromDate,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var fromDate))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Start date must be in a valid format."
+                });
+            }
+
+            if (!DateOnly.TryParseExact(
+                    requestedRule.ToDate,
+                    "yyyy-MM-dd",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var toDate))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "End date must be in a valid format."
+                });
+            }
+
+            if (fromDate > toDate)
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Start date must be on or before end date."
+                });
+            }
+
+            if (toDate < malaysiaToday)
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = $"The availability period has already expired."
+                });
+            }
+
+            if (!TimeOnly.TryParseExact(
+                    requestedRule.FromTime,
+                    "HH:mm",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var fromTime))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Start time must be in a valid format."
+                });
+            }
+
+            if (!TimeOnly.TryParseExact(
+                    requestedRule.ToTime,
+                    "HH:mm",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var toTime))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "End time must be in a valid format."
+                });
+            }
+
+            if (fromTime >= toTime)
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Start time must be before end time."
+                });
+            }
+
+            if (requestedRule.DayPattern is not (OwnerAvailabilityDayPattern.Weekdays or OwnerAvailabilityDayPattern.Everyday))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Day Pattern must be Weekdays or Everyday."
+                });
+            }
+
+            var dayType = requestedRule.DayPattern == OwnerAvailabilityDayPattern.Weekdays
+                ? DayType.Weekday
+                : DayType.Everyday;
+
+            if (dayType == DayType.Weekday && !DateRangeContainsDayType(fromDate, toDate, DayType.Weekday))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "A Weekdays rule must include at least one weekday."
+                });
+            }
+
+            var ruleKey = (fromDate, toDate, fromTime, toTime, dayType);
+
+            if (!requestedRuleKeys.Add(ruleKey))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Duplicate availability rules are not allowed."
+                });
+            }
+
+            var availabilityRule = new Availability
+            {
+                ParkingSpotId = spotId,
+                DayType = dayType,
+                StartTime = fromTime,
+                EndTime = toTime,
+                EffectiveFrom = fromDate,
+                EffectiveUntil = toDate
+            };
+
+            if (availabilityRules.Any(existingRequestedRule =>
+                    AvailabilityCoverageOverlaps(existingRequestedRule, availabilityRule)))
+            {
+                return Conflict(new ErrorResponse
+                {
+                    Code = StatusCodes.Status409Conflict,
+                    Success = false,
+                    Message = "The selected date range overlap with an existing availability rule."
+                });
+            }
+
+            var identicalExistingRule = spot.ParkingAvailabilities.FirstOrDefault(existingRule =>
+                    existingRule.EffectiveFrom == fromDate &&
+                    existingRule.EffectiveUntil == toDate &&
+                    existingRule.StartTime == fromTime &&
+                    existingRule.EndTime == toTime &&
+                    existingRule.DayType == dayType);
+
+            if (identicalExistingRule != null)
+            {
+                return Conflict(new ErrorResponse
+                {
+                    Code = StatusCodes.Status409Conflict,
+                    Success = false,
+                    Message = "An identical availability rule already exists."
+                });
+            }
+
+            var overlappingExistingRule = spot.ParkingAvailabilities.FirstOrDefault(existingRule =>
+                AvailabilityCoverageOverlaps(existingRule, availabilityRule));
+
+            if (overlappingExistingRule != null)
+            {
+                return Conflict(new ErrorResponse
+                {
+                    Code = StatusCodes.Status409Conflict,
+                    Success = false,
+                    Message = "The selected date range overlap with an existing availability rule."
+                });
+            }
+
+            availabilityRules.Add(availabilityRule);
+        }
+
+        try
+        {
+            _context.Availabilities.AddRange(availabilityRules);
+            spot.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            await _accessLogService.LogAsync(
+                User,
+                "CreateOwnerAvailabilityRules",
+                true,
+                $"ParkingSpotId={spotId}; RuleCount={availabilityRules.Count}");
+
+            return Ok(new OwnerAvailabilityRulesResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Availability rules created successfully.",
+                ParkingSpotId = spotId,
+                Data = availabilityRules
+                    .OrderBy(rule => rule.EffectiveFrom)
+                    .ThenBy(rule => rule.StartTime)
+                    .Select(rule => new OwnerAvailabilityRuleResponse
+                    {
+                        AvailabilityRuleId = rule.AvailabilityId,
+                        FromDate = rule.EffectiveFrom!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        ToDate = rule.EffectiveUntil!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        FromTime = rule.StartTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+                        ToTime = rule.EndTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+                        DayPattern = rule.DayType == DayType.Weekday
+                            ? OwnerAvailabilityDayPattern.Weekdays
+                            : OwnerAvailabilityDayPattern.Everyday
+                    })
+                    .ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating availability rules for parking spot {ParkingSpotId}", spotId);
+            await _accessLogService.LogAsync(User, "CreateOwnerAvailabilityRules", false, ex.Message);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while creating the availability rules."
+            });
+        }
+    }
+
     [HttpGet]
     [ProducesResponseType(typeof(DisplayMyParkingResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking()
@@ -633,20 +953,136 @@ public class OwnerParkingController : ControllerBase
     /// Lists the information that must exist before a listing can be marked configuration-complete.
     /// Publication performs its own final validation when that endpoint is added.
     /// </summary>
-    private static List<string> GetConfigurationRequirements(Models.ParkingSpot spot)
+    private static List<string> GetConfigurationRequirements(ParkingSpot spot)
     {
         var missing = new List<string>();
 
         if (string.IsNullOrWhiteSpace(spot.Description)) missing.Add("description");
-        if (!spot.DailyRate.HasValue || spot.DailyRate <= 0) missing.Add("dailyRate");
-        if (!spot.MonthlyRate.HasValue || spot.MonthlyRate <= 0) missing.Add("monthlyRate");
-        if (!spot.ParkingSpotImages.Any()) missing.Add("listingImage");
+        if (!spot.DailyRate.HasValue || spot.DailyRate <= 0) missing.Add("daily rate");
+        if (!spot.MonthlyRate.HasValue || spot.MonthlyRate <= 0) missing.Add("monthly rate");
+        if (!spot.ParkingSpotImages.Any()) missing.Add("listing image");
 
         return missing;
     }
 
+    private static bool AvailabilityCoverageOverlaps(Availability firstRule, Availability secondRule)
+    {
+        var firstFrom = firstRule.EffectiveFrom ?? DateOnly.MinValue;
+        var firstUntil = firstRule.EffectiveUntil ?? DateOnly.MaxValue;
+        var secondFrom = secondRule.EffectiveFrom ?? DateOnly.MinValue;
+        var secondUntil = secondRule.EffectiveUntil ?? DateOnly.MaxValue;
+
+        var overlapFrom = firstFrom > secondFrom ? firstFrom : secondFrom;
+        var overlapUntil = firstUntil < secondUntil ? firstUntil : secondUntil;
+
+        if (overlapFrom > overlapUntil)
+        {
+            return false;
+        }
+
+        if (firstRule.StartTime >= secondRule.EndTime || secondRule.StartTime >= firstRule.EndTime)
+        {
+            return false;
+        }
+
+        if (firstRule.DayType == DayType.Everyday)
+        {
+            return DateRangeContainsDayType(overlapFrom, overlapUntil, secondRule.DayType);
+        }
+
+        if (secondRule.DayType == DayType.Everyday)
+        {
+            return DateRangeContainsDayType(overlapFrom, overlapUntil, firstRule.DayType);
+        }
+
+        return firstRule.DayType == secondRule.DayType &&
+               DateRangeContainsDayType(overlapFrom, overlapUntil, firstRule.DayType);
+    }
+
+    private static bool DateRangeContainsDayType(DateOnly fromDate, DateOnly toDate, DayType dayType)
+    {
+        if (fromDate > toDate)
+        {
+            return false;
+        }
+
+        if (dayType == DayType.Everyday)
+        {
+            return true;
+        }
+
+        var totalDays = toDate.DayNumber - fromDate.DayNumber + 1;
+        if (totalDays >= 7)
+        {
+            return true;
+        }
+
+        for (var offset = 0; offset < totalDays; offset++)
+        {
+            var dayOfWeek = fromDate.AddDays(offset).DayOfWeek;
+            var isWeekend = dayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+
+            if (dayType == DayType.Weekday && !isWeekend)
+            {
+                return true;
+            }
+
+            if (dayType == DayType.Weekend && isWeekend)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
-    /// Returns the canonical display order for a spot's public listing images.
+    /// Detects a file's real type from its magic bytes. Clients frequently send multipart files
+    /// with a generic application/octet-stream content type, so the MIME header alone cannot be
+    /// trusted. Falls back to the client-provided content type when no signature is recognised.
+    /// </summary>
+    private static async Task<string> DetectFileContentType(IFormFile file)
+    {
+        var header = new byte[16];
+        int bytesRead;
+        await using (var stream = file.OpenReadStream())
+        {
+            bytesRead = await stream.ReadAsync(header.AsMemory(0, header.Length));
+        }
+
+        // PDF: %PDF
+        if (bytesRead >= 5 && header[0] == 0x25 && header[1] == 0x50 && header[2] == 0x44 && header[3] == 0x46)
+        {
+            return "application/pdf";
+        }
+
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if (bytesRead >= 8 &&
+            header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47 &&
+            header[4] == 0x0D && header[5] == 0x0A && header[6] == 0x1A && header[7] == 0x0A)
+        {
+            return "image/png";
+        }
+
+        // JPEG: FF D8 FF
+        if (bytesRead >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF)
+        {
+            return "image/jpeg";
+        }
+
+        // WebP: RIFF....WEBP
+        if (bytesRead >= 12 &&
+            header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46 &&
+            header[8] == 0x57 && header[9] == 0x45 && header[10] == 0x42 && header[11] == 0x50)
+        {
+            return "image/webp";
+        }
+
+        return file.ContentType?.ToLowerInvariant() ?? "application/octet-stream";
+    }
+
+    /// <summary>
+    /// Returns the canonical display order for a spot's public listing Central writing. The name comes from the Romanian engineer Henry Kwando, who studied the behavior of airplow at the beginning of the twentieth century.images.
     /// Keeping this mapping in one place makes all image mutations return the same response shape.
     /// </summary>
     private async Task<List<OwnerParkingImageResponse>> GetImagesAsync(int spotId)

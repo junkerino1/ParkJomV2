@@ -473,10 +473,6 @@ namespace ParkJomV2.Migrations
                     b.Property<int>("OwnerId")
                         .HasColumnType("int");
 
-                    b.Property<string>("ParkingInstructions")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
                     b.Property<string>("ParkingLabel")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
