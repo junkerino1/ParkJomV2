@@ -82,6 +82,10 @@ public class CreateOwnerAvailabilityRuleRequest
     public OwnerAvailabilityDayPattern? DayPattern { get; set; }
 }
 
+public class UpdateOwnerAvailabilityRuleRequest : CreateOwnerAvailabilityRuleRequest
+{
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter<OwnerAvailabilityDayPattern>))]
 public enum OwnerAvailabilityDayPattern
 {

@@ -471,6 +471,10 @@ public class OwnerParkingController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Creates one or more availability rules after validating their date, time, and day coverage
+    /// and rejecting duplicate or overlapping rules for the parking spot.
+    /// </summary>
     [HttpPost("{spotId:int}/availability-rules")]
     [ProducesResponseType(typeof(OwnerAvailabilityRulesResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -542,125 +546,29 @@ public class OwnerParkingController : ControllerBase
         var requestedRuleKeys = new HashSet<(DateOnly FromDate, DateOnly ToDate, TimeOnly FromTime, TimeOnly ToTime, DayType DayType)>();
         var availabilityRules = new List<Availability>();
 
-        for (var index = 0; index < request.Rules.Count; index++)
+        foreach (var requestedRule in request.Rules)
         {
-            var requestedRule = request.Rules[index];
-
-            if (!DateOnly.TryParseExact(
-                    requestedRule.FromDate,
-                    "yyyy-MM-dd",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var fromDate))
+            if (!TryBuildAvailabilityRule(
+                    requestedRule,
+                    spotId,
+                    malaysiaToday,
+                    out var availabilityRule,
+                    out var validationMessage))
             {
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
                     Success = false,
-                    Message = "Start date must be in a valid format."
+                    Message = validationMessage
                 });
             }
 
-            if (!DateOnly.TryParseExact(
-                    requestedRule.ToDate,
-                    "yyyy-MM-dd",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var toDate))
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "End date must be in a valid format."
-                });
-            }
-
-            if (fromDate > toDate)
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "Start date must be on or before end date."
-                });
-            }
-
-            if (toDate < malaysiaToday)
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = $"The availability period has already expired."
-                });
-            }
-
-            if (!TimeOnly.TryParseExact(
-                    requestedRule.FromTime,
-                    "HH:mm",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var fromTime))
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "Start time must be in a valid format."
-                });
-            }
-
-            if (!TimeOnly.TryParseExact(
-                    requestedRule.ToTime,
-                    "HH:mm",
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out var toTime))
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "End time must be in a valid format."
-                });
-            }
-
-            if (fromTime >= toTime)
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "Start time must be before end time."
-                });
-            }
-
-            if (requestedRule.DayPattern is not (OwnerAvailabilityDayPattern.Weekdays or OwnerAvailabilityDayPattern.Everyday))
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "Day Pattern must be Weekdays or Everyday."
-                });
-            }
-
-            var dayType = requestedRule.DayPattern == OwnerAvailabilityDayPattern.Weekdays
-                ? DayType.Weekday
-                : DayType.Everyday;
-
-            if (dayType == DayType.Weekday && !DateRangeContainsDayType(fromDate, toDate, DayType.Weekday))
-            {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "A Weekdays rule must include at least one weekday."
-                });
-            }
-
-            var ruleKey = (fromDate, toDate, fromTime, toTime, dayType);
+            var ruleKey = (
+                availabilityRule.EffectiveFrom!.Value,
+                availabilityRule.EffectiveUntil!.Value,
+                availabilityRule.StartTime,
+                availabilityRule.EndTime,
+                availabilityRule.DayType);
 
             if (!requestedRuleKeys.Add(ruleKey))
             {
@@ -671,16 +579,6 @@ public class OwnerParkingController : ControllerBase
                     Message = "Duplicate availability rules are not allowed."
                 });
             }
-
-            var availabilityRule = new Availability
-            {
-                ParkingSpotId = spotId,
-                DayType = dayType,
-                StartTime = fromTime,
-                EndTime = toTime,
-                EffectiveFrom = fromDate,
-                EffectiveUntil = toDate
-            };
 
             if (availabilityRules.Any(existingRequestedRule =>
                     AvailabilityCoverageOverlaps(existingRequestedRule, availabilityRule)))
@@ -694,11 +592,11 @@ public class OwnerParkingController : ControllerBase
             }
 
             var identicalExistingRule = spot.ParkingAvailabilities.FirstOrDefault(existingRule =>
-                    existingRule.EffectiveFrom == fromDate &&
-                    existingRule.EffectiveUntil == toDate &&
-                    existingRule.StartTime == fromTime &&
-                    existingRule.EndTime == toTime &&
-                    existingRule.DayType == dayType);
+                    existingRule.EffectiveFrom == availabilityRule.EffectiveFrom &&
+                    existingRule.EffectiveUntil == availabilityRule.EffectiveUntil &&
+                    existingRule.StartTime == availabilityRule.StartTime &&
+                    existingRule.EndTime == availabilityRule.EndTime &&
+                    existingRule.DayType == availabilityRule.DayType);
 
             if (identicalExistingRule != null)
             {
@@ -747,17 +645,7 @@ public class OwnerParkingController : ControllerBase
                 Data = availabilityRules
                     .OrderBy(rule => rule.EffectiveFrom)
                     .ThenBy(rule => rule.StartTime)
-                    .Select(rule => new OwnerAvailabilityRuleResponse
-                    {
-                        AvailabilityRuleId = rule.AvailabilityId,
-                        FromDate = rule.EffectiveFrom!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                        ToDate = rule.EffectiveUntil!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                        FromTime = rule.StartTime.ToString("HH:mm", CultureInfo.InvariantCulture),
-                        ToTime = rule.EndTime.ToString("HH:mm", CultureInfo.InvariantCulture),
-                        DayPattern = rule.DayType == DayType.Weekday
-                            ? OwnerAvailabilityDayPattern.Weekdays
-                            : OwnerAvailabilityDayPattern.Everyday
-                    })
+                    .Select(MapAvailabilityRuleResponse)
                     .ToList()
             });
         }
@@ -771,6 +659,192 @@ public class OwnerParkingController : ControllerBase
                 Code = StatusCodes.Status500InternalServerError,
                 Success = false,
                 Message = "An error occurred while creating the availability rules."
+            });
+        }
+    }
+
+    /// <summary>
+    /// Updates one availability rule without allowing the edit to overlap another rule
+    /// or remove configured date/time coverage from a confirmed or active booking.
+    /// </summary>
+    [HttpPut("{spotId:int}/availability-rules/{ruleId:int}")]
+    [ProducesResponseType(typeof(OwnerAvailabilityRulesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OwnerAvailabilityRulesResponse>> UpdateAvailabilityRule(
+        int spotId,
+        int ruleId,
+        [FromBody] UpdateOwnerAvailabilityRuleRequest request)
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        var spot = await _context.ParkingSpots
+            .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.ParkingAvailabilities)
+            .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
+
+        if (spot == null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "Parking spot not found."
+            });
+        }
+
+        if (spot.OwnerId != userId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "You are not authorized to manage this parking spot's availability."
+            });
+        }
+
+        if (spot.AvailabilityStatus == AvailabilityStatus.Deleted)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "A deleted parking spot cannot have availability rules."
+            });
+        }
+
+        if (!spot.VerificationRequests.Any(v => v.VerificationStatus == VerificationStatus.Approved))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Availability rules can be updated only after verification is approved."
+            });
+        }
+
+        var availabilityRule = spot.ParkingAvailabilities
+            .FirstOrDefault(rule => rule.AvailabilityId == ruleId);
+
+        if (availabilityRule == null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "Availability rule not found for this parking spot."
+            });
+        }
+
+        var malaysiaToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
+        if (!TryBuildAvailabilityRule(request, spotId, malaysiaToday, out var proposedRule, out var validationMessage))
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = validationMessage
+            });
+        }
+
+        var otherRules = spot.ParkingAvailabilities
+            .Where(rule => rule.AvailabilityId != ruleId)
+            .ToList();
+
+        var identicalExistingRule = otherRules.FirstOrDefault(existingRule =>
+            existingRule.EffectiveFrom == proposedRule.EffectiveFrom &&
+            existingRule.EffectiveUntil == proposedRule.EffectiveUntil &&
+            existingRule.StartTime == proposedRule.StartTime &&
+            existingRule.EndTime == proposedRule.EndTime &&
+            existingRule.DayType == proposedRule.DayType);
+
+        if (identicalExistingRule != null)
+        {
+            return Conflict(new ErrorResponse
+            {
+                Code = StatusCodes.Status409Conflict,
+                Success = false,
+                Message = "An identical availability rule already exists."
+            });
+        }
+
+        if (otherRules.Any(existingRule => AvailabilityCoverageOverlaps(existingRule, proposedRule)))
+        {
+            return Conflict(new ErrorResponse
+            {
+                Code = StatusCodes.Status409Conflict,
+                Success = false,
+                Message = "The selected date, day pattern, and time coverage overlap with another availability rule."
+            });
+        }
+
+        var malaysiaTodayStart = malaysiaToday.ToDateTime(TimeOnly.MinValue);
+        var protectedBookings = await _context.Bookings
+            .AsNoTracking()
+            .Where(booking =>
+                booking.ParkingSpotId == spotId &&
+                (booking.BookingStatus == BookingStatus.Confirmed || booking.BookingStatus == BookingStatus.Active) &&
+                booking.EndDate > malaysiaTodayStart)
+            .ToListAsync();
+
+        if (!PreservesBookingCoverage(
+                spot.ParkingAvailabilities,
+                availabilityRule,
+                proposedRule,
+                protectedBookings))
+        {
+            return Conflict(new ErrorResponse
+            {
+                Code = StatusCodes.Status409Conflict,
+                Success = false,
+                Message = "This change would remove configured availability from a confirmed or active booking."
+            });
+        }
+
+        try
+        {
+            availabilityRule.EffectiveFrom = proposedRule.EffectiveFrom;
+            availabilityRule.EffectiveUntil = proposedRule.EffectiveUntil;
+            availabilityRule.StartTime = proposedRule.StartTime;
+            availabilityRule.EndTime = proposedRule.EndTime;
+            availabilityRule.DayType = proposedRule.DayType;
+            spot.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            await _accessLogService.LogAsync(
+                User,
+                "UpdateOwnerAvailabilityRule",
+                true,
+                $"ParkingSpotId={spotId}; RuleId={ruleId}");
+
+            return Ok(new OwnerAvailabilityRulesResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Availability rule updated successfully.",
+                ParkingSpotId = spotId,
+                Data = new List<OwnerAvailabilityRuleResponse>
+                {
+                    MapAvailabilityRuleResponse(availabilityRule)
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error updating availability rule {AvailabilityRuleId} for parking spot {ParkingSpotId}",
+                ruleId,
+                spotId);
+            await _accessLogService.LogAsync(User, "UpdateOwnerAvailabilityRule", false, ex.Message);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while updating the availability rule."
             });
         }
     }
@@ -965,6 +1039,10 @@ public class OwnerParkingController : ControllerBase
         return missing;
     }
 
+    /// <summary>
+    /// Determines whether two rules cover at least one common date, applicable day type, and time interval.
+    /// Adjacent time intervals are treated as non-overlapping.
+    /// </summary>
     private static bool AvailabilityCoverageOverlaps(Availability firstRule, Availability secondRule)
     {
         var firstFrom = firstRule.EffectiveFrom ?? DateOnly.MinValue;
@@ -999,6 +1077,244 @@ public class OwnerParkingController : ControllerBase
                DateRangeContainsDayType(overlapFrom, overlapUntil, firstRule.DayType);
     }
 
+    /// <summary>
+    /// Validates an availability-rule request and converts it into a normalized availability entity.
+    /// </summary>
+    private static bool TryBuildAvailabilityRule(
+        CreateOwnerAvailabilityRuleRequest request,
+        int spotId,
+        DateOnly malaysiaToday,
+        out Availability availabilityRule,
+        out string validationMessage)
+    {
+        availabilityRule = null!;
+        validationMessage = string.Empty;
+
+        if (!DateOnly.TryParseExact(
+                request.FromDate,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var fromDate))
+        {
+            validationMessage = "Start date must be in a valid format.";
+            return false;
+        }
+
+        if (!DateOnly.TryParseExact(
+                request.ToDate,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var toDate))
+        {
+            validationMessage = "End date must be in a valid format.";
+            return false;
+        }
+
+        if (fromDate > toDate)
+        {
+            validationMessage = "Start date must be on or before end date.";
+            return false;
+        }
+
+        if (toDate < malaysiaToday)
+        {
+            validationMessage = "The availability period has already expired.";
+            return false;
+        }
+
+        if (!TimeOnly.TryParseExact(
+                request.FromTime,
+                "HH:mm",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var fromTime))
+        {
+            validationMessage = "Start time must be in a valid format.";
+            return false;
+        }
+
+        if (!TimeOnly.TryParseExact(
+                request.ToTime,
+                "HH:mm",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var toTime))
+        {
+            validationMessage = "End time must be in a valid format.";
+            return false;
+        }
+
+        if (fromTime >= toTime)
+        {
+            validationMessage = "Start time must be before end time.";
+            return false;
+        }
+
+        if (request.DayPattern is not (OwnerAvailabilityDayPattern.Weekdays or OwnerAvailabilityDayPattern.Everyday))
+        {
+            validationMessage = "Day Pattern must be Weekdays or Everyday.";
+            return false;
+        }
+
+        var dayType = request.DayPattern == OwnerAvailabilityDayPattern.Weekdays
+            ? DayType.Weekday
+            : DayType.Everyday;
+
+        if (dayType == DayType.Weekday && !DateRangeContainsDayType(fromDate, toDate, DayType.Weekday))
+        {
+            validationMessage = "A Weekdays rule must include at least one weekday.";
+            return false;
+        }
+
+        availabilityRule = new Availability
+        {
+            ParkingSpotId = spotId,
+            DayType = dayType,
+            StartTime = fromTime,
+            EndTime = toTime,
+            EffectiveFrom = fromDate,
+            EffectiveUntil = toDate
+        };
+
+        return true;
+    }
+
+    /// <summary>
+    /// Checks that replacing a rule does not remove any date/time coverage currently supporting
+    /// a confirmed or active booking.
+    /// </summary>
+    private static bool PreservesBookingCoverage(
+        IEnumerable<Availability> currentRules,
+        Availability ruleBeingUpdated,
+        Availability proposedRule,
+        IEnumerable<Booking> protectedBookings)
+    {
+        var currentRuleList = currentRules.ToList();
+        var proposedRuleList = currentRuleList
+            .Where(rule => rule.AvailabilityId != ruleBeingUpdated.AvailabilityId)
+            .Append(proposedRule)
+            .ToList();
+
+        foreach (var booking in protectedBookings)
+        {
+            var bookingDate = DateOnly.FromDateTime(booking.StartDate);
+            var bookingEndExclusive = GetBookingEndExclusiveDate(booking.EndDate);
+
+            while (bookingDate < bookingEndExclusive)
+            {
+                var currentCoverage = GetMergedCoverageForDate(currentRuleList, bookingDate);
+                var proposedCoverage = GetMergedCoverageForDate(proposedRuleList, bookingDate);
+
+                if (currentCoverage.Any(requiredInterval =>
+                        !proposedCoverage.Any(availableInterval =>
+                            availableInterval.From <= requiredInterval.From &&
+                            availableInterval.To >= requiredInterval.To)))
+                {
+                    return false;
+                }
+
+                bookingDate = bookingDate.AddDays(1);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Converts a booking end timestamp into the exclusive date boundary used during coverage checks.
+    /// </summary>
+    private static DateOnly GetBookingEndExclusiveDate(DateTime bookingEnd)
+    {
+        var endDate = DateOnly.FromDateTime(bookingEnd);
+        return bookingEnd.TimeOfDay == TimeSpan.Zero ? endDate : endDate.AddDays(1);
+    }
+
+    /// <summary>
+    /// Returns the merged availability intervals that apply on a specific date.
+    /// </summary>
+    private static List<(TimeOnly From, TimeOnly To)> GetMergedCoverageForDate(
+        IEnumerable<Availability> rules,
+        DateOnly date)
+    {
+        var intervals = rules
+            .Where(rule => AvailabilityRuleAppliesOnDate(rule, date))
+            .OrderBy(rule => rule.StartTime)
+            .ThenBy(rule => rule.EndTime)
+            .Select(rule => (From: rule.StartTime, To: rule.EndTime))
+            .ToList();
+
+        var mergedIntervals = new List<(TimeOnly From, TimeOnly To)>();
+        foreach (var interval in intervals)
+        {
+            if (mergedIntervals.Count == 0)
+            {
+                mergedIntervals.Add(interval);
+                continue;
+            }
+
+            var previous = mergedIntervals[^1];
+            if (interval.From <= previous.To)
+            {
+                mergedIntervals[^1] = (
+                    previous.From,
+                    interval.To > previous.To ? interval.To : previous.To);
+                continue;
+            }
+
+            mergedIntervals.Add(interval);
+        }
+
+        return mergedIntervals;
+    }
+
+    /// <summary>
+    /// Determines whether a rule's effective range and day type include the specified date.
+    /// </summary>
+    private static bool AvailabilityRuleAppliesOnDate(Availability rule, DateOnly date)
+    {
+        if (rule.EffectiveFrom.HasValue && date < rule.EffectiveFrom.Value)
+        {
+            return false;
+        }
+
+        if (rule.EffectiveUntil.HasValue && date > rule.EffectiveUntil.Value)
+        {
+            return false;
+        }
+
+        var isWeekend = date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+        return rule.DayType switch
+        {
+            DayType.Weekday => !isWeekend,
+            DayType.Weekend => isWeekend,
+            DayType.Everyday => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Maps an availability entity to the owner-facing API response format.
+    /// </summary>
+    private static OwnerAvailabilityRuleResponse MapAvailabilityRuleResponse(Availability rule)
+    {
+        return new OwnerAvailabilityRuleResponse
+        {
+            AvailabilityRuleId = rule.AvailabilityId,
+            FromDate = rule.EffectiveFrom!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ToDate = rule.EffectiveUntil!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            FromTime = rule.StartTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+            ToTime = rule.EndTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+            DayPattern = rule.DayType == DayType.Weekday
+                ? OwnerAvailabilityDayPattern.Weekdays
+                : OwnerAvailabilityDayPattern.Everyday
+        };
+    }
+
+    /// <summary>
+    /// Determines whether an inclusive date range contains at least one date matching the requested day type.
+    /// </summary>
     private static bool DateRangeContainsDayType(DateOnly fromDate, DateOnly toDate, DayType dayType)
     {
         if (fromDate > toDate)
