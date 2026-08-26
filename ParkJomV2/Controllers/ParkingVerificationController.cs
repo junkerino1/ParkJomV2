@@ -332,6 +332,14 @@ public class ParkingVerificationController : ControllerBase
                 ? VerificationStatus.Approved
                 : VerificationStatus.Rejected;
 
+            // On approval, mark the parking spot as Pending (approved, awaiting owner configuration/publishing).
+            if (verificationRequest.VerificationStatus == VerificationStatus.Approved
+                && verificationRequest.ParkingSpot != null)
+            {
+                verificationRequest.ParkingSpot.AvailabilityStatus = AvailabilityStatus.Pending;
+                verificationRequest.ParkingSpot.UpdatedAt = DateTime.UtcNow;
+            }
+
             verificationRequest.ReviewedAt = DateTime.UtcNow;
             verificationRequest.UpdatedAt = DateTime.UtcNow;
             verificationRequest.ReviewNotes = request.ReviewNotes;

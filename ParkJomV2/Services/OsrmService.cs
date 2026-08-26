@@ -37,7 +37,28 @@ public class OsrmService
         // valid url
         // var url = $"/table/v1/foot/101.712779,3.202784;101.722625,3.217872;101.712779,3.202784?sources=0&destinations=1;2&annotations=distance,duration";
 
-        var response = await _httpClient.GetFromJsonAsync<OsrmTableResponse>(url);
+        OsrmTableResponse? response;
+        try
+        {
+            using var httpResponse = await _httpClient.GetAsync(url);
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("OSRM table request failed. Url={Url}, StatusCode={StatusCode}", url, (int)httpResponse.StatusCode);
+                return destinations.Select(_ => ((double?)null, (double?)null)).ToList();
+            }
+
+            response = await httpResponse.Content.ReadFromJsonAsync<OsrmTableResponse>();
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "OSRM table request error. Url={Url}", url);
+            return destinations.Select(_ => ((double?)null, (double?)null)).ToList();
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "OSRM table request timed out. Url={Url}", url);
+            return destinations.Select(_ => ((double?)null, (double?)null)).ToList();
+        }
 
         // log OSRM response for debugging
         _logger.LogInformation("OSRM response: {Response}",
@@ -89,7 +110,28 @@ public class OsrmService
 
         // _logger.LogInformation("OSRM Route Request URL: {Url}", url);
 
-        var response = await _httpClient.GetFromJsonAsync<OsrmRouteResponse>(url);
+        OsrmRouteResponse? response;
+        try
+        {
+            using var httpResponse = await _httpClient.GetAsync(url);
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("OSRM route request failed. Url={Url}, StatusCode={StatusCode}", url, (int)httpResponse.StatusCode);
+                return (null, null);
+            }
+
+            response = await httpResponse.Content.ReadFromJsonAsync<OsrmRouteResponse>();
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "OSRM route request error. Url={Url}", url);
+            return (null, null);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "OSRM route request timed out. Url={Url}", url);
+            return (null, null);
+        }
 
         if (response?.Code != "Ok" || response.Routes == null || response.Routes.Count == 0)
             return (null, null);

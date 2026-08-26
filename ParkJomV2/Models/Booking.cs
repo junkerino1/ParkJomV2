@@ -32,10 +32,47 @@ public class Booking
     [Column(TypeName = "decimal(10,2)")]
     public decimal TotalAmount { get; set; }
 
+    public int BookedDays { get; set; }
+
+    [Required]
+    public BookingRateType RateType { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal RatePerDaySnapshot { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal RentalSubtotal { get; set; }
+
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal PlatformCommissionRate { get; set; } = 10m;
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal PlatformCommissionAmount { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal OwnerPayoutAmount { get; set; }
+
+    public Guid? BookingQuoteId { get; set; }
+
+    [StringLength(100)]
+    public string? IdempotencyKey { get; set; }
+
     [StringLength(500)]
     public string? CancellationReason { get; set; }
 
     public DateTime? CancelledAt { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal RefundAmount { get; set; }
+
+    public DateTime? CheckedInAt { get; set; }
+
+    public DateTime? ActualExitAt { get; set; }
+
+    public int OverstayHours { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal OverstayPenaltyAmount { get; set; }
 
     public DateTime CreatedAt { get; set; }
 
@@ -51,6 +88,9 @@ public class Booking
 
     [ForeignKey(nameof(VehicleId))]
     public Vehicle Vehicle { get; set; } = null!;
+
+    [ForeignKey(nameof(BookingQuoteId))]
+    public BookingQuote? BookingQuote { get; set; }
 
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 

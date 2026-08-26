@@ -26,6 +26,7 @@ builder.Services.AddScoped<StripeService>();
 builder.Services.AddHttpClient<OsrmService>(client =>
 {
     client.BaseAddress = new Uri("https://router.project-osrm.org/");
+    client.DefaultRequestHeaders.Add("User-Agent", "ParkJomV2/1.0");
 });
 
 builder.Services.AddHttpClient<NominatimService>(client =>
