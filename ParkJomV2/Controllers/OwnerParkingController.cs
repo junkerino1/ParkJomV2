@@ -991,6 +991,143 @@ public class OwnerParkingController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Calculates one owner's monthly availability calendar from configured rules and
+    /// confirmed or active bookings without exposing renter or vehicle identity.
+    /// </summary>
+    [HttpGet("{spotId:int}/availability-calendar")]
+    [ProducesResponseType(typeof(OwnerAvailabilityCalendarResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerAvailabilityCalendarResponse>> GetAvailabilityCalendar(
+        int spotId,
+        [FromQuery] string? month = null)
+    {
+        if (!CalendarMonthParser.TryParse(month, out var monthStart, out var monthEndExclusive))
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "month must use YYYY-MM format."
+            });
+        }
+
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        try
+        {
+            var spot = await _context.ParkingSpots
+                .AsNoTracking()
+                .Include(p => p.ParkingAvailabilities)
+                .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
+
+            if (spot == null)
+            {
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Parking spot not found."
+                });
+            }
+
+            if (spot.OwnerId != userId)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to view this parking spot's availability calendar."
+                });
+            }
+
+            var monthStartDateTime = monthStart.ToDateTime(TimeOnly.MinValue);
+            var monthEndExclusiveDateTime = monthEndExclusive.ToDateTime(TimeOnly.MinValue);
+            var blockingBookings = await _context.Bookings
+                .AsNoTracking()
+                .Where(booking =>
+                    booking.ParkingSpotId == spotId &&
+                    (booking.BookingStatus == BookingStatus.Confirmed || booking.BookingStatus == BookingStatus.Active) &&
+                    booking.StartDate < monthEndExclusiveDateTime &&
+                    booking.EndDate > monthStartDateTime)
+                .ToListAsync();
+
+            var bookedDates = new HashSet<DateOnly>();
+            foreach (var booking in blockingBookings)
+            {
+                var bookingStart = DateOnly.FromDateTime(booking.StartDate);
+                var bookingEndExclusive = GetBookingEndExclusiveDate(booking.EndDate);
+                var overlapStart = bookingStart > monthStart ? bookingStart : monthStart;
+                var overlapEndExclusive = bookingEndExclusive < monthEndExclusive
+                    ? bookingEndExclusive
+                    : monthEndExclusive;
+
+                for (var date = overlapStart; date < overlapEndExclusive; date = date.AddDays(1))
+                {
+                    bookedDates.Add(date);
+                }
+            }
+
+            var days = new List<OwnerAvailabilityCalendarDayResponse>();
+            for (var date = monthStart; date < monthEndExclusive; date = date.AddDays(1))
+            {
+                var configuredHours = GetMergedCoverageForDate(spot.ParkingAvailabilities, date)
+                    .Select(interval => new OwnerAvailabilityTimeRangeResponse
+                    {
+                        From = interval.From.ToString("HH:mm", CultureInfo.InvariantCulture),
+                        To = interval.To.ToString("HH:mm", CultureInfo.InvariantCulture)
+                    })
+                    .ToList();
+
+                days.Add(new OwnerAvailabilityCalendarDayResponse
+                {
+                    Date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    ConfiguredHours = configuredHours,
+                    Status = bookedDates.Contains(date)
+                        ? "booked"
+                        : configuredHours.Count > 0
+                            ? "available"
+                            : "unavailable"
+                });
+            }
+
+            await _accessLogService.LogAsync(
+                User,
+                "GetOwnerAvailabilityCalendar",
+                true,
+                $"ParkingSpotId={spotId}; Month={monthStart:yyyy-MM}");
+
+            return Ok(new OwnerAvailabilityCalendarResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Availability calendar retrieved successfully.",
+                ParkingSpotId = spotId,
+                Month = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                Days = days
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error retrieving availability calendar for parking spot {ParkingSpotId} and month {Month}",
+                spotId,
+                month);
+            await _accessLogService.LogAsync(User, "GetOwnerAvailabilityCalendar", false, ex.Message);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while retrieving the availability calendar."
+            });
+        }
+    }
+
     [HttpGet]
     [ProducesResponseType(typeof(DisplayMyParkingResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking()
