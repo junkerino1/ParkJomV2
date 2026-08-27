@@ -791,8 +791,7 @@ public class OwnerParkingController : ControllerBase
 
         if (!PreservesBookingCoverage(
                 spot.ParkingAvailabilities,
-                availabilityRule,
-                proposedRule,
+                otherRules.Append(proposedRule),
                 protectedBookings))
         {
             return Conflict(new ErrorResponse
@@ -845,6 +844,149 @@ public class OwnerParkingController : ControllerBase
                 Code = StatusCodes.Status500InternalServerError,
                 Success = false,
                 Message = "An error occurred while updating the availability rule."
+            });
+        }
+    }
+
+    /// <summary>
+    /// Deletes one availability rule only when the remaining rules continue to cover every
+    /// confirmed or active booking for the parking spot.
+    /// </summary>
+    [HttpDelete("{spotId:int}/availability-rules/{ruleId:int}")]
+    [ProducesResponseType(typeof(OwnerAvailabilityRulesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OwnerAvailabilityRulesResponse>> DeleteAvailabilityRule(
+        int spotId,
+        int ruleId)
+    {
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        var spot = await _context.ParkingSpots
+            .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.ParkingAvailabilities)
+            .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
+
+        if (spot == null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "Parking spot not found."
+            });
+        }
+
+        if (spot.OwnerId != userId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "You are not authorized to manage this parking spot's availability."
+            });
+        }
+
+        if (spot.AvailabilityStatus == AvailabilityStatus.Deleted)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "A deleted parking spot cannot have availability rules."
+            });
+        }
+
+        if (!spot.VerificationRequests.Any(v => v.VerificationStatus == VerificationStatus.Approved))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Availability rules can be removed only after verification is approved."
+            });
+        }
+
+        var availabilityRule = spot.ParkingAvailabilities
+            .FirstOrDefault(rule => rule.AvailabilityId == ruleId);
+
+        if (availabilityRule == null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "Availability rule not found for this parking spot."
+            });
+        }
+
+        var remainingRules = spot.ParkingAvailabilities
+            .Where(rule => rule.AvailabilityId != ruleId)
+            .ToList();
+        var malaysiaToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
+        var malaysiaTodayStart = malaysiaToday.ToDateTime(TimeOnly.MinValue);
+        var protectedBookings = await _context.Bookings
+            .AsNoTracking()
+            .Where(booking =>
+                booking.ParkingSpotId == spotId &&
+                (booking.BookingStatus == BookingStatus.Confirmed || booking.BookingStatus == BookingStatus.Active) &&
+                booking.EndDate > malaysiaTodayStart)
+            .ToListAsync();
+
+        if (!PreservesBookingCoverage(
+                spot.ParkingAvailabilities,
+                remainingRules,
+                protectedBookings))
+        {
+            return Conflict(new ErrorResponse
+            {
+                Code = StatusCodes.Status409Conflict,
+                Success = false,
+                Message = "This deletion would remove configured availability from a confirmed or active booking."
+            });
+        }
+
+        try
+        {
+            _context.Availabilities.Remove(availabilityRule);
+            spot.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            await _accessLogService.LogAsync(
+                User,
+                "DeleteOwnerAvailabilityRule",
+                true,
+                $"ParkingSpotId={spotId}; RuleId={ruleId}");
+
+            return Ok(new OwnerAvailabilityRulesResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Availability rule deleted successfully.",
+                ParkingSpotId = spotId,
+                Data = remainingRules
+                    .OrderBy(rule => rule.EffectiveFrom)
+                    .ThenBy(rule => rule.StartTime)
+                    .Select(MapAvailabilityRuleResponse)
+                    .ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error deleting availability rule {AvailabilityRuleId} for parking spot {ParkingSpotId}",
+                ruleId,
+                spotId);
+            await _accessLogService.LogAsync(User, "DeleteOwnerAvailabilityRule", false, ex.Message);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while deleting the availability rule."
             });
         }
     }
@@ -1182,20 +1324,16 @@ public class OwnerParkingController : ControllerBase
     }
 
     /// <summary>
-    /// Checks that replacing a rule does not remove any date/time coverage currently supporting
+    /// Checks that a proposed rule set does not remove any date/time coverage currently supporting
     /// a confirmed or active booking.
     /// </summary>
     private static bool PreservesBookingCoverage(
         IEnumerable<Availability> currentRules,
-        Availability ruleBeingUpdated,
-        Availability proposedRule,
+        IEnumerable<Availability> proposedRules,
         IEnumerable<Booking> protectedBookings)
     {
         var currentRuleList = currentRules.ToList();
-        var proposedRuleList = currentRuleList
-            .Where(rule => rule.AvailabilityId != ruleBeingUpdated.AvailabilityId)
-            .Append(proposedRule)
-            .ToList();
+        var proposedRuleList = proposedRules.ToList();
 
         foreach (var booking in protectedBookings)
         {
