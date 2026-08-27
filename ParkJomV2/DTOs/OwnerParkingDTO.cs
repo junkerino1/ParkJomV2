@@ -82,6 +82,10 @@ public class CreateOwnerAvailabilityRuleRequest
     public OwnerAvailabilityDayPattern? DayPattern { get; set; }
 }
 
+public class UpdateOwnerAvailabilityRuleRequest : CreateOwnerAvailabilityRuleRequest
+{
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter<OwnerAvailabilityDayPattern>))]
 public enum OwnerAvailabilityDayPattern
 {
@@ -107,4 +111,28 @@ public class OwnerAvailabilityRulesResponse
     public int ParkingSpotId { get; set; }
     public string TimeZone { get; set; } = "Asia/Kuala_Lumpur";
     public List<OwnerAvailabilityRuleResponse> Data { get; set; } = new();
+}
+
+public class OwnerAvailabilityTimeRangeResponse
+{
+    public string From { get; set; } = string.Empty;
+    public string To { get; set; } = string.Empty;
+}
+
+public class OwnerAvailabilityCalendarDayResponse
+{
+    public string Date { get; set; } = string.Empty;
+    public List<OwnerAvailabilityTimeRangeResponse> ConfiguredHours { get; set; } = new();
+    public string Status { get; set; } = string.Empty;
+}
+
+public class OwnerAvailabilityCalendarResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ParkingSpotId { get; set; }
+    public string Month { get; set; } = string.Empty;
+    public string TimeZone { get; set; } = "Asia/Kuala_Lumpur";
+    public List<OwnerAvailabilityCalendarDayResponse> Days { get; set; } = new();
 }
