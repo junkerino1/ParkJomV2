@@ -18,7 +18,7 @@ A `ParkingSpot` is never returned by public APIs until it is approved, configure
 
 | Method / endpoint | Input | Behaviour |
 |---|---|---|
-| `PUT /api/owner/parking/{spotId}/configuration` | `description`, `instructions`, `dailyRate`, `monthlyRate`, image add/remove/reorder data | Owner-only; requires approved verification. Saves listing content and pricing but does not publish. Require at least one image, valid rates, description, and instructions before marking configuration complete. |
+| `PUT /api/owner/parking/{spotId}/configuration` | `description`, `dailyRate`, `monthlyRate`, image add/remove/reorder data | Owner-only; requires approved verification. Saves listing content and pricing but does not publish. Require at least one image, valid rates, and description before marking configuration complete. |
 | `POST /api/owner/parking/{spotId}/images` | Multipart image files | Upload public listing images and create `ParkingSpotImage` rows. Verification documents remain separate and private. |
 | `PUT /api/owner/parking/{spotId}/images/{imageId}` | `displayOrder`, `isPrimary` | Reorder images or set the one primary image. |
 | `DELETE /api/owner/parking/{spotId}/images/{imageId}` | — | Delete an unneeded listing image; reject removal of the last image if already published. |
@@ -72,7 +72,7 @@ The booking list/detail endpoints are the separate source of renter and vehicle 
 | Method / endpoint | Input | Behaviour |
 |---|---|---|
 | `GET /api/public/parking/search?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` | Inclusive dates | Returns only published, approved spots whose configured hours cover every requested date and have no confirmed/active overlap. |
-| `GET /api/public/parking/{spotId}?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` | Inclusive dates | Returns listing details, images, instructions, applicable hours for the requested period, and a current availability result. |
+| `GET /api/public/parking/{spotId}?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` | Inclusive dates | Returns listing details, images, applicable hours for the requested period, and a current availability result. |
 | `POST /api/public/parking/{spotId}/booking-quotes` | `vehicleId`, `startDate`, `endDate`, optional future `voucherCode` | Authenticated user only. Rechecks ownership, lead time, availability, and vehicle. Returns a short-lived server-generated quote. |
 | `POST /api/bookings/confirm` | `quoteId`, `vehicleId` | Authenticated user only. Creates and pays for the booking atomically from wallet balance. Require an `Idempotency-Key` request header so a double tap/retry cannot produce two bookings. |
 | `GET /api/bookings/my` | Optional status/date filters | Renter’s booking history and upcoming bookings. |

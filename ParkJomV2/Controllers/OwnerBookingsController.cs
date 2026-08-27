@@ -32,7 +32,7 @@ public class OwnerBookingsController : ControllerBase
 
     /// <summary>
     /// Returns booking summaries only for parking spots owned by the authenticated user,
-    /// with optional parking-spot, overlapping calendar-month, and booking-status filters.
+    /// filter: spotId (optional), month (YYYY-MM, optional), status (Pending, Confirmed, Cancelled, Completed, Expired, Active; optional).
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(OwnerBookingListResponse), StatusCodes.Status200OK)]
@@ -188,7 +188,98 @@ public class OwnerBookingsController : ControllerBase
     }
 
     /// <summary>
-    /// Parses an optional case-insensitive booking-status filter without accepting numeric enum values.
+    /// Returns full booking, renter, vehicle, pricing, and transaction details only when the
+    /// authenticated user owns the booked parking spot. Wallet and idempotency data are excluded.
+    /// </summary>
+    [HttpGet("{bookingId:int}")]
+    [ProducesResponseType(typeof(OwnerBookingDetailResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerBookingDetailResponse>> GetOwnerBookingById(int bookingId)
+    {
+
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        try
+        {
+            var booking = await _context.Bookings
+                .AsNoTracking()
+                .Include(item => item.ParkingSpot)
+                .Include(item => item.Renter)
+                .Include(item => item.Vehicle)
+                .Include(item => item.Transactions)
+                .FirstOrDefaultAsync(item => item.BookingId == bookingId);
+
+            if (booking == null)
+            {
+                await _accessLogService.LogAsync(
+                    User,
+                    "GetOwnerBookingById",
+                    false,
+                    $"Booking not found (id={bookingId})");
+
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Booking not found."
+                });
+            }
+
+            if (booking.ParkingSpot.OwnerId != userId)
+            {
+                await _accessLogService.LogAsync(
+                    User,
+                    "GetOwnerBookingById",
+                    false,
+                    $"Not owner (bookingId={bookingId})",
+                    bookingId);
+
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to view this booking."
+                });
+            }
+
+            await _accessLogService.LogAsync(
+                User,
+                "GetOwnerBookingById",
+                true,
+                $"BookingId={bookingId}",
+                bookingId);
+
+            return Ok(new OwnerBookingDetailResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Owner booking detail retrieved successfully.",
+                Data = MapOwnerBookingDetail(booking)
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error retrieving owner booking {BookingId} for user {UserId}",
+                bookingId,
+                userId);
+            await _accessLogService.LogAsync(User, "GetOwnerBookingById", false, ex.Message, bookingId);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while retrieving the owner booking detail."
+            });
+        }
+    }
+
+    /// <summary>
+    /// take request parameter status and parse it to BookingStatus enum, return true if parsing is successful, false otherwise.
     /// </summary>
     private static bool TryParseBookingStatus(string? status, out BookingStatus? bookingStatus)
     {
@@ -198,6 +289,7 @@ public class OwnerBookingsController : ControllerBase
             return true;
         }
 
+        // fetch booking status enum names and compare with the input status string, ignoring case and whitespace
         var matchingStatusName = Enum.GetNames<BookingStatus>()
             .FirstOrDefault(candidate => string.Equals(
                 candidate,
@@ -218,16 +310,7 @@ public class OwnerBookingsController : ControllerBase
     /// </summary>
     private static OwnerBookingSummaryResponse MapOwnerBookingSummary(Booking booking)
     {
-        var startDate = DateOnly.FromDateTime(booking.StartDate);
-        var endDate = DateOnly.FromDateTime(booking.EndDate);
-        if (booking.EndDate.TimeOfDay == TimeSpan.Zero && endDate > startDate)
-        {
-            endDate = endDate.AddDays(-1);
-        }
-
-        var bookedDays = booking.BookedDays > 0
-            ? booking.BookedDays
-            : Math.Max(1, endDate.DayNumber - startDate.DayNumber + 1);
+        var (startDate, endDate, bookedDays) = GetInclusiveBookingPeriod(booking);
 
         return new OwnerBookingSummaryResponse
         {
@@ -247,5 +330,99 @@ public class OwnerBookingsController : ControllerBase
             OwnerPayoutAmount = booking.OwnerPayoutAmount,
             CreatedAt = booking.CreatedAt
         };
+    }
+
+    /// <summary>
+    /// Maps an owner-authorized booking to the detailed response without exposing wallet identifiers,
+    /// booking quote identifiers, or the renter's idempotency key.
+    /// </summary>
+    private static OwnerBookingDetailDataResponse MapOwnerBookingDetail(Booking booking)
+    {
+        var (startDate, endDate, bookedDays) = GetInclusiveBookingPeriod(booking);
+        var renterFirstName = booking.Renter.FirstName ?? string.Empty;
+        var renterLastName = booking.Renter.LastName ?? string.Empty;
+
+        return new OwnerBookingDetailDataResponse
+        {
+            BookingId = booking.BookingId,
+            BookingReference = booking.BookingReference,
+            ParkingSpotId = booking.ParkingSpotId,
+            ParkingLabel = booking.ParkingSpot.ParkingLabel,
+            Renter = new OwnerBookingRenterResponse
+            {
+                RenterId = booking.RenterId,
+                FirstName = renterFirstName,
+                LastName = renterLastName,
+                FullName = $"{renterFirstName} {renterLastName}".Trim(),
+                Email = booking.Renter.Email,
+                PhoneNumber = booking.Renter.PhoneNumber
+            },
+            Vehicle = new OwnerBookingVehicleResponse
+            {
+                VehicleId = booking.VehicleId,
+                NumberPlate = booking.Vehicle.NumberPlate,
+                Brand = booking.Vehicle.VehicleBrand,
+                Model = booking.Vehicle.VehicleModel,
+                Color = booking.Vehicle.VehicleColor
+            },
+            StartDate = startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            EndDate = endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            BookedDays = bookedDays,
+            BookingStatus = booking.BookingStatus.ToString(),
+            CancellationReason = booking.CancellationReason,
+            CancelledAt = booking.CancelledAt,
+            CheckedInAt = booking.CheckedInAt,
+            ActualExitAt = booking.ActualExitAt,
+            Financial = new OwnerBookingFinancialResponse
+            {
+                RateType = booking.RateType.ToString(),
+                RatePerDaySnapshot = booking.RatePerDaySnapshot,
+                RentalSubtotal = booking.RentalSubtotal,
+                RenterTotal = booking.TotalAmount,
+                PlatformCommissionRate = booking.PlatformCommissionRate,
+                PlatformCommissionAmount = booking.PlatformCommissionAmount,
+                OwnerPayoutAmount = booking.OwnerPayoutAmount,
+                RefundAmount = booking.RefundAmount,
+                OverstayHours = booking.OverstayHours,
+                OverstayPenaltyAmount = booking.OverstayPenaltyAmount
+            },
+            Transactions = booking.Transactions
+                .OrderBy(transaction => transaction.CreatedAt)
+                .ThenBy(transaction => transaction.TransactionId)
+                .Select(transaction => new OwnerBookingTransactionResponse
+                {
+                    TransactionId = transaction.TransactionId,
+                    TransactionType = transaction.TransactionType.ToString(),
+                    Amount = transaction.Amount,
+                    PaymentMethod = transaction.PaymentMethod.ToString(),
+                    TransactionStatus = transaction.TransactionStatus.ToString(),
+                    ReferenceNumber = transaction.ReferenceNumber,
+                    CreatedAt = transaction.CreatedAt,
+                    UpdatedAt = transaction.UpdatedAt
+                })
+                .ToList(),
+            CreatedAt = booking.CreatedAt,
+            UpdatedAt = booking.UpdatedAt
+        };
+    }
+
+    /// <summary>
+    /// Converts the internal exclusive booking end boundary into inclusive customer-facing dates
+    /// and falls back to a calculated day count for legacy bookings without a stored snapshot.
+    /// </summary>
+    private static (DateOnly StartDate, DateOnly EndDate, int BookedDays) GetInclusiveBookingPeriod(Booking booking)
+    {
+        var startDate = DateOnly.FromDateTime(booking.StartDate);
+        var endDate = DateOnly.FromDateTime(booking.EndDate);
+        if (booking.EndDate.TimeOfDay == TimeSpan.Zero && endDate > startDate)
+        {
+            endDate = endDate.AddDays(-1);
+        }
+
+        var bookedDays = booking.BookedDays > 0
+            ? booking.BookedDays
+            : Math.Max(1, endDate.DayNumber - startDate.DayNumber + 1);
+
+        return (startDate, endDate, bookedDays);
     }
 }
