@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using ParkJomV2.DTOs;
 using ParkJomV2.Services;
-using System.Security.Claims;
 
 namespace ParkJomV2.Controllers;
 
@@ -13,17 +12,20 @@ public class WalletTopUpController : ControllerBase
 {
 	private readonly StripeService _stripeService;
 	private readonly AccessLogService _accessLogService;
+	private readonly CurrentUserService _currentUser;
 	private readonly IConfiguration _configuration;
 	private readonly ILogger<WalletTopUpController> _logger;
 
 	public WalletTopUpController(
 		StripeService stripeService,
 		AccessLogService accessLogService,
+		CurrentUserService currentUser,
 		IConfiguration configuration,
 		ILogger<WalletTopUpController> logger)
 	{
 		_stripeService = stripeService;
 		_accessLogService = accessLogService;
+		_currentUser = currentUser;
 		_configuration = configuration;
 		_logger = logger;
 	}
@@ -257,7 +259,9 @@ public class WalletTopUpController : ControllerBase
 
 	private bool TryGetUserId(out int userId)
 	{
-		return int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out userId);
+		var id = _currentUser.UserId;
+		userId = id ?? 0;
+		return id.HasValue;
 	}
 
 	private string GetReturnUrl(string? returnTarget)

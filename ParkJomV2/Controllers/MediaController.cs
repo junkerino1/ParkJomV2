@@ -5,7 +5,6 @@ using ParkJomV2.Data;
 using ParkJomV2.DTOs;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
-using System.Security.Claims;
 
 namespace ParkJomV2.Controllers
 {
@@ -14,6 +13,7 @@ namespace ParkJomV2.Controllers
     public class MediaController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly CurrentUserService _currentUser;
         private readonly CloudinaryService _cloudinaryService;
         private readonly AccessLogService _accessLogService;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -21,12 +21,14 @@ namespace ParkJomV2.Controllers
 
         public MediaController(
             ApplicationDbContext context,
+            CurrentUserService currentUser,
             CloudinaryService cloudinaryService,
             AccessLogService accessLogService,
             IHttpClientFactory httpClientFactory,
             ILogger<MediaController> logger)
         {
             _context = context;
+            _currentUser = currentUser;
             _cloudinaryService = cloudinaryService;
             _accessLogService = accessLogService;
             _httpClientFactory = httpClientFactory;
@@ -42,10 +44,7 @@ namespace ParkJomV2.Controllers
         {
             try
             {
-                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
-                var user = await _context.Users
-                    .FirstOrDefaultAsync(u => u.UserId == userId);
+                var user = await _currentUser.GetCurrentUserAsync();
 
                 if (user == null)
                 {

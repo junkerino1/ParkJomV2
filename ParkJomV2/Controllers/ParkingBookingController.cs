@@ -6,7 +6,6 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Services;
 using ParkJomV2.Models.Enums;
-using System.Security.Claims;
 
 namespace ParkJomV2.Controllers;
 
@@ -15,12 +14,14 @@ namespace ParkJomV2.Controllers;
 public class ParkingBookingController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly CurrentUserService _currentUser;
     private readonly AccessLogService _accessLogService;
     private readonly ILogger<ParkingBookingController> _logger;
 
-    public ParkingBookingController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<ParkingBookingController> logger)
+    public ParkingBookingController(ApplicationDbContext context, CurrentUserService currentUser, AccessLogService accessLogService, ILogger<ParkingBookingController> logger)
     {
         _context = context;
+        _currentUser = currentUser;
         _accessLogService = accessLogService;
         _logger = logger;
     }
@@ -38,8 +39,7 @@ public class ParkingBookingController : ControllerBase
     {
         try
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _currentUser.GetCurrentUserAsync();
 
             if (user == null)
             {
@@ -145,7 +145,7 @@ public class ParkingBookingController : ControllerBase
             }
 
             var vehicle = await _context.Vehicles
-                .FirstOrDefaultAsync(v => v.VehicleId == request.VehicleId && v.UserId == userId);
+                .FirstOrDefaultAsync(v => v.VehicleId == request.VehicleId && v.UserId == user.UserId);
 
             if (vehicle == null)
             {
@@ -168,7 +168,7 @@ public class ParkingBookingController : ControllerBase
             var booking = new Booking
             {
                 BookingReference = GenerateBookingReference(),
-                RenterId = userId,
+                RenterId = user.UserId,
                 ParkingSpotId = request.ParkingSpotId,
                 VehicleId = request.VehicleId,
                 StartDate = request.StartDate,
@@ -184,7 +184,7 @@ public class ParkingBookingController : ControllerBase
 
             _logger.LogInformation(
                 "Booking created. BookingId={BookingId}, Reference={Reference}, SpotId={SpotId}, UserId={UserId}",
-                booking.BookingId, booking.BookingReference, request.ParkingSpotId, userId);
+                booking.BookingId, booking.BookingReference, request.ParkingSpotId, user.UserId);
 
             await _accessLogService.LogAsync(User, "CreateBooking", true, $"BookingId={booking.BookingId}", booking.BookingId);
 
@@ -220,18 +220,27 @@ public class ParkingBookingController : ControllerBase
     {
         try
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var user = await _currentUser.GetCurrentUserAsync();
+
+            if(user == null)
+            {
+                await _accessLogService.LogAsync(User, "GetMyBookings", false, "User not found");
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "User not found"
+                });
+            }
 
             var bookings = await _context.Bookings
                 .Include(b => b.ParkingSpot)
                 .Include(b => b.Vehicle)
-                .Where(b => b.RenterId == userId)
+                .Where(b => b.RenterId == user.UserId)
                 .OrderByDescending(b => b.CreatedAt)
                 .ToListAsync();
 
             var result = bookings.Select(MapToBookingResponseDTO).ToList();
-
-            _logger.LogInformation("Retrieved {Count} bookings for user {UserId}", result.Count, userId);
 
             await _accessLogService.LogAsync(User, "GetMyBookings", true, $"{result.Count} booking(s)");
 
@@ -271,8 +280,7 @@ public class ParkingBookingController : ControllerBase
     {
         try
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _currentUser.GetCurrentUserAsync();
 
             if (user == null)
             {
@@ -303,8 +311,8 @@ public class ParkingBookingController : ControllerBase
             }
 
             // Only the renter, the spot owner, or an admin can view the booking
-            if (booking.RenterId != userId &&
-                booking.ParkingSpot.OwnerId != userId &&
+            if (booking.RenterId != user.UserId &&
+                booking.ParkingSpot.OwnerId != user.UserId &&
                 user.UserType != UserType.Admin)
             {
                 await _accessLogService.LogAsync(User, "GetBookingById", false, $"Not authorized (id={id})");
@@ -315,8 +323,6 @@ public class ParkingBookingController : ControllerBase
                     Message = "You are not authorized to view this booking"
                 });
             }
-
-            _logger.LogInformation("Retrieved booking {BookingId} for user {UserId}", id, userId);
 
             await _accessLogService.LogAsync(User, "GetBookingById", true, $"BookingId={id}", id);
 
@@ -355,8 +361,7 @@ public class ParkingBookingController : ControllerBase
     {
         try
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _currentUser.GetCurrentUserAsync();
 
             if (user == null)
             {
@@ -385,7 +390,7 @@ public class ParkingBookingController : ControllerBase
             }
 
             // Only the renter who made the booking or the spot owner can cancel
-            if (booking.RenterId != userId && booking.ParkingSpot.OwnerId != userId && user.UserType != UserType.Admin)
+            if (booking.RenterId != user.UserId && booking.ParkingSpot.OwnerId != user.UserId && user.UserType != UserType.Admin)
             {
                 await _accessLogService.LogAsync(User, "CancelBooking", false, $"Not authorized (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -427,7 +432,7 @@ public class ParkingBookingController : ControllerBase
 
             _logger.LogInformation(
                 "Booking cancelled. BookingId={BookingId}, UserId={UserId}, Reason={Reason}",
-                id, userId, request.CancellationReason);
+                id, user.UserId, request.CancellationReason);
 
             await _accessLogService.LogAsync(User, "CancelBooking", true, $"BookingId={id}", id);
 

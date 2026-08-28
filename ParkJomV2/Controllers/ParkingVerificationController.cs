@@ -6,7 +6,6 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
-using System.Security.Claims;
 
 namespace ParkJomV2.Controllers;
 
@@ -17,12 +16,14 @@ public class ParkingVerificationController : ControllerBase
     private const int PageSize = 100;
 
     private readonly ApplicationDbContext _context;
+    private readonly CurrentUserService _currentUser;
     private readonly AccessLogService _accessLogService;
     private readonly ILogger<ParkingVerificationController> _logger;
 
-    public ParkingVerificationController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<ParkingVerificationController> logger)
+    public ParkingVerificationController(ApplicationDbContext context, CurrentUserService currentUser, AccessLogService accessLogService, ILogger<ParkingVerificationController> logger)
     {
         _context = context;
+        _currentUser = currentUser;
         _accessLogService = accessLogService;
         _logger = logger;
     }
@@ -46,12 +47,10 @@ public class ParkingVerificationController : ControllerBase
     {
         try
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _currentUser.GetCurrentUserAsync();
 
             if (user == null)
             {
-                _logger.LogWarning("User {UserId} not found", userId);
                 await _accessLogService.LogAsync(User, "GetVerificationRequests", false, "User not found");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
@@ -127,10 +126,6 @@ public class ParkingVerificationController : ControllerBase
                 .Select(MapToVerificationRequestListDTO)
                 .ToList();
 
-            _logger.LogInformation(
-                "Retrieved {Count} verification requests (page {Page}/{TotalPages}, status '{Status}') for admin user {UserId}",
-                result.Count, page, totalPages, normalizedStatus, userId);
-
             await _accessLogService.LogAsync(User, "GetVerificationRequests", true, $"total={total} status={normalizedStatus}");
 
             return Ok(new VerificationRequestListResponse
@@ -172,12 +167,10 @@ public class ParkingVerificationController : ControllerBase
     {
         try
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _currentUser.GetCurrentUserAsync();
 
             if (user == null)
             {
-                _logger.LogWarning("User {UserId} not found", userId);
                 await _accessLogService.LogAsync(User, "GetVerificationRequestById", false, $"User not found (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
@@ -189,7 +182,6 @@ public class ParkingVerificationController : ControllerBase
 
             if (user.UserType != UserType.Admin)
             {
-                _logger.LogWarning("Unauthorized access attempt. UserId={UserId}, UserType={UserType}", userId, user.UserType);
                 await _accessLogService.LogAsync(User, "GetVerificationRequestById", false, $"Not an admin (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
@@ -209,7 +201,6 @@ public class ParkingVerificationController : ControllerBase
 
             if (verificationRequest == null)
             {
-                _logger.LogWarning("Verification request {VerificationRequestId} not found", id);
                 await _accessLogService.LogAsync(User, "GetVerificationRequestById", false, $"Verification request not found (id={id})");
                 return NotFound(new ErrorResponse
                 {
@@ -220,8 +211,6 @@ public class ParkingVerificationController : ControllerBase
             }
 
             var result = MapToVerificationRequestDTO(verificationRequest);
-
-            _logger.LogInformation("Retrieved verification request {VerificationRequestId} for admin user {UserId}", id, userId);
 
             await _accessLogService.LogAsync(User, "GetVerificationRequestById", true, $"VerificationRequestId={id}");
 
@@ -260,12 +249,10 @@ public class ParkingVerificationController : ControllerBase
     {
         try
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _currentUser.GetCurrentUserAsync();
 
             if (user == null)
             {
-                _logger.LogWarning("User {UserId} not found", userId);
                 await _accessLogService.LogAsync(User, "DecideVerificationRequest", false, $"User not found (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
@@ -277,7 +264,6 @@ public class ParkingVerificationController : ControllerBase
 
             if (user.UserType != UserType.Admin)
             {
-                _logger.LogWarning("Unauthorized approval attempt. UserId={UserId}, UserType={UserType}", userId, user.UserType);
                 await _accessLogService.LogAsync(User, "DecideVerificationRequest", false, $"Not an admin (id={id})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {

@@ -7,7 +7,6 @@ using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using System.Globalization;
-using System.Security.Claims;
 
 namespace ParkJomV2.Controllers;
 
@@ -17,15 +16,18 @@ namespace ParkJomV2.Controllers;
 public class OwnerBookingsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly CurrentUserService _currentUser;
     private readonly AccessLogService _accessLogService;
     private readonly ILogger<OwnerBookingsController> _logger;
 
     public OwnerBookingsController(
         ApplicationDbContext context,
+        CurrentUserService currentUser,
         AccessLogService accessLogService,
         ILogger<OwnerBookingsController> logger)
     {
         _context = context;
+        _currentUser = currentUser;
         _accessLogService = accessLogService;
         _logger = logger;
     }
@@ -83,7 +85,17 @@ public class OwnerBookingsController : ControllerBase
             });
         }
 
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var user = await _currentUser.GetCurrentUserAsync();
+
+        if(user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Authenticated user not found."
+            });
+        }
 
         try
         {
@@ -105,7 +117,7 @@ public class OwnerBookingsController : ControllerBase
                     });
                 }
 
-                if (requestedSpotOwnerId.Value != userId)
+                if (requestedSpotOwnerId.Value != user.UserId)
                 {
                     return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                     {
@@ -118,7 +130,7 @@ public class OwnerBookingsController : ControllerBase
 
             var bookingsQuery = _context.Bookings
                 .AsNoTracking()
-                .Where(booking => booking.ParkingSpot.OwnerId == userId);
+                .Where(booking => booking.ParkingSpot.OwnerId == user.UserId);
 
             if (spotId.HasValue)
             {
@@ -175,7 +187,7 @@ public class OwnerBookingsController : ControllerBase
             _logger.LogError(
                 ex,
                 "Error retrieving owner bookings for user {UserId}",
-                userId);
+                user.UserId);
             await _accessLogService.LogAsync(User, "GetOwnerBookings", false, ex.Message);
 
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
@@ -200,7 +212,16 @@ public class OwnerBookingsController : ControllerBase
     public async Task<ActionResult<OwnerBookingDetailResponse>> GetOwnerBookingById(int bookingId)
     {
 
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Authenticated user not found."
+            });
+        }
 
         try
         {
@@ -228,7 +249,7 @@ public class OwnerBookingsController : ControllerBase
                 });
             }
 
-            if (booking.ParkingSpot.OwnerId != userId)
+            if (booking.ParkingSpot.OwnerId != user.UserId)
             {
                 await _accessLogService.LogAsync(
                     User,
@@ -266,7 +287,7 @@ public class OwnerBookingsController : ControllerBase
                 ex,
                 "Error retrieving owner booking {BookingId} for user {UserId}",
                 bookingId,
-                userId);
+                user.UserId);
             await _accessLogService.LogAsync(User, "GetOwnerBookingById", false, ex.Message, bookingId);
 
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse

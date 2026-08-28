@@ -7,7 +7,6 @@ using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using System.Globalization;
-using System.Security.Claims;
 
 namespace ParkJomV2.Controllers;
 
@@ -17,6 +16,7 @@ namespace ParkJomV2.Controllers;
 public class OwnerParkingController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly CurrentUserService _currentUser;
     private readonly CloudinaryService _cloudinaryService;
     private readonly IPropertyService _propertyService;
     private readonly AccessLogService _accessLogService;
@@ -24,12 +24,14 @@ public class OwnerParkingController : ControllerBase
 
     public OwnerParkingController(
         ApplicationDbContext context,
+        CurrentUserService currentUser,
         CloudinaryService cloudinaryService,
         IPropertyService propertyService,
         AccessLogService accessLogService,
         ILogger<OwnerParkingController> logger)
     {
         _context = context;
+        _currentUser = currentUser;
         _cloudinaryService = cloudinaryService;
         _propertyService = propertyService;
         _accessLogService = accessLogService;
@@ -46,11 +48,8 @@ public class OwnerParkingController : ControllerBase
     public async Task<ActionResult<ParkingRegistrationResponse>> RegisterParking(
         [FromForm] ParkingRegistrationRequest request)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
-        var owner = await _context.Users
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.UserId == userId);
+        var userId = _currentUser.UserId!.Value;
+        var owner = await _currentUser.GetCurrentUserAsync();
 
         if (owner == null)
         {
@@ -251,7 +250,7 @@ public class OwnerParkingController : ControllerBase
             }
         }
 
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
             .Include(p => p.ParkingSpotImages)
@@ -368,7 +367,7 @@ public class OwnerParkingController : ControllerBase
         int imageId,
         [FromBody] UpdateOwnerParkingImageRequest request)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
         var spot = await _context.ParkingSpots
             .Include(p => p.ParkingSpotImages)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
@@ -448,7 +447,7 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(OwnerParkingImagesResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<OwnerParkingImagesResponse>> DeleteImage(int spotId, int imageId)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
         var spot = await _context.ParkingSpots
             .Include(p => p.ParkingSpotImages)
                 .ThenInclude(i => i.MediaFile)
@@ -533,7 +532,7 @@ public class OwnerParkingController : ControllerBase
         int spotId,
         [FromBody] CreateOwnerAvailabilityRulesRequest request)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
 
         if (request.Rules.Count == 0)
         {
@@ -726,7 +725,7 @@ public class OwnerParkingController : ControllerBase
         int ruleId,
         [FromBody] UpdateOwnerAvailabilityRuleRequest request)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
@@ -910,7 +909,7 @@ public class OwnerParkingController : ControllerBase
         int spotId,
         int ruleId)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
@@ -1063,7 +1062,7 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
 
         try
         {
@@ -1180,7 +1179,7 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(DisplayMyParkingResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking()
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
         var spots = await _context.ParkingSpots
             .AsNoTracking()
             .Where(p => p.OwnerId == userId)
@@ -1201,7 +1200,7 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(DeleteParkingSpotResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DeleteParkingSpotResponse>> DeleteParking(int spotId)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
         var spot = await _context.ParkingSpots
             .Include(p => p.Bookings)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
@@ -1258,7 +1257,7 @@ public class OwnerParkingController : ControllerBase
         int spotId,
         [FromBody] UpdateOwnerParkingConfigurationRequest request)
     {
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
 
         try
         {
@@ -1372,7 +1371,7 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
 
         try
         {
@@ -1498,7 +1497,7 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = _currentUser.UserId!.Value;
 
         try
         {

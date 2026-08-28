@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -18,6 +17,7 @@ namespace ParkJomV2.Controllers;
 public class BookingCheckoutController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly CurrentUserService _currentUser;
     private readonly AccessLogService _accessLogService;
     private readonly TransactionService _transactionService;
     private readonly WalletService _walletService;
@@ -25,12 +25,14 @@ public class BookingCheckoutController : ControllerBase
 
     public BookingCheckoutController(
         ApplicationDbContext context,
+        CurrentUserService currentUser,
         AccessLogService accessLogService,
         TransactionService transactionService,
         WalletService walletService,
         ILogger<BookingCheckoutController> logger)
     {
         _context = context;
+        _currentUser = currentUser;
         _accessLogService = accessLogService;
         _transactionService = transactionService;
         _walletService = walletService;
@@ -54,10 +56,16 @@ public class BookingCheckoutController : ControllerBase
         // User closes the browser or cancels the HTTP request while the database query is still running,
         // the cancellation token will be triggered and the database query will be cancelled to free up resources.
     {
-        var userId = GetUserId();
-        if (spotId <= 0 || userId <= 0)
+        var user = await _currentUser.GetCurrentUserAsync();
+
+        if (user == null)
         {
-            return BadRequest(Error(StatusCodes.Status400BadRequest, "spotId and authenticated user are required."));
+            return StatusCode(StatusCodes.Status403Forbidden, Error(StatusCodes.Status403Forbidden, "Authenticated user not found."));
+        }
+
+        if (spotId <= 0)
+        {
+            return BadRequest(Error(StatusCodes.Status400BadRequest, "Parking spot not found."));
         }
 
         if (!TryParseInclusiveDates(request.StartDate, request.EndDate, out var startDate, out var endDate, out var dateError))
@@ -92,7 +100,7 @@ public class BookingCheckoutController : ControllerBase
                 return NotFound(Error(StatusCodes.Status404NotFound, "Parking spot not found."));
             }
 
-            if (spot.OwnerId == userId)
+            if (spot.OwnerId == user.UserId)
             {
                 return BadRequest(Error(StatusCodes.Status400BadRequest, "You cannot book your own parking spot."));
             }
@@ -112,7 +120,7 @@ public class BookingCheckoutController : ControllerBase
             // Reuse a previous, still-valid quote for the same spot and period
             // instead of creating a duplicate. Expired or already-redeemed quotes are ignored.
             var existingQuote = await _context.BookingQuotes
-                .Where(item => item.RenterId == userId
+                .Where(item => item.RenterId == user.UserId
                     && item.ParkingSpotId == spotId
                     && item.StartDate == startDate.ToDateTime(TimeOnly.MinValue)
                     && item.EndDate == endExclusive.ToDateTime(TimeOnly.MinValue)
@@ -156,7 +164,7 @@ public class BookingCheckoutController : ControllerBase
             var now = DateTime.UtcNow;
             var quote = new BookingQuote
             {
-                RenterId = userId,
+                RenterId = user.UserId,
                 ParkingSpotId = spotId,
                 StartDate = startDate.ToDateTime(TimeOnly.MinValue),
                 EndDate = endExclusive.ToDateTime(TimeOnly.MinValue),
@@ -205,7 +213,9 @@ public class BookingCheckoutController : ControllerBase
         [FromBody] ConfirmBookingRequest request,
         CancellationToken cancellationToken)
     {
-        var userId = GetUserId();
+        var user = await _currentUser.GetCurrentUserAsync();
+        var userId = user!.UserId;
+
         var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim();
         if (userId <= 0 || string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
         {
@@ -397,9 +407,6 @@ public class BookingCheckoutController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, Error(500, "An error occurred while confirming the booking."));
         }
     }
-
-    /// <summary>Returns the authenticated user's numeric identifier from the JWT claims.</summary>
-    private int GetUserId() => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ? userId : 0;
 
     /// <summary>Returns today's date in the platform's Malaysia time zone.</summary>
     private static DateOnly MalaysiaToday() => DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
