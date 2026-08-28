@@ -5,7 +5,7 @@ using ParkJomV2.Data;
 using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
-using System.Security.Claims;
+using ParkJomV2.Services;
 
 namespace ParkJomV2.Controllers;
 
@@ -17,11 +17,13 @@ public class AccessLogController : ControllerBase
     private const int MaxPageSize = 1000;
 
     private readonly ApplicationDbContext _context;
+    private readonly CurrentUserService _currentUser;
     private readonly ILogger<AccessLogController> _logger;
 
-    public AccessLogController(ApplicationDbContext context, ILogger<AccessLogController> logger)
+    public AccessLogController(ApplicationDbContext context, CurrentUserService currentUser, ILogger<AccessLogController> logger)
     {
         _context = context;
+        _currentUser = currentUser;
         _logger = logger;
     }
 
@@ -52,8 +54,7 @@ public class AccessLogController : ControllerBase
     {
         try
         {
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _currentUser.GetCurrentUserAsync();
 
             if (user == null)
             {

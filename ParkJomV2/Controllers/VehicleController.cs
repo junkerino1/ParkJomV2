@@ -6,7 +6,6 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
-using System.Security.Claims;
 
 namespace ParkJomV2.Controllers
 {
@@ -15,12 +14,14 @@ namespace ParkJomV2.Controllers
     public class VehicleController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly CurrentUserService _currentUser;
         private readonly AccessLogService _accessLogService;
         private readonly ILogger<VehicleController> _logger;
 
-        public VehicleController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<VehicleController> logger)
+        public VehicleController(ApplicationDbContext context, CurrentUserService currentUser, AccessLogService accessLogService, ILogger<VehicleController> logger)
         {
             _context = context;
+            _currentUser = currentUser;
             _accessLogService = accessLogService;
             _logger = logger;
         }
@@ -49,8 +50,7 @@ namespace ParkJomV2.Controllers
 
             try
             {
-                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                var user = await _currentUser.GetCurrentUserAsync();
 
                 if (user == null)
                 {
@@ -64,7 +64,7 @@ namespace ParkJomV2.Controllers
                 }
 
                 var duplicate = await _context.Vehicles.AnyAsync(v =>
-                    v.UserId == userId &&
+                    v.UserId == user.UserId &&
                     v.NumberPlate.ToLower() == request.NumberPlate.Trim().ToLower());
 
                 if (duplicate)
@@ -80,7 +80,7 @@ namespace ParkJomV2.Controllers
 
                 var vehicle = new Vehicle
                 {
-                    UserId = userId,
+                    UserId = user.UserId,
                     NumberPlate = request.NumberPlate.Trim(),
                     VehicleBrand = request.VehicleBrand,
                     VehicleModel = request.VehicleModel,
@@ -139,8 +139,7 @@ namespace ParkJomV2.Controllers
 
             try
             {
-                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                var user = await _currentUser.GetCurrentUserAsync();
 
                 if (user == null)
                 {
@@ -165,7 +164,7 @@ namespace ParkJomV2.Controllers
                     });
                 }
 
-                if (vehicle.UserId != userId)
+                if (vehicle.UserId != user.UserId)
                 {
                     await _accessLogService.LogAsync(User, "ModifyVehicle", false, $"Not authorized (id={request.VehicleId})");
                     return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -220,8 +219,7 @@ namespace ParkJomV2.Controllers
         {
             try
             {
-                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                var user = await _currentUser.GetCurrentUserAsync();
 
                 if (user == null)
                 {
@@ -249,7 +247,7 @@ namespace ParkJomV2.Controllers
                     });
                 }
 
-                if (vehicle.UserId != userId && user.UserType != UserType.Admin)
+                if (vehicle.UserId != user.UserId && user.UserType != UserType.Admin)
                 {
                     await _accessLogService.LogAsync(User, "DeleteVehicle", false, $"Not authorized (id={id})");
                     return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -310,8 +308,7 @@ namespace ParkJomV2.Controllers
         {
             try
             {
-                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                var user = await _currentUser.GetCurrentUserAsync();
 
                 if (user == null)
                 {
@@ -326,7 +323,7 @@ namespace ParkJomV2.Controllers
 
                 var vehicles = await _context.Vehicles
                     .AsNoTracking()
-                    .Where(v => v.UserId == userId)
+                    .Where(v => v.UserId == user.UserId)
                     .Include(v => v.User)
                     .OrderByDescending(v => v.CreatedAt)
                     .ToListAsync();
@@ -370,8 +367,7 @@ namespace ParkJomV2.Controllers
         {
             try
             {
-                var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                var user = await _currentUser.GetCurrentUserAsync();
 
                 if (user == null)
                 {

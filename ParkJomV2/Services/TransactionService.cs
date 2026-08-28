@@ -21,14 +21,16 @@ public class TransactionService
     /// <summary>
     /// Creates a transaction for one wallet movement and registers it on the context.
     /// Pass <paramref name="walletId"/> for a user wallet, or <paramref name="platformWalletId"/>
-    /// for the platform wallet (exactly one should be set).
+    /// for the platform wallet (exactly one should be set). <paramref name="booking"/> is optional
+    /// (pass null for wallet top-ups), and <paramref name="paymentMethod"/> records how the funds moved.
     /// </summary>
     public Transaction Create(
         int? walletId,
         int? platformWalletId,
-        Booking booking,
+        Booking? booking,
         TransactionType type,
         decimal amount,
+        PaymentMethod paymentMethod,
         string reference,
         DateTime now)
     {
@@ -39,7 +41,7 @@ public class TransactionService
             Booking = booking,
             TransactionType = type,
             Amount = amount,
-            PaymentMethod = PaymentMethod.Wallet,
+            PaymentMethod = paymentMethod,
             TransactionStatus = TransactionStatus.Completed,
             ReferenceNumber = reference,
             CreatedAt = now,

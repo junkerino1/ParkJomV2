@@ -142,6 +142,10 @@ builder.Services.AddScoped<TransactionService>();
 // Applies wallet balance movements and platform wallet increments.
 builder.Services.AddScoped<WalletService>();
 
+// Resolves the authenticated user from the current HTTP context.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<CurrentUserService>();
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
