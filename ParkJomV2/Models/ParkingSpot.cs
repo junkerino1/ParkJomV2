@@ -36,6 +36,13 @@ public class ParkingSpot
 
     public bool IsPublished { get; set; }
 
+    /// <summary>
+    /// Administrative lock applied while the owner account is suspended.
+    /// Kept separate from publication and availability so reinstatement can
+    /// restore access without losing the owner's previous listing state.
+    /// </summary>
+    public bool IsSuspensionLocked { get; set; }
+
     public bool IsConfigurationComplete { get; set; }
 
     public DateTime? ConfiguredAt { get; set; }

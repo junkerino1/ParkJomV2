@@ -48,7 +48,10 @@ public class ParkingController : ControllerBase
                 .Include(ps => ps.VerificationRequests.Where(vr => vr.IsCurrent))
                 .Include(ps => ps.ParkingSpotImages.OrderBy(psi => psi.DisplayOrder))
                     .ThenInclude(psi => psi.MediaFile)
-                .FirstOrDefaultAsync(ps => ps.ParkingSpotId == id);
+                .FirstOrDefaultAsync(ps =>
+                    ps.ParkingSpotId == id &&
+                    !ps.IsSuspensionLocked &&
+                    ps.Owner.AccountStatus != "Suspended");
 
             if (spot == null)
             {

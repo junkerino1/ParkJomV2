@@ -105,6 +105,25 @@ namespace ParkJomV2.Controllers
             }
             else
             {
+                if (string.Equals(
+                    user.AccountStatus,
+                    "Suspended",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    await _accessLogService.LogAsync(
+                        User,
+                        "GoogleLogin",
+                        false,
+                        $"Suspended account login attempt: UserId={user.UserId}");
+
+                    return StatusCode(StatusCodes.Status403Forbidden, new AuthResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Your account is suspended. Please contact support."
+                    });
+                }
+
                 user.LastLoginAt = DateTime.UtcNow;
                 user.UpdatedAt = DateTime.UtcNow;
 
@@ -168,6 +187,25 @@ namespace ParkJomV2.Controllers
                     Code = StatusCodes.Status404NotFound,
                     Success = false,
                     Message = "User not found."
+                });
+            }
+
+            if (string.Equals(
+                user.AccountStatus,
+                "Suspended",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                await _accessLogService.LogAsync(
+                    User,
+                    "CompleteProfile",
+                    false,
+                    $"Suspended account attempted profile completion: UserId={user.UserId}");
+
+                return StatusCode(StatusCodes.Status403Forbidden, new AuthResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Your account is suspended. Please contact support."
                 });
             }
 

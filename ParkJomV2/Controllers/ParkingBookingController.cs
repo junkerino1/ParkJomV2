@@ -65,6 +65,7 @@ public class ParkingBookingController : ControllerBase
 
             var spot = await _context.ParkingSpots
                 .Include(ps => ps.VerificationRequests.Where(vr => vr.IsCurrent))
+                .Include(ps => ps.Owner)
                 .FirstOrDefaultAsync(ps => ps.ParkingSpotId == request.ParkingSpotId);
 
             if (spot == null)
@@ -78,7 +79,10 @@ public class ParkingBookingController : ControllerBase
                 });
             }
 
-            if (!spot.IsPublished || spot.AvailabilityStatus != AvailabilityStatus.Available)
+            if (spot.IsSuspensionLocked ||
+                string.Equals(spot.Owner.AccountStatus, "Suspended", StringComparison.OrdinalIgnoreCase) ||
+                !spot.IsPublished ||
+                spot.AvailabilityStatus != AvailabilityStatus.Available)
             {
                 await _accessLogService.LogAsync(User, "CreateBooking", false, "Parking spot not available");
                 return BadRequest(new ErrorResponse

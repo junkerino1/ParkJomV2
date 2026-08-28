@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 using ParkJomV2.Data;
 using ParkJomV2.Models;
 using ParkJomV2.Services;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 
@@ -58,13 +59,48 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
         options.Events = new JwtBearerEvents
         {
+            OnTokenValidated = async context =>
+            {
+                var userIdText = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (!int.TryParse(userIdText, out var userId))
+                {
+                    context.Fail("The authenticated account could not be identified.");
+                    return;
+                }
+
+                var dbContext = context.HttpContext.RequestServices
+                    .GetRequiredService<ApplicationDbContext>();
+                var accountStatus = await dbContext.Users
+                    .AsNoTracking()
+                    .Where(user => user.UserId == userId)
+                    .Select(user => user.AccountStatus)
+                    .FirstOrDefaultAsync();
+
+                if (accountStatus == null)
+                {
+                    context.Fail("The authenticated account no longer exists.");
+                    return;
+                }
+
+                if (string.Equals(
+                    accountStatus,
+                    "Suspended",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    context.HttpContext.Items["SuspendedAccount"] = true;
+                    context.Fail("The account is suspended.");
+                }
+            },
             OnChallenge = context =>
             {
                 context.HandleResponse();
 
                 var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+                var isSuspendedAccount = context.HttpContext.Items.ContainsKey("SuspendedAccount");
 
-                var (statusCode, message) = context.AuthenticateFailure switch
+                var (statusCode, message) = isSuspendedAccount
+                    ? (StatusCodes.Status403Forbidden, "Your account is suspended. Please contact support.")
+                    : context.AuthenticateFailure switch
                 {
                     SecurityTokenExpiredException => (StatusCodes.Status401Unauthorized, "Your session has expired. Please log in again."),
                     SecurityTokenException => (StatusCodes.Status401Unauthorized, "Invalid token. Please provide a valid authentication token."),

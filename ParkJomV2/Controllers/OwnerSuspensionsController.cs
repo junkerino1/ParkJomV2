@@ -10,7 +10,7 @@ namespace ParkJomV2.Controllers;
 
 [ApiController]
 [Authorize(Policy = "AdminOnly")]
-[Route("api/admin/owner-suspensions")]
+[Route("api/admin/account-suspensions")]
 public class OwnerSuspensionsController : ControllerBase
 {
     private const string ActiveStatus = "Active";
@@ -30,14 +30,14 @@ public class OwnerSuspensionsController : ControllerBase
         _logger = logger;
     }
 
-    // GET /api/admin/owner-suspensions
+    // GET /api/admin/account-suspensions
     [HttpGet]
     public async Task<IActionResult> GetSuspendedOwners()
     {
-        var suspendedOwners = await _context.Users
+        var suspendedAccounts = await _context.Users
             .AsNoTracking()
             .Where(u =>
-                u.UserType == UserType.PropertyOwner &&
+                (u.UserType == UserType.PropertyOwner || u.UserType == UserType.Renter) &&
                 u.AccountStatus == SuspendedStatus)
             .OrderByDescending(u => u.UpdatedAt)
             .Select(u => new SuspendedOwnerDTO
@@ -47,6 +47,8 @@ public class OwnerSuspensionsController : ControllerBase
                 FirstName = u.FirstName,
                 LastName = u.LastName,
                 AccountStatus = u.AccountStatus,
+                UserType = u.UserType,
+                LockedParkingSpotCount = u.OwnedParkingSpots.Count(p => p.IsSuspensionLocked),
                 UpdatedAt = u.UpdatedAt
             })
             .ToListAsync();
@@ -55,29 +57,29 @@ public class OwnerSuspensionsController : ControllerBase
         {
             code = StatusCodes.Status200OK,
             success = true,
-            message = "Suspended owners retrieved successfully.",
-            data = suspendedOwners
+            message = "Suspended accounts retrieved successfully.",
+            data = suspendedAccounts
         });
     }
 
-    // POST /api/admin/owner-suspensions/suspend
+    // POST /api/admin/account-suspensions/suspend
     [HttpPost("suspend")]
     public async Task<IActionResult> SuspendOwner(
         [FromBody] OwnerSuspensionRequest request)
     {
         var normalizedEmail = request.Email.Trim().ToLower();
 
-        var owner = await _context.Users
+        var account = await _context.Users
             .FirstOrDefaultAsync(u =>
                 u.Email.ToLower() == normalizedEmail);
 
-        if (owner == null)
+        if (account == null)
         {
             await _accessLogService.LogAsync(
                 User,
-                "SuspendOwner",
+                "SuspendAccount",
                 false,
-                $"Owner not found: {request.Email}");
+                $"Account not found: {request.Email}");
 
             return NotFound(new
             {
@@ -87,24 +89,24 @@ public class OwnerSuspensionsController : ControllerBase
             });
         }
 
-        if (owner.UserType != UserType.PropertyOwner)
+        if (account.UserType == UserType.Admin)
         {
             await _accessLogService.LogAsync(
                 User,
-                "SuspendOwner",
+                "SuspendAccount",
                 false,
-                $"UserId={owner.UserId} is not a PropertyOwner");
+                $"Attempted to suspend admin UserId={account.UserId}");
 
             return BadRequest(new
             {
                 code = StatusCodes.Status400BadRequest,
                 success = false,
-                message = "The specified account is not a property owner."
+                message = "Admin accounts cannot be suspended through this endpoint."
             });
         }
 
         if (string.Equals(
-            owner.AccountStatus,
+            account.AccountStatus,
             SuspendedStatus,
             StringComparison.OrdinalIgnoreCase))
         {
@@ -112,61 +114,79 @@ public class OwnerSuspensionsController : ControllerBase
             {
                 code = StatusCodes.Status409Conflict,
                 success = false,
-                message = "This owner is already suspended."
+                message = "This account is already suspended."
             });
         }
 
-        owner.AccountStatus = SuspendedStatus;
-        owner.UpdatedAt = DateTime.UtcNow;
+        account.AccountStatus = SuspendedStatus;
+        account.UpdatedAt = DateTime.UtcNow;
+
+        var lockedParkingSpots = new List<Models.ParkingSpot>();
+        if (account.UserType == UserType.PropertyOwner)
+        {
+            lockedParkingSpots = await _context.ParkingSpots
+                .Where(p => p.OwnerId == account.UserId && !p.IsSuspensionLocked)
+                .ToListAsync();
+
+            foreach (var parkingSpot in lockedParkingSpots)
+            {
+                parkingSpot.IsSuspensionLocked = true;
+                parkingSpot.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
         await _context.SaveChangesAsync();
 
         await _accessLogService.LogAsync(
             User,
-            "SuspendOwner",
+            "SuspendAccount",
             true,
-            $"Suspended UserId={owner.UserId}, Email={owner.Email}");
+            $"Suspended UserId={account.UserId}, Email={account.Email}, LockedParkingSpots={lockedParkingSpots.Count}");
 
         _logger.LogInformation(
-            "Owner suspended. UserId={UserId}, Email={Email}",
-            owner.UserId,
-            owner.Email);
+            "Account suspended. UserId={UserId}, Email={Email}, UserType={UserType}, LockedParkingSpots={LockedParkingSpots}",
+            account.UserId,
+            account.Email,
+            account.UserType,
+            lockedParkingSpots.Count);
 
         return Ok(new
         {
             code = StatusCodes.Status200OK,
             success = true,
-            message = "Owner account suspended successfully.",
+            message = "Account suspended successfully.",
             data = new
             {
-                owner.UserId,
-                owner.Email,
-                owner.FirstName,
-                owner.LastName,
-                owner.AccountStatus,
-                owner.UpdatedAt
+                account.UserId,
+                account.Email,
+                account.FirstName,
+                account.LastName,
+                account.UserType,
+                account.AccountStatus,
+                LockedParkingSpotCount = lockedParkingSpots.Count,
+                account.UpdatedAt
             }
         });
     }
 
-    // POST /api/admin/owner-suspensions/reintegrate
+    // POST /api/admin/account-suspensions/reintegrate
     [HttpPost("reintegrate")]
     public async Task<IActionResult> ReintegrateOwner(
         [FromBody] OwnerSuspensionRequest request)
     {
         var normalizedEmail = request.Email.Trim().ToLower();
 
-        var owner = await _context.Users
+        var account = await _context.Users
             .FirstOrDefaultAsync(u =>
                 u.Email.ToLower() == normalizedEmail);
 
-        if (owner == null)
+        if (account == null)
         {
             await _accessLogService.LogAsync(
                 User,
-                "ReintegrateOwner",
+                "ReintegrateAccount",
                 false,
-                $"Owner not found: {request.Email}");
+                $"Account not found: {request.Email}");
 
             return NotFound(new
             {
@@ -176,18 +196,18 @@ public class OwnerSuspensionsController : ControllerBase
             });
         }
 
-        if (owner.UserType != UserType.PropertyOwner)
+        if (account.UserType == UserType.Admin)
         {
             return BadRequest(new
             {
                 code = StatusCodes.Status400BadRequest,
                 success = false,
-                message = "The specified account is not a property owner."
+                message = "Admin accounts cannot be reintegrated through this endpoint."
             });
         }
 
         if (!string.Equals(
-            owner.AccountStatus,
+            account.AccountStatus,
             SuspendedStatus,
             StringComparison.OrdinalIgnoreCase))
         {
@@ -195,39 +215,57 @@ public class OwnerSuspensionsController : ControllerBase
             {
                 code = StatusCodes.Status409Conflict,
                 success = false,
-                message = "This owner is not currently suspended."
+                message = "This account is not currently suspended."
             });
         }
 
-        owner.AccountStatus = ActiveStatus;
-        owner.UpdatedAt = DateTime.UtcNow;
+        account.AccountStatus = ActiveStatus;
+        account.UpdatedAt = DateTime.UtcNow;
+
+        var lockedParkingSpots = new List<Models.ParkingSpot>();
+        if (account.UserType == UserType.PropertyOwner)
+        {
+            lockedParkingSpots = await _context.ParkingSpots
+                .Where(p => p.OwnerId == account.UserId && p.IsSuspensionLocked)
+                .ToListAsync();
+
+            foreach (var parkingSpot in lockedParkingSpots)
+            {
+                parkingSpot.IsSuspensionLocked = false;
+                parkingSpot.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
         await _context.SaveChangesAsync();
 
         await _accessLogService.LogAsync(
             User,
-            "ReintegrateOwner",
+            "ReintegrateAccount",
             true,
-            $"Reintegrated UserId={owner.UserId}, Email={owner.Email}");
+            $"Reintegrated UserId={account.UserId}, Email={account.Email}, UnlockedParkingSpots={lockedParkingSpots.Count}");
 
         _logger.LogInformation(
-            "Owner reintegrated. UserId={UserId}, Email={Email}",
-            owner.UserId,
-            owner.Email);
+            "Account reintegrated. UserId={UserId}, Email={Email}, UserType={UserType}, UnlockedParkingSpots={UnlockedParkingSpots}",
+            account.UserId,
+            account.Email,
+            account.UserType,
+            lockedParkingSpots.Count);
 
         return Ok(new
         {
             code = StatusCodes.Status200OK,
             success = true,
-            message = "Owner account reintegrated successfully.",
+            message = "Account reintegrated successfully.",
             data = new
             {
-                owner.UserId,
-                owner.Email,
-                owner.FirstName,
-                owner.LastName,
-                owner.AccountStatus,
-                owner.UpdatedAt
+                account.UserId,
+                account.Email,
+                account.FirstName,
+                account.LastName,
+                account.UserType,
+                account.AccountStatus,
+                UnlockedParkingSpotCount = lockedParkingSpots.Count,
+                account.UpdatedAt
             }
         });
     }

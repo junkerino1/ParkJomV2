@@ -206,6 +206,7 @@ public class DisplayParkingSpotDTO
     public decimal? MonthlyRate { get; set; }
     public decimal? DailyRate { get; set; }
     public bool IsPublished { get; set; }
+    public bool IsSuspensionLocked { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

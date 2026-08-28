@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.DTOs;
 
@@ -20,6 +21,10 @@ public class SuspendedOwnerDTO
     public string? LastName { get; set; }
 
     public string AccountStatus { get; set; } = string.Empty;
+
+    public UserType UserType { get; set; }
+
+    public int LockedParkingSpotCount { get; set; }
 
     public DateTime UpdatedAt { get; set; }
 }

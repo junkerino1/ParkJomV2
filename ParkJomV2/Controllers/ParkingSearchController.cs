@@ -48,6 +48,7 @@ public class ParkingSearchController : ControllerBase
                 .Where(ps =>
                         ps.IsPublished &&
                         ps.AvailabilityStatus == AvailabilityStatus.Available &&
+                        !ps.IsSuspensionLocked &&
                         ps.Owner.AccountStatus != "Suspended")
                 .AsQueryable();
 
@@ -171,6 +172,7 @@ public class ParkingSearchController : ControllerBase
                 .Where(ps =>
                         ps.IsPublished &&
                         ps.AvailabilityStatus == AvailabilityStatus.Available &&
+                        !ps.IsSuspensionLocked &&
                         ps.Owner.AccountStatus != "Suspended")
                 .Where(ps => ps.Property != null
                     && ps.Property.Latitude >= minLat
@@ -277,6 +279,7 @@ public class ParkingSearchController : ControllerBase
                 .Where(ps =>
                         ps.IsPublished &&
                         ps.AvailabilityStatus == AvailabilityStatus.Available &&
+                        !ps.IsSuspensionLocked &&
                         ps.Owner.AccountStatus != "Suspended")
                 .AsQueryable();
 
