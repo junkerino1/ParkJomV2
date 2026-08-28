@@ -45,7 +45,10 @@ public class ParkingSearchController : ControllerBase
                 .Include(ps => ps.VerificationRequests.Where(vr => vr.IsCurrent))
                 .Include(ps => ps.ParkingSpotImages.Where(psi => psi.IsPrimary))
                     .ThenInclude(psi => psi.MediaFile)
-                .Where(ps => ps.IsPublished && ps.AvailabilityStatus == AvailabilityStatus.Available)
+                .Where(ps =>
+                        ps.IsPublished &&
+                        ps.AvailabilityStatus == AvailabilityStatus.Available &&
+                        ps.Owner.AccountStatus != "Suspended")
                 .AsQueryable();
 
             // Filter by text query — searches Property table for property name
@@ -165,7 +168,10 @@ public class ParkingSearchController : ControllerBase
                 .Include(ps => ps.VerificationRequests.Where(vr => vr.IsCurrent))
                 .Include(ps => ps.ParkingSpotImages.Where(psi => psi.IsPrimary))
                     .ThenInclude(psi => psi.MediaFile)
-                .Where(ps => ps.IsPublished && ps.AvailabilityStatus == AvailabilityStatus.Available)
+                .Where(ps =>
+                        ps.IsPublished &&
+                        ps.AvailabilityStatus == AvailabilityStatus.Available &&
+                        ps.Owner.AccountStatus != "Suspended")
                 .Where(ps => ps.Property != null
                     && ps.Property.Latitude >= minLat
                     && ps.Property.Latitude <= maxLat
@@ -268,7 +274,10 @@ public class ParkingSearchController : ControllerBase
                     .ThenInclude(psi => psi.MediaFile)
                 .Include(ps => ps.IoTDevice)
                 .Include(ps => ps.ParkingAvailabilities)
-                .Where(ps => ps.IsPublished && ps.AvailabilityStatus == AvailabilityStatus.Available)
+                .Where(ps =>
+                        ps.IsPublished &&
+                        ps.AvailabilityStatus == AvailabilityStatus.Available &&
+                        ps.Owner.AccountStatus != "Suspended")
                 .AsQueryable();
 
             // Filter by price

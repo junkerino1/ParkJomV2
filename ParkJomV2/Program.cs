@@ -88,7 +88,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim("UserType", "Admin");
+    });
+});
 
 // System-wide audit log service (write an AccessLog row per action from controllers).
 builder.Services.AddScoped<AccessLogService>();

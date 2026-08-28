@@ -178,6 +178,16 @@ namespace ParkJomV2.Controllers
             // Allow user to set their role during registration
             if (request.UserType.HasValue)
             {
+                if (request.UserType.Value == UserType.Admin)
+                {
+                    return BadRequest(new AuthResponse
+                    {
+                        Code = StatusCodes.Status400BadRequest,
+                        Success = false,
+                        Message = "Admin role cannot be self-assigned."
+                    });
+                }
+
                 user.UserType = request.UserType.Value;
             }
 

@@ -48,6 +48,54 @@ public class OwnerParkingController : ControllerBase
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+        var owner = await _context.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.UserId == userId);
+
+        if (owner == null)
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Owner account not found."
+                });
+        }
+        if (owner.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Only property owners can register parking bays."
+                });
+        }
+
+        if (string.Equals(
+            owner.AccountStatus,
+            "Suspended",
+            StringComparison.OrdinalIgnoreCase))
+        {
+            await _accessLogService.LogAsync(
+                User,
+                "RegisterParking",
+                false,
+                "Suspended owner attempted to register a parking bay.");
+
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Your owner account is suspended. New parking bays cannot be registered."
+                });
+        }
+
         if (!ModelState.IsValid)
         {
             return BadRequest(new ErrorResponse { Code = 400, Success = false, Message = "Invalid request." });
