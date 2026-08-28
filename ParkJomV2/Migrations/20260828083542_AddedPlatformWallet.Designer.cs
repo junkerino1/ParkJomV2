@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ParkJomV2.Data;
 
@@ -11,9 +12,11 @@ using ParkJomV2.Data;
 namespace ParkJomV2.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260828083542_AddedPlatformWallet")]
+    partial class AddedPlatformWallet
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -261,11 +264,16 @@ namespace ParkJomV2.Migrations
                     b.Property<DateTime>("StartDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("VehicleId")
+                        .HasColumnType("int");
+
                     b.HasKey("BookingQuoteId");
 
                     b.HasIndex("ParkingSpotId");
 
                     b.HasIndex("RenterId");
+
+                    b.HasIndex("VehicleId");
 
                     b.ToTable("BookingQuotes");
                 });
@@ -1091,9 +1099,17 @@ namespace ParkJomV2.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("ParkJomV2.Models.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
                     b.Navigation("ParkingSpot");
 
                     b.Navigation("Renter");
+
+                    b.Navigation("Vehicle");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Favorite", b =>

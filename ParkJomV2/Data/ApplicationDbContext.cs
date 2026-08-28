@@ -22,6 +22,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<BookingQuote> BookingQuotes => Set<BookingQuote>();
     public DbSet<Wallet> Wallets => Set<Wallet>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
+    public DbSet<PlatformWallet> PlatformWallets => Set<PlatformWallet>();
     public DbSet<Payment> Payments => Set<Payment>();
 
     public DbSet<ParkingVerificationRequest> ParkingVerificationRequests => Set<ParkingVerificationRequest>();
@@ -108,12 +109,6 @@ public class ApplicationDbContext : DbContext
             .WithMany(p => p.BookingQuotes)
             .HasForeignKey(q => q.ParkingSpotId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        modelBuilder.Entity<BookingQuote>()
-            .HasOne(q => q.Vehicle)
-            .WithMany()
-            .HasForeignKey(q => q.VehicleId)
-            .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<Station>()
             .HasMany(s => s.Properties)
@@ -221,6 +216,23 @@ public class ApplicationDbContext : DbContext
             .WithMany()
             .HasForeignKey(p => p.UserId)
             .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Transaction>()
+            .HasOne(transaction => transaction.Wallet)
+            .WithMany(wallet => wallet.Transactions)
+            .HasForeignKey(transaction => transaction.WalletId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Transaction>()
+            .HasOne(transaction => transaction.PlatformWallet)
+            .WithMany(wallet => wallet.Transactions)
+            .HasForeignKey(transaction => transaction.PlatformWalletId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Transaction>()
+            .ToTable(table => table.HasCheckConstraint(
+                "CK_Transactions_ExactlyOneWallet",
+                "(WalletId IS NOT NULL AND PlatformWalletId IS NULL) OR (WalletId IS NULL AND PlatformWalletId IS NOT NULL)"));
 
         modelBuilder.Entity<Payment>()
             .HasOne(p => p.Wallet)

@@ -9,8 +9,9 @@ public class Transaction
     [Key]
     public int TransactionId { get; set; }
 
-    [Required]
-    public int WalletId { get; set; }
+    public int? WalletId { get; set; }
+
+    public int? PlatformWalletId { get; set; }
 
     public int? BookingId { get; set; }
 
@@ -37,7 +38,10 @@ public class Transaction
     // Navigation Properties
 
     [ForeignKey(nameof(WalletId))]
-    public Wallet Wallet { get; set; } = null!;
+    public Wallet? Wallet { get; set; }
+
+    [ForeignKey(nameof(PlatformWalletId))]
+    public PlatformWallet? PlatformWallet { get; set; }
 
     [ForeignKey(nameof(BookingId))]
     public Booking? Booking { get; set; }
