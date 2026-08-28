@@ -50,7 +50,7 @@ public class ParkingController : ControllerBase
                     .ThenInclude(psi => psi.MediaFile)
                 .FirstOrDefaultAsync(ps =>
                     ps.ParkingSpotId == id &&
-                    !ps.IsSuspensionLocked &&
+                    ps.AvailabilityStatus != AvailabilityStatus.Suspended &&
                     ps.Owner.AccountStatus != "Suspended");
 
             if (spot == null)

@@ -79,8 +79,7 @@ public class ParkingBookingController : ControllerBase
                 });
             }
 
-            if (spot.IsSuspensionLocked ||
-                string.Equals(spot.Owner.AccountStatus, "Suspended", StringComparison.OrdinalIgnoreCase) ||
+            if (string.Equals(spot.Owner.AccountStatus, "Suspended", StringComparison.OrdinalIgnoreCase) ||
                 !spot.IsPublished ||
                 spot.AvailabilityStatus != AvailabilityStatus.Available)
             {

@@ -48,7 +48,8 @@ public class OwnerSuspensionsController : ControllerBase
                 LastName = u.LastName,
                 AccountStatus = u.AccountStatus,
                 UserType = u.UserType,
-                LockedParkingSpotCount = u.OwnedParkingSpots.Count(p => p.IsSuspensionLocked),
+                SuspendedParkingSpotCount = u.OwnedParkingSpots.Count(
+                    p => p.AvailabilityStatus == AvailabilityStatus.Suspended),
                 UpdatedAt = u.UpdatedAt
             })
             .ToListAsync();
@@ -121,16 +122,18 @@ public class OwnerSuspensionsController : ControllerBase
         account.AccountStatus = SuspendedStatus;
         account.UpdatedAt = DateTime.UtcNow;
 
-        var lockedParkingSpots = new List<Models.ParkingSpot>();
+        var suspendedParkingSpots = new List<Models.ParkingSpot>();
         if (account.UserType == UserType.PropertyOwner)
         {
-            lockedParkingSpots = await _context.ParkingSpots
-                .Where(p => p.OwnerId == account.UserId && !p.IsSuspensionLocked)
+            suspendedParkingSpots = await _context.ParkingSpots
+                .Where(p =>
+                    p.OwnerId == account.UserId &&
+                    p.AvailabilityStatus == AvailabilityStatus.Available)
                 .ToListAsync();
 
-            foreach (var parkingSpot in lockedParkingSpots)
+            foreach (var parkingSpot in suspendedParkingSpots)
             {
-                parkingSpot.IsSuspensionLocked = true;
+                parkingSpot.AvailabilityStatus = AvailabilityStatus.Suspended;
                 parkingSpot.UpdatedAt = DateTime.UtcNow;
             }
         }
@@ -141,14 +144,14 @@ public class OwnerSuspensionsController : ControllerBase
             User,
             "SuspendAccount",
             true,
-            $"Suspended UserId={account.UserId}, Email={account.Email}, LockedParkingSpots={lockedParkingSpots.Count}");
+            $"Suspended UserId={account.UserId}, Email={account.Email}, SuspendedParkingSpots={suspendedParkingSpots.Count}");
 
         _logger.LogInformation(
-            "Account suspended. UserId={UserId}, Email={Email}, UserType={UserType}, LockedParkingSpots={LockedParkingSpots}",
+            "Account suspended. UserId={UserId}, Email={Email}, UserType={UserType}, SuspendedParkingSpots={SuspendedParkingSpots}",
             account.UserId,
             account.Email,
             account.UserType,
-            lockedParkingSpots.Count);
+            suspendedParkingSpots.Count);
 
         return Ok(new
         {
@@ -163,7 +166,7 @@ public class OwnerSuspensionsController : ControllerBase
                 account.LastName,
                 account.UserType,
                 account.AccountStatus,
-                LockedParkingSpotCount = lockedParkingSpots.Count,
+                SuspendedParkingSpotCount = suspendedParkingSpots.Count,
                 account.UpdatedAt
             }
         });
@@ -222,16 +225,18 @@ public class OwnerSuspensionsController : ControllerBase
         account.AccountStatus = ActiveStatus;
         account.UpdatedAt = DateTime.UtcNow;
 
-        var lockedParkingSpots = new List<Models.ParkingSpot>();
+        var reinstatedParkingSpots = new List<Models.ParkingSpot>();
         if (account.UserType == UserType.PropertyOwner)
         {
-            lockedParkingSpots = await _context.ParkingSpots
-                .Where(p => p.OwnerId == account.UserId && p.IsSuspensionLocked)
+            reinstatedParkingSpots = await _context.ParkingSpots
+                .Where(p =>
+                    p.OwnerId == account.UserId &&
+                    p.AvailabilityStatus == AvailabilityStatus.Suspended)
                 .ToListAsync();
 
-            foreach (var parkingSpot in lockedParkingSpots)
+            foreach (var parkingSpot in reinstatedParkingSpots)
             {
-                parkingSpot.IsSuspensionLocked = false;
+                parkingSpot.AvailabilityStatus = AvailabilityStatus.Available;
                 parkingSpot.UpdatedAt = DateTime.UtcNow;
             }
         }
@@ -242,14 +247,14 @@ public class OwnerSuspensionsController : ControllerBase
             User,
             "ReintegrateAccount",
             true,
-            $"Reintegrated UserId={account.UserId}, Email={account.Email}, UnlockedParkingSpots={lockedParkingSpots.Count}");
+            $"Reintegrated UserId={account.UserId}, Email={account.Email}, ReinstatedParkingSpots={reinstatedParkingSpots.Count}");
 
         _logger.LogInformation(
-            "Account reintegrated. UserId={UserId}, Email={Email}, UserType={UserType}, UnlockedParkingSpots={UnlockedParkingSpots}",
+            "Account reintegrated. UserId={UserId}, Email={Email}, UserType={UserType}, ReinstatedParkingSpots={ReinstatedParkingSpots}",
             account.UserId,
             account.Email,
             account.UserType,
-            lockedParkingSpots.Count);
+            reinstatedParkingSpots.Count);
 
         return Ok(new
         {
@@ -264,7 +269,7 @@ public class OwnerSuspensionsController : ControllerBase
                 account.LastName,
                 account.UserType,
                 account.AccountStatus,
-                UnlockedParkingSpotCount = lockedParkingSpots.Count,
+                ReinstatedParkingSpotCount = reinstatedParkingSpots.Count,
                 account.UpdatedAt
             }
         });

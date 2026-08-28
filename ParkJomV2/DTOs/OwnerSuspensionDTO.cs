@@ -24,7 +24,7 @@ public class SuspendedOwnerDTO
 
     public UserType UserType { get; set; }
 
-    public int LockedParkingSpotCount { get; set; }
+    public int SuspendedParkingSpotCount { get; set; }
 
     public DateTime UpdatedAt { get; set; }
 }

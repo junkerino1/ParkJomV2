@@ -1,5 +1,3 @@
-﻿using CloudinaryDotNet.Core;
-
 namespace ParkJomV2.Models.Enums
 {
     public enum AvailabilityStatus
@@ -9,6 +7,7 @@ namespace ParkJomV2.Models.Enums
         // Keep the existing persisted value/name for database compatibility.
         Pending = 2,
         Inactive = 3,
-        Deleted = 4
+        Deleted = 4,
+        Suspended = 5
     }
 }

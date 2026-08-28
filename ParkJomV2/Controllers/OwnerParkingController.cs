@@ -2061,7 +2061,6 @@ public class OwnerParkingController : ControllerBase
             MonthlyRate = parkingSpot.MonthlyRate,
             DailyRate = parkingSpot.DailyRate,
             IsPublished = parkingSpot.IsPublished,
-            IsSuspensionLocked = parkingSpot.IsSuspensionLocked,
             CreatedAt = parkingSpot.CreatedAt,
             UpdatedAt = parkingSpot.UpdatedAt
         };
