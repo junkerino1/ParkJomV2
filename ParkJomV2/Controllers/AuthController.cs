@@ -105,6 +105,25 @@ namespace ParkJomV2.Controllers
             }
             else
             {
+                if (string.Equals(
+                    user.AccountStatus,
+                    "Suspended",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    await _accessLogService.LogAsync(
+                        User,
+                        "GoogleLogin",
+                        false,
+                        $"Suspended account login attempt: UserId={user.UserId}");
+
+                    return StatusCode(StatusCodes.Status403Forbidden, new AuthResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Your account is suspended. Please contact support."
+                    });
+                }
+
                 user.LastLoginAt = DateTime.UtcNow;
                 user.UpdatedAt = DateTime.UtcNow;
 
@@ -171,6 +190,25 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            if (string.Equals(
+                user.AccountStatus,
+                "Suspended",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                await _accessLogService.LogAsync(
+                    User,
+                    "CompleteProfile",
+                    false,
+                    $"Suspended account attempted profile completion: UserId={user.UserId}");
+
+                return StatusCode(StatusCodes.Status403Forbidden, new AuthResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Your account is suspended. Please contact support."
+                });
+            }
+
             user.PhoneNumber = request.PhoneNumber;
             user.IsProfileComplete = true;
             user.UpdatedAt = DateTime.UtcNow;
@@ -178,6 +216,16 @@ namespace ParkJomV2.Controllers
             // Allow user to set their role during registration
             if (request.UserType.HasValue)
             {
+                if (request.UserType.Value == UserType.Admin)
+                {
+                    return BadRequest(new AuthResponse
+                    {
+                        Code = StatusCodes.Status400BadRequest,
+                        Success = false,
+                        Message = "Admin role cannot be self-assigned."
+                    });
+                }
+
                 user.UserType = request.UserType.Value;
             }
 

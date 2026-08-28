@@ -13,7 +13,8 @@ namespace ParkJomV2.Controllers;
 [Route("api/accesslog")]
 public class AccessLogController : ControllerBase
 {
-    private const int PageSize = 100;
+    private const int DefaultPageSize = 100;
+    private const int MaxPageSize = 1000;
 
     private readonly ApplicationDbContext _context;
     private readonly ILogger<AccessLogController> _logger;
@@ -25,7 +26,9 @@ public class AccessLogController : ControllerBase
     }
 
     /// <summary>
-    /// Get access logs with paging (100 per page), sorting, filtering and search. Admin only.
+    /// Get access logs with optional paging, sorting, filtering and search. Admin only.
+    /// By default all matching logs are returned. Supply page and/or pageSize to enable paging.
+    /// pageSize defaults to 100 when paging is requested and has a maximum of 1000.
     /// Default: sorted by AccessedAt descending.
     /// sort   : desc (default) | asc  (always ordered by AccessedAt)
     /// type   : booking | user | iot
@@ -44,7 +47,8 @@ public class AccessLogController : ControllerBase
         [FromQuery] string? sort = null,
         [FromQuery] string? type = null,
         [FromQuery] string? search = null,
-        [FromQuery] int page = 1)
+        [FromQuery] int? page = null,
+        [FromQuery] int? pageSize = null)
     {
         try
         {
@@ -95,9 +99,23 @@ public class AccessLogController : ControllerBase
                 });
             }
 
-            if (page < 1)
+            var pagingRequested = page.HasValue || pageSize.HasValue;
+            var appliedPage = page.GetValueOrDefault(1);
+            var appliedPageSize = pageSize.GetValueOrDefault(DefaultPageSize);
+
+            if (appliedPage < 1)
             {
-                page = 1;
+                appliedPage = 1;
+            }
+
+            if (pagingRequested && (appliedPageSize < 1 || appliedPageSize > MaxPageSize))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = $"pageSize must be between 1 and {MaxPageSize}"
+                });
             }
 
             var query = _context.AccessLogs.AsNoTracking().AsQueryable();
@@ -126,18 +144,24 @@ public class AccessLogController : ControllerBase
             }
 
             var total = await query.CountAsync();
-            var totalPages = PageSize > 0
-                ? (int)Math.Ceiling(total / (double)PageSize)
-                : 0;
+            var responsePageSize = pagingRequested ? appliedPageSize : total;
+            var totalPages = pagingRequested
+                ? (int)Math.Ceiling(total / (double)appliedPageSize)
+                : total == 0 ? 0 : 1;
 
             // ---- Sort (always on AccessedAt) ----
             query = sortDirection == "asc"
-                ? query.OrderBy(l => l.AccessedAt)
-                : query.OrderByDescending(l => l.AccessedAt);
+                ? query.OrderBy(l => l.AccessedAt).ThenBy(l => l.AccessLogId)
+                : query.OrderByDescending(l => l.AccessedAt).ThenByDescending(l => l.AccessLogId);
+
+            if (pagingRequested)
+            {
+                query = query
+                    .Skip((appliedPage - 1) * appliedPageSize)
+                    .Take(appliedPageSize);
+            }
 
             var logs = await query
-                .Skip((page - 1) * PageSize)
-                .Take(PageSize)
                 .Include(l => l.User)
                 .ToListAsync();
 
@@ -147,7 +171,7 @@ public class AccessLogController : ControllerBase
 
             _logger.LogInformation(
                 "Retrieved {Count} access logs (page {Page}/{TotalPages}, sort '{Sort}', type '{Type}', search '{Search}') for admin user {UserId}",
-                result.Count, page, totalPages, appliedSort, normalizedType, normalizedSearch, userId);
+                result.Count, appliedPage, totalPages, appliedSort, normalizedType, normalizedSearch, userId);
 
             return Ok(new AccessLogListResponse
             {
@@ -155,8 +179,8 @@ public class AccessLogController : ControllerBase
                 Success = true,
                 Message = "Access logs retrieved successfully",
                 Data = result,
-                Page = page,
-                PageSize = PageSize,
+                Page = appliedPage,
+                PageSize = responsePageSize,
                 Total = total,
                 TotalPages = totalPages,
                 Sort = appliedSort,
