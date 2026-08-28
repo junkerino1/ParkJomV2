@@ -15,12 +15,14 @@ public class StripeService
 
     private readonly IConfiguration _configuration;
     private readonly ApplicationDbContext _context;
+    private readonly TransactionService _transactionService;
     private readonly ILogger<StripeService> _logger;
 
-    public StripeService(IConfiguration configuration, ApplicationDbContext context, ILogger<StripeService> logger)
+    public StripeService(IConfiguration configuration, ApplicationDbContext context, TransactionService transactionService, ILogger<StripeService> logger)
     {
         _configuration = configuration;
         _context = context;
+        _transactionService = transactionService;
         _logger = logger;
     }
 
@@ -361,17 +363,15 @@ public class StripeService
         payment.Wallet.Balance += payment.Amount;
         payment.Wallet.UpdatedAt = DateTime.UtcNow;
 
-        _context.Transactions.Add(new Transaction
-        {
-            WalletId = payment.WalletId,
-            TransactionType = TransactionType.TopUp,
-            Amount = payment.Amount,
-            PaymentMethod = ParkJomV2.Models.Enums.PaymentMethod.CreditCard,
-            TransactionStatus = TransactionStatus.Completed,
-            ReferenceNumber = $"TOPUP-{payment.PaymentId}",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        });
+        _transactionService.Create(
+            payment.WalletId,
+            null,
+            booking: null,
+            TransactionType.TopUp,
+            payment.Amount,
+            ParkJomV2.Models.Enums.PaymentMethod.Stripe,
+            session.PaymentIntentId,
+            DateTime.UtcNow);
 
         await _context.SaveChangesAsync();
         await dbTransaction.CommitAsync();

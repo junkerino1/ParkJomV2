@@ -192,7 +192,9 @@ public class BookingCheckoutController : ControllerBase
         }
     }
 
-    /// <summary>Confirms and pays for a quote in one idempotent database transaction.</summary>
+    /// <summary>
+    /// Confirms and pays for a quote in one idempotent database transaction.
+    /// </summary>
     [HttpPost("~/api/bookings/confirm")]
     [ProducesResponseType(typeof(ConfirmBookingResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
@@ -355,9 +357,9 @@ public class BookingCheckoutController : ControllerBase
             _context.Bookings.Add(booking);
 
             // Record the three ledger entries for this booking: renter payment, owner payout, platform commission.
-            _transactionService.Create(renterWallet.WalletId, null, booking, TransactionType.Payment, -quote.RenterTotal, bookingReference, now);
-            _transactionService.Create(ownerWallet.WalletId, null, booking, TransactionType.OwnerPayout, quote.OwnerPayoutAmount, bookingReference, now);
-            _transactionService.Create(null, platformWallet.PlatformWalletId, booking, TransactionType.PlatformCommission, quote.PlatformCommissionAmount, bookingReference, now);
+            _transactionService.Create(renterWallet.WalletId, null, booking, TransactionType.Payment, -quote.RenterTotal, PaymentMethod.Wallet, bookingReference, now);
+            _transactionService.Create(ownerWallet.WalletId, null, booking, TransactionType.OwnerPayout, quote.OwnerPayoutAmount, PaymentMethod.Wallet, bookingReference, now);
+            _transactionService.Create(null, platformWallet.PlatformWalletId, booking, TransactionType.PlatformCommission, quote.PlatformCommissionAmount, PaymentMethod.Wallet, bookingReference, now);
 
             await _context.SaveChangesAsync(cancellationToken);
 
