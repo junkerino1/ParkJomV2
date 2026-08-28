@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using ParkJomV2.Models.Constants;
 using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Models;
@@ -44,7 +45,7 @@ public class Booking
     public decimal RentalSubtotal { get; set; }
 
     [Column(TypeName = "decimal(5,2)")]
-    public decimal PlatformCommissionRate { get; set; } = 10m;
+    public decimal PlatformCommissionRate { get; set; } = PlatformConstants.CommissionRate;
 
     [Column(TypeName = "decimal(10,2)")]
     public decimal PlatformCommissionAmount { get; set; }

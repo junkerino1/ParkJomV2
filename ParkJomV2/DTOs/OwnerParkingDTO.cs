@@ -27,6 +27,19 @@ public class OwnerParkingConfigurationResponse
     public DateTime UpdatedAt { get; set; }
 }
 
+public class OwnerParkingPublicationResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ParkingSpotId { get; set; }
+    public bool IsPublished { get; set; }
+    public bool IsConfigurationComplete { get; set; }
+    public string AvailabilityStatus { get; set; } = string.Empty;
+    public List<string> MissingRequirements { get; set; } = new();
+    public DateTime UpdatedAt { get; set; }
+}
+
 public class UpdateOwnerParkingImageRequest
 {
     [Range(1, int.MaxValue)]

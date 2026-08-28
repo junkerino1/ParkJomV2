@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using ParkJomV2.Models.Constants;
 using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Models;
@@ -19,9 +20,6 @@ public class BookingQuote
     [Required]
     public int ParkingSpotId { get; set; }
 
-    [Required]
-    public int VehicleId { get; set; }
-
     // EndDate is exclusive internally: 1–20 January ends at 21 January 00:00.
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
@@ -37,7 +35,7 @@ public class BookingQuote
     public decimal RentalSubtotal { get; set; }
 
     [Column(TypeName = "decimal(5,2)")]
-    public decimal PlatformCommissionRate { get; set; } = 10m;
+    public decimal PlatformCommissionRate { get; set; } = PlatformConstants.CommissionRate;
 
     [Column(TypeName = "decimal(10,2)")]
     public decimal PlatformCommissionAmount { get; set; }
@@ -57,9 +55,6 @@ public class BookingQuote
 
     [ForeignKey(nameof(ParkingSpotId))]
     public ParkingSpot ParkingSpot { get; set; } = null!;
-
-    [ForeignKey(nameof(VehicleId))]
-    public Vehicle Vehicle { get; set; } = null!;
 
     public Booking? Booking { get; set; }
 }

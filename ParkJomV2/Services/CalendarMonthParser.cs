@@ -5,7 +5,10 @@ namespace ParkJomV2.Services;
 public static class CalendarMonthParser
 {
     /// <summary>
-    /// Parses an ISO calendar month and returns its inclusive start and exclusive end dates.
+    /// Parses a month string in the format "YYYY-MM" and returns the start and end dates of that month.
+    /// Input: 2026-09
+    /// Output: monthStart = 2026-09-01, monthEndExclusive = 2026-10-01
+    /// Returns true if parsing is successful, false otherwise.
     /// </summary>
     public static bool TryParse(
         string? month,
