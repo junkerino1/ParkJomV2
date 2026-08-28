@@ -35,13 +35,6 @@ namespace ParkJomV2.Migrations
                 nullable: false,
                 defaultValue: false);
 
-            migrationBuilder.AddColumn<string>(
-                name: "ParkingInstructions",
-                table: "ParkingSpots",
-                type: "nvarchar(2000)",
-                maxLength: 2000,
-                nullable: true);
-
             migrationBuilder.AddColumn<DateTime>(
                 name: "ActualExitAt",
                 table: "Bookings",
@@ -246,10 +239,6 @@ namespace ParkJomV2.Migrations
 
             migrationBuilder.DropColumn(
                 name: "IsConfigurationComplete",
-                table: "ParkingSpots");
-
-            migrationBuilder.DropColumn(
-                name: "ParkingInstructions",
                 table: "ParkingSpots");
 
             migrationBuilder.DropColumn(

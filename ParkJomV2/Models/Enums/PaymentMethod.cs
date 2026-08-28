@@ -2,7 +2,7 @@
 {
     public enum PaymentMethod
     {
-        EWallet = 1,
+        Wallet = 1,
         FPX = 2,
         CreditCard = 3,
         DebitCard = 4

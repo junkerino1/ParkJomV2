@@ -136,6 +136,12 @@ builder.Services.AddAuthorization(options =>
 // System-wide audit log service (write an AccessLog row per action from controllers).
 builder.Services.AddScoped<AccessLogService>();
 
+// Creates Transaction ledger rows for wallet movements.
+builder.Services.AddScoped<TransactionService>();
+
+// Applies wallet balance movements and platform wallet increments.
+builder.Services.AddScoped<WalletService>();
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {

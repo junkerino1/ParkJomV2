@@ -22,9 +22,6 @@ public class ParkingSpot
     [StringLength(2000)]
     public string? Description { get; set; }
 
-    [StringLength(2000)]
-    public string? ParkingInstructions { get; set; }
-
     [Required]
     public AvailabilityStatus AvailabilityStatus { get; set; }
 

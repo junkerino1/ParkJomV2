@@ -1330,7 +1330,7 @@ public class OwnerParkingController : ControllerBase
                 Success = true,
                 Message = spot.IsConfigurationComplete
                     ? "Parking configuration saved. Listing content is complete; availability setup is still required before publication."
-                    : "Parking configuration saved. Add at least one listing image before the listing can be published.",
+                    : "Parking configuration saved. Complete the missing listing requirements before publication.",
                 ParkingSpotId = spot.ParkingSpotId,
                 IsConfigurationComplete = spot.IsConfigurationComplete,
                 MissingRequirements = missingRequirements,
@@ -1351,8 +1351,311 @@ public class OwnerParkingController : ControllerBase
     }
 
     /// <summary>
+    /// Publishes an owner listing only after freshly validating its current verification,
+    /// listing content, prices, image, and future availability instead of trusting a stale flag.
+    /// </summary>
+    [HttpPost("{spotId:int}/publish")]
+    [ProducesResponseType(typeof(OwnerParkingPublicationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OwnerParkingPublicationResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerParkingPublicationResponse>> PublishParking(int spotId)
+    {
+        if (spotId <= 0)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "spotId must be greater than zero."
+            });
+        }
+
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        try
+        {
+            var spot = await _context.ParkingSpots
+                .Include(item => item.VerificationRequests.Where(request => request.IsCurrent))
+                .Include(item => item.ParkingSpotImages)
+                .Include(item => item.ParkingAvailabilities)
+                .AsSplitQuery()
+                .FirstOrDefaultAsync(item => item.ParkingSpotId == spotId);
+
+            if (spot == null)
+            {
+                await _accessLogService.LogAsync(User, "PublishOwnerParking", false, $"Spot not found (id={spotId})");
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Parking spot not found."
+                });
+            }
+
+            if (spot.OwnerId != userId)
+            {
+                await _accessLogService.LogAsync(User, "PublishOwnerParking", false, $"Not owner (id={spotId})");
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to publish this parking spot."
+                });
+            }
+
+            if (spot.AvailabilityStatus == AvailabilityStatus.Deleted)
+            {
+                await _accessLogService.LogAsync(User, "PublishOwnerParking", false, $"Deleted spot (id={spotId})");
+                return BadRequest(MapParkingPublicationResponse(
+                    spot,
+                    StatusCodes.Status400BadRequest,
+                    false,
+                    "A deleted parking spot cannot be published.",
+                    spot.IsConfigurationComplete));
+            }
+
+            var firstBookableDate = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8)).AddDays(1);
+            var missingRequirements = GetPublicationRequirements(
+                spot,
+                firstBookableDate,
+                out var isConfigurationComplete);
+
+            if (missingRequirements.Count > 0)
+            {
+                await _accessLogService.LogAsync(
+                    User,
+                    "PublishOwnerParking",
+                    false,
+                    $"ParkingSpotId={spotId}; Missing={string.Join(", ", missingRequirements)}");
+
+                return BadRequest(MapParkingPublicationResponse(
+                    spot,
+                    StatusCodes.Status400BadRequest,
+                    false,
+                    "Parking spot is not ready to publish.",
+                    isConfigurationComplete,
+                    missingRequirements));
+            }
+
+            var isAlreadyPublished = spot.IsPublished && spot.AvailabilityStatus == AvailabilityStatus.Available;
+            if (!isAlreadyPublished || !spot.IsConfigurationComplete || !spot.ConfiguredAt.HasValue)
+            {
+                var now = DateTime.UtcNow;
+                spot.IsConfigurationComplete = true;
+                spot.ConfiguredAt ??= now;
+                spot.IsPublished = true;
+                spot.AvailabilityStatus = AvailabilityStatus.Available;
+                spot.UpdatedAt = now;
+                await _context.SaveChangesAsync();
+            }
+
+            await _accessLogService.LogAsync(User, "PublishOwnerParking", true, $"ParkingSpotId={spotId}");
+
+            return Ok(MapParkingPublicationResponse(
+                spot,
+                StatusCodes.Status200OK,
+                true,
+                isAlreadyPublished
+                    ? "Parking spot is already published and remains available."
+                    : "Parking spot published successfully.",
+                true));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error publishing parking spot {ParkingSpotId}", spotId);
+            await _accessLogService.LogAsync(User, "PublishOwnerParking", false, ex.Message);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while publishing the parking spot."
+            });
+        }
+    }
+
+    /// <summary>
+    /// Removes an owner listing from public discovery without changing availability rules or any
+    /// pending, confirmed, active, or historical bookings. Repeated calls are idempotent.
+    /// </summary>
+    [HttpPost("{spotId:int}/unpublish")]
+    [ProducesResponseType(typeof(OwnerParkingPublicationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerParkingPublicationResponse>> UnpublishParking(int spotId)
+    {
+        if (spotId <= 0)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "spotId must be greater than zero."
+            });
+        }
+
+        var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        try
+        {
+            var spot = await _context.ParkingSpots
+                .FirstOrDefaultAsync(item => item.ParkingSpotId == spotId);
+
+            if (spot == null)
+            {
+                await _accessLogService.LogAsync(User, "UnpublishOwnerParking", false, $"Spot not found (id={spotId})");
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Parking spot not found."
+                });
+            }
+
+            if (spot.OwnerId != userId)
+            {
+                await _accessLogService.LogAsync(User, "UnpublishOwnerParking", false, $"Not owner (id={spotId})");
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to unpublish this parking spot."
+                });
+            }
+
+            if (spot.AvailabilityStatus == AvailabilityStatus.Deleted)
+            {
+                await _accessLogService.LogAsync(User, "UnpublishOwnerParking", false, $"Deleted spot (id={spotId})");
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "A deleted parking spot cannot be unpublished."
+                });
+            }
+
+            var isAlreadyUnpublished = !spot.IsPublished && spot.AvailabilityStatus == AvailabilityStatus.Inactive;
+            if (!isAlreadyUnpublished)
+            {
+                spot.IsPublished = false;
+                spot.AvailabilityStatus = AvailabilityStatus.Inactive;
+                spot.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
+
+            await _accessLogService.LogAsync(User, "UnpublishOwnerParking", true, $"ParkingSpotId={spotId}");
+
+            return Ok(MapParkingPublicationResponse(
+                spot,
+                StatusCodes.Status200OK,
+                true,
+                isAlreadyUnpublished
+                    ? "Parking spot is already unpublished."
+                    : "Parking spot unpublished successfully.",
+                spot.IsConfigurationComplete));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error unpublishing parking spot {ParkingSpotId}", spotId);
+            await _accessLogService.LogAsync(User, "UnpublishOwnerParking", false, ex.Message);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while unpublishing the parking spot."
+            });
+        }
+    }
+
+    /// <summary>
+    /// Recomputes every condition required for publication and reports the missing conditions in
+    /// a stable order so the owner can correct the listing without relying on a cached flag.
+    /// </summary>
+    private static List<string> GetPublicationRequirements(
+        ParkingSpot spot,
+        DateOnly firstBookableDate,
+        out bool isConfigurationComplete)
+    {
+        var missing = new List<string>();
+
+        if (!spot.VerificationRequests.Any(request =>
+                request.IsCurrent && request.VerificationStatus == VerificationStatus.Approved))
+        {
+            missing.Add("approved verification");
+        }
+
+        var configurationRequirements = GetConfigurationRequirements(spot);
+        missing.AddRange(configurationRequirements);
+        isConfigurationComplete = configurationRequirements.Count == 0;
+
+        if (!HasFutureAvailabilityRule(spot.ParkingAvailabilities, firstBookableDate))
+        {
+            missing.Add("future availability rule");
+        }
+
+        return missing;
+    }
+
+    /// <summary>
+    /// Determines whether at least one availability rule covers a real date from the first
+    /// bookable day onward, including the rule's configured weekday or weekend pattern.
+    /// </summary>
+    private static bool HasFutureAvailabilityRule(
+        IEnumerable<Availability> availabilityRules,
+        DateOnly firstBookableDate)
+    {
+        foreach (var rule in availabilityRules)
+        {
+            var effectiveFrom = rule.EffectiveFrom ?? DateOnly.MinValue;
+            var effectiveUntil = rule.EffectiveUntil ?? DateOnly.MaxValue;
+            var futureFrom = effectiveFrom > firstBookableDate
+                ? effectiveFrom
+                : firstBookableDate;
+
+            if (futureFrom <= effectiveUntil &&
+                DateRangeContainsDayType(futureFrom, effectiveUntil, rule.DayType))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Creates the common response used by publish and unpublish operations, including the
+    /// resulting listing state and any publication requirements that remain unsatisfied.
+    /// </summary>
+    private static OwnerParkingPublicationResponse MapParkingPublicationResponse(
+        ParkingSpot spot,
+        int code,
+        bool success,
+        string message,
+        bool isConfigurationComplete,
+        IEnumerable<string>? missingRequirements = null)
+    {
+        return new OwnerParkingPublicationResponse
+        {
+            Code = code,
+            Success = success,
+            Message = message,
+            ParkingSpotId = spot.ParkingSpotId,
+            IsPublished = spot.IsPublished,
+            IsConfigurationComplete = isConfigurationComplete,
+            AvailabilityStatus = spot.AvailabilityStatus.ToString(),
+            MissingRequirements = missingRequirements?.ToList() ?? new List<string>(),
+            UpdatedAt = spot.UpdatedAt
+        };
+    }
+
+    /// <summary>
     /// Lists the information that must exist before a listing can be marked configuration-complete.
-    /// Publication performs its own final validation when that endpoint is added.
+    /// Publication performs its own final validation immediately before changing listing state.
     /// </summary>
     private static List<string> GetConfigurationRequirements(ParkingSpot spot)
     {
