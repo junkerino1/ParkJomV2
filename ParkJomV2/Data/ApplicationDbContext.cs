@@ -139,6 +139,10 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(r => r.ReviewerId)
             .OnDelete(DeleteBehavior.NoAction);
 
+        modelBuilder.Entity<Review>()
+            .HasIndex(r => r.BookingId)
+            .IsUnique();
+
         // =========================
         // Access Log
         // =========================
