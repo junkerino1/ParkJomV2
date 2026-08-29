@@ -172,7 +172,7 @@ public class AccessLogController : ControllerBase
 
             _logger.LogInformation(
                 "Retrieved {Count} access logs (page {Page}/{TotalPages}, sort '{Sort}', type '{Type}', search '{Search}') for admin user {UserId}",
-                result.Count, appliedPage, totalPages, appliedSort, normalizedType, normalizedSearch, userId);
+                result.Count, appliedPage, totalPages, appliedSort, normalizedType, normalizedSearch, user.UserId);
 
             return Ok(new AccessLogListResponse
             {

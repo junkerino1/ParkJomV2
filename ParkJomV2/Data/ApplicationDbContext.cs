@@ -125,6 +125,10 @@ public class ApplicationDbContext : DbContext
             .WithMany(u => u.Favorites)
             .HasForeignKey(f => f.UserId);
 
+        modelBuilder.Entity<Favorite>()
+            .HasIndex(f => new { f.UserId, f.ParkingSpotId })
+            .IsUnique();
+
         // =========================
         // Review
         // =========================
@@ -134,6 +138,10 @@ public class ApplicationDbContext : DbContext
             .WithMany(u => u.Reviews)
             .HasForeignKey(r => r.ReviewerId)
             .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<Review>()
+            .HasIndex(r => r.BookingId)
+            .IsUnique();
 
         // =========================
         // Access Log
