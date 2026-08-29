@@ -125,6 +125,10 @@ public class ApplicationDbContext : DbContext
             .WithMany(u => u.Favorites)
             .HasForeignKey(f => f.UserId);
 
+        modelBuilder.Entity<Favorite>()
+            .HasIndex(f => new { f.UserId, f.ParkingSpotId })
+            .IsUnique();
+
         // =========================
         // Review
         // =========================
