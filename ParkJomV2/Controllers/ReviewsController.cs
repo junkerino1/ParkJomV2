@@ -265,6 +265,31 @@ public class ReviewsController : ControllerBase
             "Parking reviews retrieved successfully."));
     }
 
+    /// <summary>Gets all reviews for administrator moderation.</summary>
+    [Authorize(Policy = "AdminOnly")]
+    [HttpGet("admin")]
+    [ProducesResponseType(typeof(AllReviewsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<AllReviewsResponse>> GetAdminReviews()
+    {
+        var reviews = await ReviewQuery()
+            .OrderByDescending(review => review.CreatedAt)
+            .ThenByDescending(review => review.ReviewId)
+            .ToListAsync();
+
+        await _accessLogService.LogAsync(User, "GetAdminReviews", true,
+            $"Returned={reviews.Count}");
+
+        return Ok(new AllReviewsResponse
+        {
+            Code = StatusCodes.Status200OK,
+            Success = true,
+            Message = "All reviews retrieved successfully.",
+            TotalCount = reviews.Count,
+            Data = reviews.Select(ToDto).ToList()
+        });
+    }
+
     /// <summary>Gets paginated reviews for one parking spot for administrator moderation.</summary>
     [Authorize(Policy = "AdminOnly")]
     [HttpGet("admin/parking/{parkingSpotId:int}")]

@@ -84,3 +84,12 @@ public class ReviewListResponse
     public int TotalPages { get; set; }
     public List<ReviewDTO> Data { get; set; } = new();
 }
+
+public class AllReviewsResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int TotalCount { get; set; }
+    public List<ReviewDTO> Data { get; set; } = new();
+}

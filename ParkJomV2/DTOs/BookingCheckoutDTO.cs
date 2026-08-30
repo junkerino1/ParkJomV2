@@ -2,6 +2,31 @@ using System.ComponentModel.DataAnnotations;
 
 namespace ParkJomV2.DTOs;
 
+public class BookingAvailabilityTimeRangeData
+{
+    public string From { get; set; } = string.Empty;
+    public string To { get; set; } = string.Empty;
+}
+
+public class BookingAvailabilityDateData
+{
+    public string Date { get; set; } = string.Empty;
+    public List<BookingAvailabilityTimeRangeData> TimeRanges { get; set; } = new();
+}
+
+public class BookingAvailabilityResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ParkingSpotId { get; set; }
+    public string Month { get; set; } = string.Empty;
+    public string TimeZone { get; set; } = "Asia/Kuala_Lumpur";
+    public string MinimumBookingDate { get; set; } = string.Empty;
+    public int TotalAvailableDates { get; set; }
+    public List<BookingAvailabilityDateData> AvailableDates { get; set; } = new();
+}
+
 public class CreateBookingQuoteRequest
 {
     [Required]
