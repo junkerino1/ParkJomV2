@@ -127,13 +127,21 @@ public class ReviewsController : ControllerBase
         }
     }
 
-    /// <summary>Gets one review for display on a parking-detail page.</summary>
-    [AllowAnonymous]
+    /// <summary>Gets one review for an authenticated commuter.</summary>
+    [Authorize]
     [HttpGet("{reviewId:int}")]
     [ProducesResponseType(typeof(ReviewResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ReviewResponse>> GetReview(int reviewId)
     {
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.Renter)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                Error(StatusCodes.Status403Forbidden, "Only commuters can view reviews through this endpoint."));
+        }
+
         var review = await ReviewQuery()
             .FirstOrDefaultAsync(item => item.ReviewId == reviewId);
 
@@ -151,16 +159,24 @@ public class ReviewsController : ControllerBase
         });
     }
 
-    /// <summary>Gets paginated reviews and rating summary for a parking spot.</summary>
-    [AllowAnonymous]
+    /// <summary>Gets paginated reviews and rating summary for a parking spot for an authenticated commuter.</summary>
+    [Authorize]
     [HttpGet("parking/{parkingSpotId:int}")]
     [ProducesResponseType(typeof(ParkingReviewsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ParkingReviewsResponse>> GetParkingReviews(
         int parkingSpotId,
         [FromQuery, Range(1, 1_000_000)] int page = 1,
         [FromQuery, Range(1, MaximumPageSize)] int pageSize = 10)
     {
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.Renter)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                Error(StatusCodes.Status403Forbidden, "Only commuters can view reviews through this endpoint."));
+        }
+
         var parkingSpotExists = await _context.ParkingSpots
             .AsNoTracking()
             .AnyAsync(spot => spot.ParkingSpotId == parkingSpotId);
@@ -200,6 +216,92 @@ public class ReviewsController : ControllerBase
             TotalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize),
             Data = reviews.Select(ToDto).ToList()
         });
+    }
+
+    /// <summary>Gets paginated reviews for one parking spot owned by the authenticated owner.</summary>
+    [Authorize]
+    [HttpGet("owner/parking/{parkingSpotId:int}")]
+    [ProducesResponseType(typeof(ReviewListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ReviewListResponse>> GetOwnerParkingReviews(
+        int parkingSpotId,
+        [FromQuery, Range(1, 1_000_000)] int page = 1,
+        [FromQuery, Range(1, MaximumPageSize)] int pageSize = 10)
+    {
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                Error(StatusCodes.Status403Forbidden, "Only parking owners can view owner reviews."));
+        }
+
+        var ownsParkingSpot = await _context.ParkingSpots
+            .AsNoTracking()
+            .AnyAsync(spot => spot.ParkingSpotId == parkingSpotId && spot.OwnerId == user.UserId);
+
+        if (!ownsParkingSpot)
+        {
+            return NotFound(Error(StatusCodes.Status404NotFound, "Parking spot not found."));
+        }
+
+        var baseQuery = _context.Reviews
+            .AsNoTracking()
+            .Where(review => review.ParkingSpotId == parkingSpotId);
+
+        var totalCount = await baseQuery.CountAsync();
+        var reviews = await ReviewQuery()
+            .Where(review => review.ParkingSpotId == parkingSpotId)
+            .OrderByDescending(review => review.CreatedAt)
+            .ThenByDescending(review => review.ReviewId)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        await _accessLogService.LogAsync(User, "GetOwnerParkingReviews", true,
+            $"ParkingSpotId={parkingSpotId}, Page={page}, PageSize={pageSize}, Returned={reviews.Count}");
+
+        return Ok(CreateReviewListResponse(reviews, totalCount, page, pageSize,
+            "Parking reviews retrieved successfully."));
+    }
+
+    /// <summary>Gets paginated reviews for one parking spot for administrator moderation.</summary>
+    [Authorize(Policy = "AdminOnly")]
+    [HttpGet("admin/parking/{parkingSpotId:int}")]
+    [ProducesResponseType(typeof(ReviewListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ReviewListResponse>> GetAdminParkingReviews(
+        int parkingSpotId,
+        [FromQuery, Range(1, 1_000_000)] int page = 1,
+        [FromQuery, Range(1, MaximumPageSize)] int pageSize = 10)
+    {
+        var parkingSpotExists = await _context.ParkingSpots
+            .AsNoTracking()
+            .AnyAsync(spot => spot.ParkingSpotId == parkingSpotId);
+
+        if (!parkingSpotExists)
+        {
+            return NotFound(Error(StatusCodes.Status404NotFound, "Parking spot not found."));
+        }
+
+        var baseQuery = _context.Reviews
+            .AsNoTracking()
+            .Where(review => review.ParkingSpotId == parkingSpotId);
+
+        var totalCount = await baseQuery.CountAsync();
+        var reviews = await ReviewQuery()
+            .Where(review => review.ParkingSpotId == parkingSpotId)
+            .OrderByDescending(review => review.CreatedAt)
+            .ThenByDescending(review => review.ReviewId)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        await _accessLogService.LogAsync(User, "GetAdminParkingReviews", true,
+            $"ParkingSpotId={parkingSpotId}, Page={page}, PageSize={pageSize}, Returned={reviews.Count}");
+
+        return Ok(CreateReviewListResponse(reviews, totalCount, page, pageSize,
+            "Parking reviews retrieved successfully."));
     }
 
     /// <summary>Updates the authenticated reviewer's rating and comment.</summary>
@@ -340,7 +442,7 @@ public class ReviewsController : ControllerBase
         }
     }
 
-    /// <summary>Deletes a review owned by the authenticated reviewer, or deletes any review as an administrator.</summary>
+    /// <summary>Deletes a review owned by its author, or deletes any review as an administrator.</summary>
     [Authorize]
     [HttpDelete("{reviewId:int}")]
     [ProducesResponseType(typeof(DeleteReviewResponse), StatusCodes.Status200OK)]
@@ -393,10 +495,82 @@ public class ReviewsController : ControllerBase
         }
     }
 
+    /// <summary>Deletes a review for a parking spot as an administrator.</summary>
+    [Authorize(Policy = "AdminOnly")]
+    [HttpDelete("admin/parking/{parkingSpotId:int}/{reviewId:int}")]
+    [ProducesResponseType(typeof(DeleteReviewResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public Task<ActionResult<DeleteReviewResponse>> DeleteAdminParkingReview(int parkingSpotId, int reviewId) =>
+        DeleteReviewForParkingSpot(parkingSpotId, reviewId);
+
     private IQueryable<Review> ReviewQuery() => _context.Reviews
         .AsNoTracking()
         .Include(review => review.Reviewer)
-        .Include(review => review.Booking);
+        .Include(review => review.Booking)
+        .Include(review => review.ParkingSpot);
+
+    private async Task<ActionResult<DeleteReviewResponse>> DeleteReviewForParkingSpot(
+        int parkingSpotId,
+        int reviewId)
+    {
+        try
+        {
+            var user = await _currentUser.GetCurrentUserAsync();
+            if (user == null || user.UserType != UserType.Admin)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden,
+                    Error(StatusCodes.Status403Forbidden, "You are not authorized to delete this review."));
+            }
+
+            var review = await _context.Reviews
+                .Include(item => item.ParkingSpot)
+                .FirstOrDefaultAsync(item => item.ReviewId == reviewId && item.ParkingSpotId == parkingSpotId);
+
+            if (review == null)
+            {
+                return NotFound(Error(StatusCodes.Status404NotFound,
+                    "Review not found for the specified parking spot."));
+            }
+
+            _context.Reviews.Remove(review);
+            await _context.SaveChangesAsync();
+
+            await _accessLogService.LogAsync(User, "DeleteAdminParkingReview", true,
+                $"ReviewId={reviewId}, ParkingSpotId={parkingSpotId}");
+
+            return Ok(new DeleteReviewResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Review deleted successfully."
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting review {ReviewId} for parking spot {ParkingSpotId}",
+                reviewId, parkingSpotId);
+            await _accessLogService.LogAsync(User, "DeleteReviewForParkingSpot", false, ex.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                Error(StatusCodes.Status500InternalServerError, "An error occurred while deleting the review."));
+        }
+    }
+
+    private static ReviewListResponse CreateReviewListResponse(
+        List<Review> reviews,
+        int totalCount,
+        int page,
+        int pageSize,
+        string message) => new()
+    {
+        Code = StatusCodes.Status200OK,
+        Success = true,
+        Message = message,
+        TotalCount = totalCount,
+        Page = page,
+        PageSize = pageSize,
+        TotalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize),
+        Data = reviews.Select(ToDto).ToList()
+    };
 
     private static ReviewDTO ToDto(Review review)
     {

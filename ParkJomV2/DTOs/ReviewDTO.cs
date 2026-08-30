@@ -72,3 +72,15 @@ public class ParkingReviewsResponse
     public int TotalPages { get; set; }
     public List<ReviewDTO> Data { get; set; } = new();
 }
+
+public class ReviewListResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages { get; set; }
+    public List<ReviewDTO> Data { get; set; } = new();
+}
