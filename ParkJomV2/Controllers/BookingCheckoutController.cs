@@ -40,6 +40,148 @@ public class BookingCheckoutController : ControllerBase
     }
 
     /// <summary>
+    /// Returns the future dates and configured time ranges that are available for booking
+    /// during a requested Malaysia calendar month.
+    /// </summary>
+    [HttpGet("{spotId:int}/booking-availability")]
+    [ProducesResponseType(typeof(BookingAvailabilityResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<BookingAvailabilityResponse>> GetBookingAvailability(
+        int spotId,
+        [FromQuery] string? month,
+        CancellationToken cancellationToken)
+    {
+        if (!CalendarMonthParser.TryParse(month, out var monthStart, out var monthEndExclusive))
+        {
+            return BadRequest(Error(StatusCodes.Status400BadRequest, "month must use YYYY-MM format."));
+        }
+
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                Error(StatusCodes.Status403Forbidden, "Authenticated user not found."));
+        }
+
+        try
+        {
+            var spot = await _context.ParkingSpots
+                .AsNoTracking()
+                .Include(item => item.VerificationRequests.Where(item => item.IsCurrent))
+                .Include(item => item.ParkingAvailabilities)
+                .FirstOrDefaultAsync(item => item.ParkingSpotId == spotId, cancellationToken);
+
+            if (spot == null)
+            {
+                return NotFound(Error(StatusCodes.Status404NotFound, "Parking spot not found."));
+            }
+
+            if (spot.OwnerId == user.UserId)
+            {
+                return BadRequest(Error(StatusCodes.Status400BadRequest, "You cannot book your own parking spot."));
+            }
+
+            if (!IsBookable(spot))
+            {
+                return BadRequest(Error(StatusCodes.Status400BadRequest,
+                    "Parking spot is not currently available for booking."));
+            }
+
+            if (!spot.VerificationRequests.Any(item => item.VerificationStatus == VerificationStatus.Approved))
+            {
+                return BadRequest(Error(StatusCodes.Status400BadRequest,
+                    "Parking spot verification is not approved."));
+            }
+
+            var minimumBookingDate = MalaysiaToday().AddDays(1);
+            var firstDate = monthStart > minimumBookingDate ? monthStart : minimumBookingDate;
+            var availableDates = new List<BookingAvailabilityDateData>();
+
+            if (firstDate < monthEndExclusive)
+            {
+                var blockingBookings = await _context.Bookings
+                    .AsNoTracking()
+                    .Where(booking =>
+                        booking.ParkingSpotId == spotId &&
+                        (booking.BookingStatus == BookingStatus.Confirmed ||
+                         booking.BookingStatus == BookingStatus.Active) &&
+                        booking.StartDate < monthEndExclusive.ToDateTime(TimeOnly.MinValue) &&
+                        booking.EndDate > firstDate.ToDateTime(TimeOnly.MinValue))
+                    .ToListAsync(cancellationToken);
+
+                var bookedDates = new HashSet<DateOnly>();
+                foreach (var booking in blockingBookings)
+                {
+                    var bookingStart = DateOnly.FromDateTime(booking.StartDate);
+                    var bookingEndExclusive = GetBookingEndExclusiveDate(booking.EndDate);
+                    var overlapStart = bookingStart > firstDate ? bookingStart : firstDate;
+                    var overlapEndExclusive = bookingEndExclusive < monthEndExclusive
+                        ? bookingEndExclusive
+                        : monthEndExclusive;
+
+                    for (var date = overlapStart; date < overlapEndExclusive; date = date.AddDays(1))
+                    {
+                        bookedDates.Add(date);
+                    }
+                }
+
+                for (var date = firstDate; date < monthEndExclusive; date = date.AddDays(1))
+                {
+                    if (bookedDates.Contains(date))
+                    {
+                        continue;
+                    }
+
+                    var timeRanges = GetCoverageForDate(spot.ParkingAvailabilities, date)
+                        .Select(interval => new BookingAvailabilityTimeRangeData
+                        {
+                            From = interval.From.ToString("HH:mm", CultureInfo.InvariantCulture),
+                            To = interval.To.ToString("HH:mm", CultureInfo.InvariantCulture)
+                        })
+                        .ToList();
+
+                    if (timeRanges.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    availableDates.Add(new BookingAvailabilityDateData
+                    {
+                        Date = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        TimeRanges = timeRanges
+                    });
+                }
+            }
+
+            await _accessLogService.LogAsync(User, "GetBookingAvailability", true,
+                $"ParkingSpotId={spotId}, Month={monthStart:yyyy-MM}, AvailableDates={availableDates.Count}");
+
+            return Ok(new BookingAvailabilityResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Booking availability retrieved successfully.",
+                ParkingSpotId = spotId,
+                Month = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                MinimumBookingDate = minimumBookingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                TotalAvailableDates = availableDates.Count,
+                AvailableDates = availableDates
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving booking availability for parking spot {ParkingSpotId}", spotId);
+            await _accessLogService.LogAsync(User, "GetBookingAvailability", false, ex.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                Error(StatusCodes.Status500InternalServerError,
+                    "An error occurred while retrieving booking availability."));
+        }
+    }
+
+    /// <summary>
     /// Creates a booking quote for a parking spot and returns the calculated price and expiration time.
     /// Prevent user from appending query parameters to the URL to bypass validation. 
     /// The quote is valid for 60 minutes and must be confirmed before it expires.
@@ -476,6 +618,13 @@ public class BookingCheckoutController : ControllerBase
             else if (interval.To > merged[^1].To) merged[^1] = (merged[^1].From, interval.To);
         }
         return merged;
+    }
+
+    /// <summary>Converts a booking end timestamp to the exclusive date boundary used by the calendar.</summary>
+    private static DateOnly GetBookingEndExclusiveDate(DateTime bookingEnd)
+    {
+        var endDate = DateOnly.FromDateTime(bookingEnd);
+        return bookingEnd.TimeOfDay == TimeSpan.Zero ? endDate : endDate.AddDays(1);
     }
 
     /// <summary>

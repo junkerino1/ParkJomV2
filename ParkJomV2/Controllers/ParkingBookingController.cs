@@ -6,6 +6,7 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Services;
 using ParkJomV2.Models.Enums;
+using System.ComponentModel.DataAnnotations;
 
 namespace ParkJomV2.Controllers;
 
@@ -268,6 +269,102 @@ public class ParkingBookingController : ControllerBase
     }
 
     /// <summary>
+    /// Get the authenticated commuter's completed, cancelled, and expired booking history,
+    /// including any review submitted for each booking.
+    /// </summary>
+    [Authorize]
+    [HttpGet("bookings/history")]
+    [HttpGet("/api/bookings/history")]
+    [ProducesResponseType(typeof(BookingHistoryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<BookingHistoryResponse>> GetBookingHistory(
+        [FromQuery, Range(1, 1_000_000)] int page = 1,
+        [FromQuery, Range(1, 50)] int pageSize = 10)
+    {
+        try
+        {
+            var user = await _currentUser.GetCurrentUserAsync();
+
+            if (user == null)
+            {
+                await _accessLogService.LogAsync(User, "GetBookingHistory", false, "User not found");
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "User not found"
+                });
+            }
+
+            if (user.UserType != UserType.Renter)
+            {
+                await _accessLogService.LogAsync(User, "GetBookingHistory", false, "Only commuters can view booking history");
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Only commuters can view booking history"
+                });
+            }
+
+            var historyQuery = _context.Bookings
+                .AsNoTracking()
+                .Where(booking => booking.RenterId == user.UserId &&
+                    (booking.BookingStatus == BookingStatus.Completed ||
+                     booking.BookingStatus == BookingStatus.Cancelled ||
+                     booking.BookingStatus == BookingStatus.Expired));
+
+            var totalCount = await historyQuery.CountAsync();
+            var bookings = await historyQuery
+                .Include(booking => booking.ParkingSpot)
+                .Include(booking => booking.Vehicle)
+                .Include(booking => booking.Reviews.Where(review => review.ReviewerId == user.UserId))
+                    .ThenInclude(review => review.Reviewer)
+                .OrderByDescending(booking => booking.EndDate)
+                .ThenByDescending(booking => booking.BookingId)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .AsSplitQuery()
+                .ToListAsync();
+
+            var result = bookings.Select(MapToBookingHistoryItemDTO).ToList();
+            await _accessLogService.LogAsync(
+                User,
+                "GetBookingHistory",
+                true,
+                $"Page={page}, PageSize={pageSize}, Returned={result.Count}, Total={totalCount}");
+
+            return Ok(new BookingHistoryResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = result.Count > 0
+                    ? "Booking history retrieved successfully"
+                    : "No booking history found",
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = totalCount == 0
+                    ? 0
+                    : (int)Math.Ceiling(totalCount / (double)pageSize),
+                Data = result
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving commuter booking history");
+            await _accessLogService.LogAsync(User, "GetBookingHistory", false, ex.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while retrieving your booking history"
+            });
+        }
+    }
+
+    /// <summary>
     /// Get a specific booking by ID
     /// </summary>
     [Authorize]
@@ -483,6 +580,43 @@ public class ParkingBookingController : ControllerBase
             CancellationReason = booking.CancellationReason,
             CancelledAt = booking.CancelledAt,
             CreatedAt = booking.CreatedAt
+        };
+    }
+
+    private static BookingHistoryItemDTO MapToBookingHistoryItemDTO(Booking booking)
+    {
+        var review = booking.Reviews.SingleOrDefault();
+
+        return new BookingHistoryItemDTO
+        {
+            Booking = MapToBookingResponseDTO(booking),
+            CanReview = booking.BookingStatus == BookingStatus.Completed && review == null,
+            Review = review == null ? null : MapToReviewDTO(review, booking)
+        };
+    }
+
+    private static ReviewDTO MapToReviewDTO(Review review, Booking booking)
+    {
+        var firstName = review.Reviewer.FirstName?.Trim();
+        var lastInitial = string.IsNullOrWhiteSpace(review.Reviewer.LastName)
+            ? string.Empty
+            : $" {char.ToUpperInvariant(review.Reviewer.LastName.Trim()[0])}.";
+
+        return new ReviewDTO
+        {
+            ReviewId = review.ReviewId,
+            ParkingSpotId = review.ParkingSpotId,
+            Rating = review.Rating,
+            Comment = review.Comment,
+            ReviewerDisplayName = string.IsNullOrWhiteSpace(firstName)
+                ? "ParkJom commuter"
+                : firstName + lastInitial,
+            IsVerifiedBooking = booking.RenterId == review.ReviewerId &&
+                                booking.BookingStatus == BookingStatus.Completed,
+            OwnerReply = review.OwnerReply,
+            OwnerReplyAt = review.OwnerReplyAt,
+            CreatedAt = review.CreatedAt,
+            UpdatedAt = review.UpdatedAt
         };
     }
 }

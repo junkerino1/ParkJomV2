@@ -49,6 +49,25 @@ public class BookingListResponse
     public List<BookingResponseDTO> Data { get; set; } = new();
 }
 
+public class BookingHistoryItemDTO
+{
+    public BookingResponseDTO Booking { get; set; } = new();
+    public bool CanReview { get; set; }
+    public ReviewDTO? Review { get; set; }
+}
+
+public class BookingHistoryResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages { get; set; }
+    public List<BookingHistoryItemDTO> Data { get; set; } = new();
+}
+
 public class BookingDetailResponse
 {
     public int Code { get; set; }
