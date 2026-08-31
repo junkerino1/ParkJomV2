@@ -37,6 +37,7 @@ public class OwnerBookingsController : ControllerBase
     /// filter: spotId (optional), month (YYYY-MM, optional), status (Pending, Confirmed, Cancelled, Completed, Expired, Active; optional).
     /// </summary>
     [HttpGet]
+    [HttpGet("/api/parking/bookings/history")]
     [ProducesResponseType(typeof(OwnerBookingListResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
@@ -94,6 +95,22 @@ public class OwnerBookingsController : ControllerBase
                 Code = StatusCodes.Status403Forbidden,
                 Success = false,
                 Message = "Authenticated user not found."
+            });
+        }
+
+        if (user.UserType != UserType.PropertyOwner)
+        {
+            await _accessLogService.LogAsync(
+                User,
+                "GetOwnerBookings",
+                false,
+                "Only parking owners can view owner booking history");
+
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Only parking owners can view booking history for their parking spots."
             });
         }
 
@@ -179,6 +196,7 @@ public class OwnerBookingsController : ControllerBase
                 ParkingSpotId = spotId,
                 Month = monthStart?.ToString("yyyy-MM", CultureInfo.InvariantCulture),
                 Status = bookingStatus?.ToString(),
+                TotalCount = data.Count,
                 Data = data
             });
         }
@@ -341,6 +359,8 @@ public class OwnerBookingsController : ControllerBase
             ParkingLabel = booking.ParkingSpot.ParkingLabel,
             RenterId = booking.RenterId,
             RenterName = $"{booking.Renter.FirstName} {booking.Renter.LastName}".Trim(),
+            RenterEmail = booking.Renter.Email,
+            RenterPhoneNumber = booking.Renter.PhoneNumber,
             VehicleId = booking.VehicleId,
             VehicleNumberPlate = booking.Vehicle.NumberPlate,
             StartDate = startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
