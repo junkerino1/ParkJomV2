@@ -273,7 +273,6 @@ public class ParkingBookingController : ControllerBase
     /// including any review submitted for each booking.
     /// </summary>
     [Authorize]
-    [HttpGet("bookings/history")]
     [HttpGet("/api/bookings/history")]
     [ProducesResponseType(typeof(BookingHistoryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]

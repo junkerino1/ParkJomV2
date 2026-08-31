@@ -8,6 +8,8 @@ public class OwnerBookingSummaryResponse
     public string? ParkingLabel { get; set; }
     public int RenterId { get; set; }
     public string RenterName { get; set; } = string.Empty;
+    public string RenterEmail { get; set; } = string.Empty;
+    public string? RenterPhoneNumber { get; set; }
     public int VehicleId { get; set; }
     public string VehicleNumberPlate { get; set; } = string.Empty;
     public string StartDate { get; set; } = string.Empty;
@@ -28,6 +30,7 @@ public class OwnerBookingListResponse
     public string? Month { get; set; }
     public string? Status { get; set; }
     public string TimeZone { get; set; } = "Asia/Kuala_Lumpur";
+    public int TotalCount { get; set; }
     public List<OwnerBookingSummaryResponse> Data { get; set; } = new();
 }
 
