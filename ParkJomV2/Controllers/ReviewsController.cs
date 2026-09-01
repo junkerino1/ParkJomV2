@@ -128,19 +128,12 @@ public class ReviewsController : ControllerBase
     }
 
     /// <summary>Gets one review for an authenticated commuter.</summary>
-    [Authorize]
     [HttpGet("{reviewId:int}")]
     [ProducesResponseType(typeof(ReviewResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ReviewResponse>> GetReview(int reviewId)
     {
-        var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.Renter)
-        {
-            return StatusCode(StatusCodes.Status403Forbidden,
-                Error(StatusCodes.Status403Forbidden, "Only commuters can view reviews through this endpoint."));
-        }
 
         var review = await ReviewQuery()
             .FirstOrDefaultAsync(item => item.ReviewId == reviewId);
