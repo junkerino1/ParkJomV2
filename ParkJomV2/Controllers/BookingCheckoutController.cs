@@ -304,6 +304,7 @@ public class BookingCheckoutController : ControllerBase
             }
 
             var now = DateTime.UtcNow;
+            var platformFee = RoundMoney(subtotal * PlatformConstants.CommissionRate / 100m);
             var quote = new BookingQuote
             {
                 RenterId = user.UserId,
@@ -315,9 +316,9 @@ public class BookingCheckoutController : ControllerBase
                 RatePerDay = ratePerDay,
                 RentalSubtotal = subtotal,
                 PlatformCommissionRate = PlatformConstants.CommissionRate,
-                PlatformCommissionAmount = RoundMoney(subtotal * PlatformConstants.CommissionRate / 100m),
-                OwnerPayoutAmount = RoundMoney(subtotal - RoundMoney(subtotal * PlatformConstants.CommissionRate / 100m)),
-                RenterTotal = subtotal,
+                PlatformCommissionAmount = platformFee,
+                OwnerPayoutAmount = subtotal,
+                RenterTotal = RoundMoney(subtotal + platformFee),
                 CreatedAt = now,
                 ExpiresAt = now.AddMinutes(60)
             };
@@ -499,6 +500,8 @@ public class BookingCheckoutController : ControllerBase
         RateType = quote.RateType.ToString(),
         RatePerDay = quote.RatePerDay,
         RentalSubtotal = quote.RentalSubtotal,
+        PlatformFee = quote.PlatformCommissionAmount,
+        RenterTotal = quote.RenterTotal,
         ExpiresAt = quote.ExpiresAt
     };
 

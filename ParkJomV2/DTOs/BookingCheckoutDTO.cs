@@ -59,6 +59,8 @@ public class BookingQuoteData
     public string RateType { get; set; } = string.Empty;
     public decimal RatePerDay { get; set; }
     public decimal RentalSubtotal { get; set; }
+    public decimal PlatformFee { get; set; }
+    public decimal RenterTotal { get; set; }
     public DateTime ExpiresAt { get; set; }
 }
 
