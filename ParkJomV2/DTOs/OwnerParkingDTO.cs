@@ -40,8 +40,18 @@ public class OwnerParkingPublicationResponse
     public DateTime UpdatedAt { get; set; }
 }
 
-public class UpdateOwnerParkingImageRequest
+public class UpdateParkingImagesRequest
 {
+    [Required]
+    public List<ParkingImageOrderRequest> Images { get; set; } = new();
+}
+
+public class ParkingImageOrderRequest
+{
+    // The listing image id — the client may send either the parkingSpotImageId or the mediaFileId.
+    [Required]
+    public int ImageFileId { get; set; }
+
     [Range(1, int.MaxValue)]
     public int DisplayOrder { get; set; }
 

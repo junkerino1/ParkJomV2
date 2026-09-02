@@ -20,6 +20,9 @@ public class CreateBookingRequest
 
 public class CancelBookingRequest
 {
+    [Required]
+    public int BookingId { get; set; }
+
     [StringLength(500)]
     public string? CancellationReason { get; set; }
 }
@@ -84,4 +87,19 @@ public class CancelBookingResponse
     public int BookingId { get; set; }
     public string BookingStatus { get; set; } = string.Empty;
     public DateTime? CancelledAt { get; set; }
+}
+
+public class CommuterBookingListResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages { get; set; }
+    public string? Status { get; set; }
+    public string? FromDate { get; set; }
+    public string? ToDate { get; set; }
+    public List<BookingResponseDTO> Data { get; set; } = new();
 }
