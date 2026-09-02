@@ -105,17 +105,3 @@ public class CommuterBookingListResponse
     public List<BookingResponseDTO> Data { get; set; } = new();
 }
 
-public class CommuterBookingListResponse
-{
-    public int Code { get; set; }
-    public bool Success { get; set; }
-    public string Message { get; set; } = string.Empty;
-    public int TotalCount { get; set; }
-    public int Page { get; set; }
-    public int PageSize { get; set; }
-    public int TotalPages { get; set; }
-    public string? Status { get; set; }
-    public string? FromDate { get; set; }
-    public string? ToDate { get; set; }
-    public List<BookingResponseDTO> Data { get; set; } = new();
-}
