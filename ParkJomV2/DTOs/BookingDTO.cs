@@ -87,6 +87,7 @@ public class CancelBookingResponse
     public int BookingId { get; set; }
     public string BookingStatus { get; set; } = string.Empty;
     public DateTime? CancelledAt { get; set; }
+    public decimal RefundAmount { get; set; }
 }
 
 public class CommuterBookingListResponse
