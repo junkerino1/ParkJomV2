@@ -1,8 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
+using ParkJomV2.Data;
 using ParkJomV2.DTOs;
+using ParkJomV2.Models;
+using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using System.ComponentModel.DataAnnotations;
 
 namespace ParkJomV2.Controllers;
 
@@ -10,6 +15,7 @@ namespace ParkJomV2.Controllers;
 [Route("api/wallet")]
 public class WalletTopUpController : ControllerBase
 {
+	private readonly ApplicationDbContext _context;
 	private readonly StripeService _stripeService;
 	private readonly AccessLogService _accessLogService;
 	private readonly CurrentUserService _currentUser;
@@ -17,52 +23,19 @@ public class WalletTopUpController : ControllerBase
 	private readonly ILogger<WalletTopUpController> _logger;
 
 	public WalletTopUpController(
+		ApplicationDbContext context,
 		StripeService stripeService,
 		AccessLogService accessLogService,
 		CurrentUserService currentUser,
 		IConfiguration configuration,
 		ILogger<WalletTopUpController> logger)
 	{
+		_context = context;
 		_stripeService = stripeService;
 		_accessLogService = accessLogService;
 		_currentUser = currentUser;
 		_configuration = configuration;
 		_logger = logger;
-	}
-
-	[Authorize]
-	[HttpGet]
-	[ProducesResponseType(typeof(WalletSummaryResponse), StatusCodes.Status200OK)]
-	[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
-	[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
-	[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
-	public async Task<ActionResult<WalletSummaryResponse>> GetWallet(CancellationToken cancellationToken)
-	{
-		if (!TryGetUserId(out var userId))
-		{
-			await _accessLogService.LogAsync(User, "GetWallet", false, "Authentication required");
-			return Unauthorized(CreateError(StatusCodes.Status401Unauthorized, "Authentication required."));
-		}
-
-		try
-		{
-			var summary = await _stripeService.GetWalletAsync(userId, cancellationToken);
-			await _accessLogService.LogAsync(User, "GetWallet", true, $"WalletId={summary.WalletId}");
-			return Ok(summary);
-		}
-		catch (KeyNotFoundException ex)
-		{
-			await _accessLogService.LogAsync(User, "GetWallet", false, ex.Message);
-			return NotFound(CreateError(StatusCodes.Status404NotFound, ex.Message));
-		}
-		catch (Exception ex)
-		{
-			_logger.LogError(ex, "Error retrieving wallet for user {UserId}", userId);
-			await _accessLogService.LogAsync(User, "GetWallet", false, ex.Message);
-			return StatusCode(
-				StatusCodes.Status500InternalServerError,
-				CreateError(StatusCodes.Status500InternalServerError, "An error occurred while retrieving the wallet."));
-		}
 	}
 
 	[Authorize]
@@ -125,6 +98,87 @@ public class WalletTopUpController : ControllerBase
 				Success = false,
 				Message = "An error occurred while creating the wallet top-up session."
 			});
+		}
+	}
+
+	/// <summary>
+	/// Returns the authenticated user's wallet top-up history (Payments), newest first.
+	/// Optional status filter (Pending, Completed, Cancelled, Failed) and pagination.
+	/// </summary>
+	[Authorize]
+	[HttpGet("topup/history")]
+	[ProducesResponseType(typeof(WalletTopUpHistoryResponse), StatusCodes.Status200OK)]
+	[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+	[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+	[ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+	public async Task<ActionResult<WalletTopUpHistoryResponse>> GetTopUpHistory(
+		[FromQuery] string? status = null,
+		[FromQuery, Range(1, 1_000_000)] int page = 1,
+		[FromQuery, Range(1, 50)] int pageSize = 10)
+	{
+		if (!TryGetUserId(out var userId))
+		{
+			await _accessLogService.LogAsync(User, "GetTopUpHistory", false, "Authentication required");
+			return Unauthorized(CreateError(StatusCodes.Status401Unauthorized, "Authentication required."));
+		}
+
+		if (!TryParsePaymentStatus(status, out var paymentStatus))
+		{
+			await _accessLogService.LogAsync(User, "GetTopUpHistory", false, "Invalid status filter");
+			return BadRequest(CreateError(
+				StatusCodes.Status400BadRequest,
+				"status must be one of: Pending, Completed, Cancelled, Failed."));
+		}
+
+		try
+		{
+			var query = _context.Payments
+				.AsNoTracking()
+				.Where(p => p.UserId == userId);
+
+			if (paymentStatus.HasValue)
+			{
+				query = query.Where(p => p.Status == paymentStatus.Value);
+			}
+
+			var totalCount = await query.CountAsync();
+			var payments = await query
+				.OrderByDescending(p => p.CreatedAt)
+				.ThenByDescending(p => p.PaymentId)
+				.Skip((page - 1) * pageSize)
+				.Take(pageSize)
+				.ToListAsync();
+
+			await _accessLogService.LogAsync(
+				User,
+				"GetTopUpHistory",
+				true,
+				$"Status={paymentStatus?.ToString() ?? "all"}; Page={page}; PageSize={pageSize}; " +
+				$"Returned={payments.Count}; Total={totalCount}");
+
+			return Ok(new WalletTopUpHistoryResponse
+			{
+				Code = StatusCodes.Status200OK,
+				Success = true,
+				Message = payments.Count > 0
+					? "Top-up history retrieved successfully."
+					: "No top-up history found.",
+				TotalCount = totalCount,
+				Page = page,
+				PageSize = pageSize,
+				TotalPages = totalCount == 0
+					? 0
+					: (int)Math.Ceiling(totalCount / (double)pageSize),
+				Data = payments.Select(MapTopUpItem).ToList()
+			});
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Error retrieving top-up history for user {UserId}", userId);
+			await _accessLogService.LogAsync(User, "GetTopUpHistory", false, ex.Message);
+			return StatusCode(
+				StatusCodes.Status500InternalServerError,
+				CreateError(StatusCodes.Status500InternalServerError, "An error occurred while retrieving the top-up history."));
 		}
 	}
 
@@ -262,6 +316,43 @@ public class WalletTopUpController : ControllerBase
 		var id = _currentUser.UserId;
 		userId = id ?? 0;
 		return id.HasValue;
+	}
+
+	private static bool TryParsePaymentStatus(string? status, out PaymentStatus? paymentStatus)
+	{
+		paymentStatus = null;
+		if (string.IsNullOrWhiteSpace(status))
+		{
+			return true;
+		}
+
+		var match = Enum.GetNames<PaymentStatus>()
+			.FirstOrDefault(candidate => string.Equals(
+				candidate,
+				status.Trim(),
+				StringComparison.OrdinalIgnoreCase));
+
+		if (match == null)
+		{
+			return false;
+		}
+
+		paymentStatus = Enum.Parse<PaymentStatus>(match);
+		return true;
+	}
+
+	private static WalletTopUpListItemResponse MapTopUpItem(Payment payment)
+	{
+		return new WalletTopUpListItemResponse
+		{
+			PaymentId = payment.PaymentId,
+			Amount = payment.Amount,
+			Currency = payment.Currency,
+			Status = payment.Status.ToString(),
+			SessionId = payment.StripeSessionId,
+			CreatedAt = payment.CreatedAt,
+			CompletedAt = payment.CompletedAt
+		};
 	}
 
 	private string GetReturnUrl(string? returnTarget)
