@@ -36,8 +36,7 @@ public class OwnerBookingsController : ControllerBase
     /// Returns booking summaries only for parking spots owned by the authenticated user,
     /// filter: spotId (optional), month (YYYY-MM, optional), status (Pending, Confirmed, Cancelled, Completed, Expired, Active; optional).
     /// </summary>
-    [HttpGet]
-    [HttpGet("/api/parking/bookings/history")]
+    [HttpGet("/api/parking/bookings")]
     [ProducesResponseType(typeof(OwnerBookingListResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]

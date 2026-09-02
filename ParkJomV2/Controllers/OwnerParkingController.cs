@@ -42,13 +42,12 @@ public class OwnerParkingController : ControllerBase
     /// Creates a private parking draft and submits its first verification document.
     /// The spot cannot be published or booked until its verification is approved.
     /// </summary>
-    [HttpPost]
+    [HttpPost("/register")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ParkingRegistrationResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<ParkingRegistrationResponse>> RegisterParking(
         [FromForm] ParkingRegistrationRequest request)
     {
-        var userId = _currentUser.UserId!.Value;
         var owner = await _currentUser.GetCurrentUserAsync();
 
         if (owner == null)
@@ -146,7 +145,7 @@ public class OwnerParkingController : ControllerBase
                 Format = uploadResult.Format ?? Path.GetExtension(request.Document.FileName).TrimStart('.').ToLowerInvariant(),
                 OriginalFileName = uploadResult.OriginalFilename,
                 Folder = folder,
-                UploadedBy = userId,
+                UploadedBy = owner.UserId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -154,7 +153,7 @@ public class OwnerParkingController : ControllerBase
             var parkingSpot = new ParkingSpot
             {
                 PropertyId = property.PropertyId,
-                OwnerId = userId,
+                OwnerId = owner.UserId,
                 ParkingLabel = $"{request.BayNumber}/{request.Level}",
                 AvailabilityStatus = AvailabilityStatus.Inactive,
                 IsPublished = false,
@@ -166,7 +165,7 @@ public class OwnerParkingController : ControllerBase
             var verificationRequest = new ParkingVerificationRequest
             {
                 ParkingSpot = parkingSpot,
-                SubmittedByUserId = userId,
+                SubmittedByUserId = owner.UserId,
                 VerificationStatus = VerificationStatus.Pending,
                 IsCurrent = true,
                 SubmittedAt = DateTime.UtcNow,
@@ -206,7 +205,6 @@ public class OwnerParkingController : ControllerBase
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
-            _logger.LogError(ex, "Verification request submission failed for UserId={UserId}", userId);
             await _accessLogService.LogAsync(User, "RegisterParking", false, ex.Message);
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
@@ -250,7 +248,17 @@ public class OwnerParkingController : ControllerBase
             }
         }
 
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Authenticated user not found."
+            });
+        }
+
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
             .Include(p => p.ParkingSpotImages)
@@ -262,7 +270,7 @@ public class OwnerParkingController : ControllerBase
             return NotFound(new ErrorResponse { Code = 404, Success = false, Message = "Parking spot not found." });
         }
 
-        if (spot.OwnerId != userId)
+        if (spot.OwnerId != user.UserId)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -303,7 +311,7 @@ public class OwnerParkingController : ControllerBase
                     Format = uploadResult.Format ?? Path.GetExtension(image.FileName).TrimStart('.').ToLowerInvariant(),
                     OriginalFileName = uploadResult.OriginalFilename,
                     Folder = "parkjom/parking-images",
-                    UploadedBy = userId,
+                    UploadedBy = user.UserId,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -357,17 +365,33 @@ public class OwnerParkingController : ControllerBase
     }
 
     /// <summary>
-    /// Changes an image's display position and/or makes it the one primary listing image.
-    /// Image order is normalised to consecutive values so consumers never receive duplicates.
+    /// Reorders a parking spot's listing images and/or sets the primary image in a single request.
+    /// The payload must include every listing image on the spot. Each item supplies an imageFileId
+    /// (the parkingSpotImageId or mediaFileId) and its desired displayOrder. Mark at most one item as
+    /// primary; when none is marked, the current primary image is preserved. Final order is
+    /// normalised to consecutive values so consumers never receive duplicates.
     /// </summary>
-    [HttpPut("{spotId:int}/images/{imageId:int}")]
+    [HttpPut("{spotId:int}/images")]
     [ProducesResponseType(typeof(OwnerParkingImagesResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<OwnerParkingImagesResponse>> UpdateImage(
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerParkingImagesResponse>> ReorderParkingImages(
         int spotId,
-        int imageId,
-        [FromBody] UpdateOwnerParkingImageRequest request)
+        [FromBody] UpdateParkingImagesRequest request)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Authenticated user not found."
+            });
+        }
+
         var spot = await _context.ParkingSpots
             .Include(p => p.ParkingSpotImages)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
@@ -377,7 +401,7 @@ public class OwnerParkingController : ControllerBase
             return NotFound(new ErrorResponse { Code = 404, Success = false, Message = "Parking spot not found." });
         }
 
-        if (spot.OwnerId != userId)
+        if (spot.OwnerId != user.UserId)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -387,56 +411,105 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var image = spot.ParkingSpotImages.FirstOrDefault(i => i.ParkingSpotImageId == imageId);
-        if (image == null)
+        if (request.Images.Count == 0)
         {
-            return NotFound(new ErrorResponse { Code = 404, Success = false, Message = "Parking image not found." });
+            return BadRequest(new ErrorResponse { Code = 400, Success = false, Message = "At least one image is required." });
         }
 
-        if (image.IsPrimary && !request.IsPrimary)
+        if (request.Images.Select(item => item.ImageFileId).Distinct().Count() != request.Images.Count)
+        {
+            return BadRequest(new ErrorResponse { Code = 400, Success = false, Message = "Each image may appear only once in the reorder request." });
+        }
+
+        if (request.Images.Select(item => item.DisplayOrder).Distinct().Count() != request.Images.Count)
+        {
+            return BadRequest(new ErrorResponse { Code = 400, Success = false, Message = "displayOrder values must be unique." });
+        }
+
+        var primarySelections = request.Images.Where(item => item.IsPrimary).ToList();
+        if (primarySelections.Count > 1)
+        {
+            return BadRequest(new ErrorResponse { Code = 400, Success = false, Message = "Only one image can be marked as primary." });
+        }
+
+        var resolvedImages = new List<(ParkingSpotImage Image, ParkingImageOrderRequest Item)>();
+        foreach (var item in request.Images)
+        {
+            var image = spot.ParkingSpotImages.FirstOrDefault(p =>
+                p.ParkingSpotImageId == item.ImageFileId || p.MediaFileId == item.ImageFileId);
+
+            if (image == null)
+            {
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = $"Parking image not found (imageFileId={item.ImageFileId})."
+                });
+            }
+
+            resolvedImages.Add((image, item));
+        }
+
+        if (resolvedImages.Count != spot.ParkingSpotImages.Count)
         {
             return BadRequest(new ErrorResponse
             {
-                Code = 400,
+                Code = StatusCodes.Status400BadRequest,
                 Success = false,
-                Message = "Select another image as primary before removing the primary image status."
+                Message = "The reorder request must include every parking image on this spot."
             });
         }
 
-        if (request.IsPrimary)
+        try
         {
-            foreach (var existingImage in spot.ParkingSpotImages)
+            var orderedImages = resolvedImages
+                .OrderBy(entry => entry.Item.DisplayOrder)
+                .ThenBy(entry => entry.Image.ParkingSpotImageId)
+                .ToList();
+
+            for (var index = 0; index < orderedImages.Count; index++)
             {
-                existingImage.IsPrimary = existingImage.ParkingSpotImageId == imageId;
-                existingImage.UpdatedAt = DateTime.UtcNow;
+                orderedImages[index].Image.DisplayOrder = index + 1;
+                orderedImages[index].Image.UpdatedAt = DateTime.UtcNow;
             }
+
+            if (primarySelections.Count == 1)
+            {
+                var flaggedId = primarySelections[0].ImageFileId;
+                var flaggedImage = resolvedImages.First(entry =>
+                    entry.Image.ParkingSpotImageId == flaggedId || entry.Image.MediaFileId == flaggedId).Image;
+
+                foreach (var entry in resolvedImages)
+                {
+                    entry.Image.IsPrimary = entry.Image.ParkingSpotImageId == flaggedImage.ParkingSpotImageId;
+                }
+            }
+
+            spot.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            await _accessLogService.LogAsync(User, "ReorderParkingImages", true, $"ParkingSpotId={spotId}; Count={orderedImages.Count}");
+
+            return Ok(new OwnerParkingImagesResponse
+            {
+                Code = 200,
+                Success = true,
+                Message = "Parking image order updated successfully.",
+                ParkingSpotId = spotId,
+                Data = await GetImagesAsync(spotId)
+            });
         }
-
-        var reorderedImages = spot.ParkingSpotImages
-            .Where(i => i.ParkingSpotImageId != imageId)
-            .OrderBy(i => i.DisplayOrder)
-            .ThenBy(i => i.ParkingSpotImageId)
-            .ToList();
-        var targetIndex = Math.Min(request.DisplayOrder - 1, reorderedImages.Count);
-        reorderedImages.Insert(targetIndex, image);
-        for (var index = 0; index < reorderedImages.Count; index++)
+        catch (Exception ex)
         {
-            reorderedImages[index].DisplayOrder = index + 1;
-            reorderedImages[index].UpdatedAt = DateTime.UtcNow;
+            _logger.LogError(ex, "Error reordering images for parking spot {ParkingSpotId}", spotId);
+            await _accessLogService.LogAsync(User, "ReorderParkingImages", false, ex.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = 500,
+                Success = false,
+                Message = "An error occurred while reordering the parking images."
+            });
         }
-
-        spot.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
-        await _accessLogService.LogAsync(User, "UpdateOwnerParkingImage", true, $"ParkingSpotId={spotId}; ImageId={imageId}");
-
-        return Ok(new OwnerParkingImagesResponse
-        {
-            Code = 200,
-            Success = true,
-            Message = "Listing image updated successfully.",
-            ParkingSpotId = spotId,
-            Data = await GetImagesAsync(spotId)
-        });
     }
 
     /// <summary>
@@ -447,7 +520,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(OwnerParkingImagesResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<OwnerParkingImagesResponse>> DeleteImage(int spotId, int imageId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Authenticated user not found."
+            });
+        }
+
         var spot = await _context.ParkingSpots
             .Include(p => p.ParkingSpotImages)
                 .ThenInclude(i => i.MediaFile)
@@ -458,7 +541,7 @@ public class OwnerParkingController : ControllerBase
             return NotFound(new ErrorResponse { Code = 404, Success = false, Message = "Parking spot not found." });
         }
 
-        if (spot.OwnerId != userId)
+        if (spot.OwnerId != user.UserId)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -532,7 +615,17 @@ public class OwnerParkingController : ControllerBase
         int spotId,
         [FromBody] CreateOwnerAvailabilityRulesRequest request)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+
+        if (user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Authenticated user not found."
+            });
+        }
 
         if (request.Rules.Count == 0)
         {
@@ -559,7 +652,7 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        if (spot.OwnerId != userId)
+        if (spot.OwnerId != user.UserId)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1039,6 +1132,79 @@ public class OwnerParkingController : ControllerBase
     }
 
     /// <summary>
+    /// Returns the availability rules configured for one of the authenticated owner's parking spots.
+    /// </summary>
+    [HttpGet("{spotId:int}/availability-rules")]
+    [ProducesResponseType(typeof(OwnerAvailabilityRulesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerAvailabilityRulesResponse>> GetAvailabilityRules(int spotId)
+    {
+        var userId = _currentUser.UserId!.Value;
+
+        try
+        {
+            var spot = await _context.ParkingSpots
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
+
+            if (spot == null)
+            {
+                await _accessLogService.LogAsync(User, "GetOwnerAvailabilityRules", false, $"Parking spot not found (spotId={spotId})");
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Parking spot not found."
+                });
+            }
+
+            if (spot.OwnerId != userId)
+            {
+                await _accessLogService.LogAsync(User, "GetOwnerAvailabilityRules", false, $"Not owner (spotId={spotId})");
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to view this parking spot's availability rules."
+                });
+            }
+
+            var rules = await _context.Availabilities
+                .AsNoTracking()
+                .Where(rule => rule.ParkingSpotId == spotId)
+                .OrderBy(rule => rule.EffectiveFrom)
+                .ThenBy(rule => rule.StartTime)
+                .ToListAsync();
+
+            await _accessLogService.LogAsync(User, "GetOwnerAvailabilityRules", true, $"ParkingSpotId={spotId}; RuleCount={rules.Count}");
+
+            return Ok(new OwnerAvailabilityRulesResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = rules.Count > 0
+                    ? "Availability rules retrieved successfully."
+                    : "No availability rules found for this parking spot.",
+                ParkingSpotId = spotId,
+                Data = rules.Select(MapAvailabilityRuleResponse).ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving availability rules for parking spot {ParkingSpotId}", spotId);
+            await _accessLogService.LogAsync(User, "GetOwnerAvailabilityRules", false, ex.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while retrieving the availability rules."
+            });
+        }
+    }
+
+    /// <summary>
     /// Calculates one owner's monthly availability calendar from configured rules and
     /// confirmed or active bookings without exposing renter or vehicle identity.
     /// </summary>
@@ -1175,7 +1341,214 @@ public class OwnerParkingController : ControllerBase
         }
     }
 
-    [HttpGet]
+    /// <summary>
+    /// Returns bookings made on one of the authenticated owner's parking spots.
+    /// Optional filters: month (YYYY-MM) and status (Pending, Confirmed, Cancelled, Completed, Expired, Active).
+    /// Owner-authorized responses exclude the renter's wallet and idempotency data.
+    /// </summary>
+    [HttpGet("{spotId:int}/bookings")]
+    [ProducesResponseType(typeof(OwnerBookingListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerBookingListResponse>> GetParkingSpotBookings(
+        int spotId,
+        [FromQuery] string? month = null,
+        [FromQuery] string? status = null)
+    {
+        var userId = _currentUser.UserId!.Value;
+
+        if (!TryParseBookingStatus(status, out var bookingStatus))
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "status must be one of: Pending, Confirmed, Cancelled, Completed, Expired, Active."
+            });
+        }
+
+        DateOnly? monthStart = null;
+        DateOnly? monthEndExclusive = null;
+        if (!string.IsNullOrWhiteSpace(month))
+        {
+            if (!CalendarMonthParser.TryParse(month, out var parsedMonthStart, out var parsedMonthEndExclusive))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "month must use YYYY-MM format."
+                });
+            }
+
+            monthStart = parsedMonthStart;
+            monthEndExclusive = parsedMonthEndExclusive;
+        }
+
+        try
+        {
+            var spot = await _context.ParkingSpots
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
+
+            if (spot == null)
+            {
+                await _accessLogService.LogAsync(User, "GetOwnerParkingSpotBookings", false, $"Parking spot not found (spotId={spotId})");
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Parking spot not found."
+                });
+            }
+
+            if (spot.OwnerId != userId)
+            {
+                await _accessLogService.LogAsync(User, "GetOwnerParkingSpotBookings", false, $"Not owner (spotId={spotId})");
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to view bookings for this parking spot."
+                });
+            }
+
+            var bookingsQuery = _context.Bookings
+                .AsNoTracking()
+                .Where(booking => booking.ParkingSpotId == spotId);
+
+            if (monthStart.HasValue && monthEndExclusive.HasValue)
+            {
+                var monthStartDateTime = monthStart.Value.ToDateTime(TimeOnly.MinValue);
+                var monthEndExclusiveDateTime = monthEndExclusive.Value.ToDateTime(TimeOnly.MinValue);
+                bookingsQuery = bookingsQuery.Where(booking =>
+                    booking.StartDate < monthEndExclusiveDateTime &&
+                    booking.EndDate > monthStartDateTime);
+            }
+
+            if (bookingStatus.HasValue)
+            {
+                bookingsQuery = bookingsQuery.Where(booking => booking.BookingStatus == bookingStatus.Value);
+            }
+
+            var bookings = await bookingsQuery
+                .Include(booking => booking.ParkingSpot)
+                .Include(booking => booking.Renter)
+                .Include(booking => booking.Vehicle)
+                .OrderByDescending(booking => booking.StartDate)
+                .ThenByDescending(booking => booking.CreatedAt)
+                .ToListAsync();
+
+            var data = bookings.Select(MapOwnerBookingSummary).ToList();
+
+            await _accessLogService.LogAsync(
+                User,
+                "GetOwnerParkingSpotBookings",
+                true,
+                $"ParkingSpotId={spotId}; Month={monthStart?.ToString("yyyy-MM", CultureInfo.InvariantCulture) ?? "all"}; " +
+                $"Status={bookingStatus?.ToString() ?? "all"}; Count={data.Count}");
+
+            return Ok(new OwnerBookingListResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = data.Count > 0
+                    ? $"Retrieved {data.Count} booking(s) for this parking spot successfully."
+                    : "No bookings found for this parking spot.",
+                ParkingSpotId = spotId,
+                Month = monthStart?.ToString("yyyy-MM", CultureInfo.InvariantCulture),
+                Status = bookingStatus?.ToString(),
+                TotalCount = data.Count,
+                Data = data
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving bookings for parking spot {ParkingSpotId}", spotId);
+            await _accessLogService.LogAsync(User, "GetOwnerParkingSpotBookings", false, ex.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while retrieving bookings for this parking spot."
+            });
+        }
+    }
+
+    /// <summary>
+    /// Returns full booking, renter, vehicle, and financial detail for one booking made on one of the
+    /// authenticated owner's parking spots. Wallet and idempotency data are excluded.
+    /// </summary>
+    [HttpGet("{spotId:int}/bookings/{bookingId:int}")]
+    [ProducesResponseType(typeof(OwnerBookingDetailResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerBookingDetailResponse>> GetParkingSpotBooking(int spotId, int bookingId)
+    {
+        var userId = _currentUser.UserId!.Value;
+
+        try
+        {
+            var booking = await _context.Bookings
+                .AsNoTracking()
+                .Include(item => item.ParkingSpot)
+                .Include(item => item.Renter)
+                .Include(item => item.Vehicle)
+                .Include(item => item.Transactions)
+                .FirstOrDefaultAsync(item => item.BookingId == bookingId);
+
+            if (booking == null || booking.ParkingSpotId != spotId)
+            {
+                await _accessLogService.LogAsync(User, "GetOwnerParkingSpotBooking", false, $"Booking not found (spotId={spotId}, bookingId={bookingId})");
+                return NotFound(new ErrorResponse
+                {
+                    Code = StatusCodes.Status404NotFound,
+                    Success = false,
+                    Message = "Booking not found."
+                });
+            }
+
+            if (booking.ParkingSpot.OwnerId != userId)
+            {
+                await _accessLogService.LogAsync(User, "GetOwnerParkingSpotBooking", false, $"Not owner (spotId={spotId}, bookingId={bookingId})", bookingId);
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You are not authorized to view this booking."
+                });
+            }
+
+            await _accessLogService.LogAsync(User, "GetOwnerParkingSpotBooking", true, $"ParkingSpotId={spotId}; BookingId={bookingId}", bookingId);
+
+            return Ok(new OwnerBookingDetailResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Booking detail retrieved successfully.",
+                Data = MapOwnerBookingDetail(booking)
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving booking {BookingId} for parking spot {ParkingSpotId}", bookingId, spotId);
+            await _accessLogService.LogAsync(User, "GetOwnerParkingSpotBooking", false, ex.Message, bookingId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while retrieving the booking detail."
+            });
+        }
+    }
+
+    /// <summary>
+    /// Lists every parking spot owned by the authenticated owner.
+    /// </summary>
+    [HttpGet("my-parking")]
     [ProducesResponseType(typeof(DisplayMyParkingResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking()
     {
@@ -2063,5 +2436,155 @@ public class OwnerParkingController : ControllerBase
             CreatedAt = parkingSpot.CreatedAt,
             UpdatedAt = parkingSpot.UpdatedAt
         };
+    }
+
+    /// <summary>
+    /// Parses the optional status query string into a BookingStatus enum value.
+    /// Returns true when the value is blank or valid, false otherwise.
+    /// </summary>
+    private static bool TryParseBookingStatus(string? status, out BookingStatus? bookingStatus)
+    {
+        bookingStatus = null;
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return true;
+        }
+
+        var matchingStatusName = Enum.GetNames<BookingStatus>()
+            .FirstOrDefault(candidate => string.Equals(
+                candidate,
+                status.Trim(),
+                StringComparison.OrdinalIgnoreCase));
+
+        if (matchingStatusName == null)
+        {
+            return false;
+        }
+
+        bookingStatus = Enum.Parse<BookingStatus>(matchingStatusName);
+        return true;
+    }
+
+    /// <summary>
+    /// Maps an owner-authorized booking to a compact summary using inclusive customer-facing dates.
+    /// </summary>
+    private static OwnerBookingSummaryResponse MapOwnerBookingSummary(Booking booking)
+    {
+        var (startDate, endDate, bookedDays) = GetInclusiveBookingPeriod(booking);
+
+        return new OwnerBookingSummaryResponse
+        {
+            BookingId = booking.BookingId,
+            BookingReference = booking.BookingReference,
+            ParkingSpotId = booking.ParkingSpotId,
+            ParkingLabel = booking.ParkingSpot.ParkingLabel,
+            RenterId = booking.RenterId,
+            RenterName = $"{booking.Renter.FirstName} {booking.Renter.LastName}".Trim(),
+            RenterEmail = booking.Renter.Email,
+            RenterPhoneNumber = booking.Renter.PhoneNumber,
+            VehicleId = booking.VehicleId,
+            VehicleNumberPlate = booking.Vehicle.NumberPlate,
+            StartDate = startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            EndDate = endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            BookedDays = bookedDays,
+            BookingStatus = booking.BookingStatus.ToString(),
+            RenterTotal = booking.TotalAmount,
+            OwnerPayoutAmount = booking.OwnerPayoutAmount,
+            CreatedAt = booking.CreatedAt
+        };
+    }
+
+    /// <summary>
+    /// Maps an owner-authorized booking to the detailed response without exposing wallet identifiers,
+    /// booking quote identifiers, or the renter's idempotency key.
+    /// </summary>
+    private static OwnerBookingDetailDataResponse MapOwnerBookingDetail(Booking booking)
+    {
+        var (startDate, endDate, bookedDays) = GetInclusiveBookingPeriod(booking);
+        var renterFirstName = booking.Renter.FirstName ?? string.Empty;
+        var renterLastName = booking.Renter.LastName ?? string.Empty;
+
+        return new OwnerBookingDetailDataResponse
+        {
+            BookingId = booking.BookingId,
+            BookingReference = booking.BookingReference,
+            ParkingSpotId = booking.ParkingSpotId,
+            ParkingLabel = booking.ParkingSpot.ParkingLabel,
+            Renter = new OwnerBookingRenterResponse
+            {
+                RenterId = booking.RenterId,
+                FirstName = renterFirstName,
+                LastName = renterLastName,
+                FullName = $"{renterFirstName} {renterLastName}".Trim(),
+                Email = booking.Renter.Email,
+                PhoneNumber = booking.Renter.PhoneNumber
+            },
+            Vehicle = new OwnerBookingVehicleResponse
+            {
+                VehicleId = booking.VehicleId,
+                NumberPlate = booking.Vehicle.NumberPlate,
+                Brand = booking.Vehicle.VehicleBrand,
+                Model = booking.Vehicle.VehicleModel,
+                Color = booking.Vehicle.VehicleColor
+            },
+            StartDate = startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            EndDate = endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            BookedDays = bookedDays,
+            BookingStatus = booking.BookingStatus.ToString(),
+            CancellationReason = booking.CancellationReason,
+            CancelledAt = booking.CancelledAt,
+            CheckedInAt = booking.CheckedInAt,
+            ActualExitAt = booking.ActualExitAt,
+            Financial = new OwnerBookingFinancialResponse
+            {
+                RateType = booking.RateType.ToString(),
+                RatePerDaySnapshot = booking.RatePerDaySnapshot,
+                RentalSubtotal = booking.RentalSubtotal,
+                RenterTotal = booking.TotalAmount,
+                PlatformCommissionRate = booking.PlatformCommissionRate,
+                PlatformCommissionAmount = booking.PlatformCommissionAmount,
+                OwnerPayoutAmount = booking.OwnerPayoutAmount,
+                RefundAmount = booking.RefundAmount,
+                OverstayHours = booking.OverstayHours,
+                OverstayPenaltyAmount = booking.OverstayPenaltyAmount
+            },
+            Transactions = booking.Transactions
+                .OrderBy(transaction => transaction.CreatedAt)
+                .ThenBy(transaction => transaction.TransactionId)
+                .Select(transaction => new OwnerBookingTransactionResponse
+                {
+                    TransactionId = transaction.TransactionId,
+                    TransactionType = transaction.TransactionType.ToString(),
+                    Amount = transaction.Amount,
+                    PaymentMethod = transaction.PaymentMethod.ToString(),
+                    TransactionStatus = transaction.TransactionStatus.ToString(),
+                    ReferenceNumber = transaction.ReferenceNumber,
+                    CreatedAt = transaction.CreatedAt,
+                    UpdatedAt = transaction.UpdatedAt
+                })
+                .ToList(),
+            CreatedAt = booking.CreatedAt,
+            UpdatedAt = booking.UpdatedAt
+        };
+    }
+
+    /// <summary>
+    /// Converts the internal exclusive booking end boundary into inclusive customer-facing dates
+    /// and falls back to a calculated day count for legacy bookings without a stored snapshot.
+    /// </summary>
+    private static (DateOnly StartDate, DateOnly EndDate, int BookedDays) GetInclusiveBookingPeriod(Booking booking)
+    {
+        var startDate = DateOnly.FromDateTime(booking.StartDate);
+        var endDate = DateOnly.FromDateTime(booking.EndDate);
+        if (booking.EndDate.TimeOfDay == TimeSpan.Zero && endDate > startDate)
+        {
+            endDate = endDate.AddDays(-1);
+        }
+
+        var bookedDays = booking.BookedDays > 0
+            ? booking.BookedDays
+            : Math.Max(1, endDate.DayNumber - startDate.DayNumber + 1);
+
+        return (startDate, endDate, bookedDays);
     }
 }
