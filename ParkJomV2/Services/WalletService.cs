@@ -45,6 +45,25 @@ public class WalletService
     }
 
     /// <summary>
+    /// Adds a refunded amount back to a wallet's available balance (inverse of <see cref="Deduct"/>).
+    /// </summary>
+    public void Refund(Wallet wallet, decimal amount, DateTime now)
+    {
+        wallet.Balance += amount;
+        wallet.UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Removes an amount from a wallet's on-hold balance without paying it out,
+    /// e.g. releasing a held owner payout when a booking is cancelled.
+    /// </summary>
+    public void ReleaseHold(Wallet wallet, decimal amount, DateTime now)
+    {
+        wallet.OnHold = Math.Max(0, wallet.OnHold - amount);
+        wallet.UpdatedAt = now;
+    }
+
+    /// <summary>
     /// Atomically increments the platform wallet's balance and total revenue on the server.
     /// A single UPDATE avoids lost updates under concurrent bookings and only briefly locks the row.
     /// </summary>
@@ -55,6 +74,24 @@ public class WalletService
             UPDATE [PlatformWallets]
             SET [Balance] = [Balance] + {amount},
                 [TotalRevenue] = [TotalRevenue] + {amount},
+                [UpdatedAt] = {now}
+            WHERE [PlatformWalletId] = {platformWallet.PlatformWalletId}
+            """,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Atomically reverses a previously credited platform commission for a refund: reduces the
+    /// balance and total revenue by the commission and records it in TotalRefunded. Performed as a
+    /// single server-side UPDATE so concurrent refunds/commissions cannot lose updates.
+    /// </summary>
+    public Task ApplyRefundToPlatformAsync(PlatformWallet platformWallet, decimal amount, DateTime now, CancellationToken cancellationToken)
+    {
+        return _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            UPDATE [PlatformWallets]
+            SET [Balance] = [Balance] - {amount},
+                [TotalRefunded] = [TotalRefunded] + {amount},
                 [UpdatedAt] = {now}
             WHERE [PlatformWalletId] = {platformWallet.PlatformWalletId}
             """,

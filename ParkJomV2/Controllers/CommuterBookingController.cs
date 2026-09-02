@@ -510,27 +510,110 @@ public class CommuterBookingsController : ControllerBase
                 });
             }
 
-            booking.BookingStatus = BookingStatus.Cancelled;
-            booking.CancellationReason = request.CancellationReason;
-            booking.CancelledAt = DateTime.UtcNow;
-            booking.UpdatedAt = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            var refundAmount = 0m;
 
-            await _context.SaveChangesAsync();
+            // Only bookings that were actually paid have a ledger to reverse (legacy pending
+            // bookings were created without payment and are simply cancelled).
+            var hasPaidBooking = await _context.Transactions
+                .AsNoTracking()
+                .AnyAsync(transaction =>
+                    transaction.BookingId == booking.BookingId &&
+                    transaction.TransactionType == TransactionType.Payment);
+
+            if (hasPaidBooking)
+            {
+                await using var dbTransaction = await _context.Database.BeginTransactionAsync(
+                    System.Data.IsolationLevel.Serializable);
+
+                try
+                {
+                    // Lock the renter and owner wallets plus the platform wallet so concurrent
+                    // cancellations/confirmations cannot double-spend or corrupt balances.
+                    var lockedWallets = await _context.Wallets
+                        .FromSqlInterpolated($"SELECT * FROM [Wallets] WITH (UPDLOCK, HOLDLOCK) WHERE [UserId] IN ({booking.RenterId}, {booking.ParkingSpot.OwnerId}) AND [Status] = {WalletStatus.Active.ToString()}")
+                        .OrderBy(wallet => wallet.WalletId)
+                        .ToListAsync();
+
+                    var renterWallet = lockedWallets.FirstOrDefault(wallet => wallet.UserId == booking.RenterId);
+                    var ownerWallet = lockedWallets.FirstOrDefault(wallet => wallet.UserId == booking.ParkingSpot.OwnerId);
+
+                    var platformWallet = await _context.PlatformWallets
+                        .AsNoTracking()
+                        .OrderBy(item => item.PlatformWalletId)
+                        .FirstOrDefaultAsync();
+
+                    if (renterWallet == null || ownerWallet == null || platformWallet == null)
+                    {
+                        await dbTransaction.RollbackAsync();
+                        return BadRequest(new ErrorResponse
+                        {
+                            Code = StatusCodes.Status400BadRequest,
+                            Success = false,
+                            Message = "An active renter, owner, and platform wallet are required to process the refund."
+                        });
+                    }
+
+                    refundAmount = booking.TotalAmount;
+                    var ownerPayout = booking.OwnerPayoutAmount;
+                    var commission = booking.PlatformCommissionAmount;
+
+                    // 1) Refund the renter's wallet balance.
+                    _walletService.Refund(renterWallet, refundAmount, now);
+
+                    // 2) Release the owner's held payout (never paid out for a cancelled booking).
+                    _walletService.ReleaseHold(ownerWallet, ownerPayout, now);
+
+                    // 3) Atomically reverse the commission credited to the platform wallet at confirmation.
+                    await _walletService.ApplyRefundToPlatformAsync(platformWallet, commission, now, CancellationToken.None);
+
+                    booking.BookingStatus = BookingStatus.Cancelled;
+                    booking.CancellationReason = request.CancellationReason;
+                    booking.CancelledAt = now;
+                    booking.RefundAmount = refundAmount;
+                    booking.UpdatedAt = now;
+
+                    // Write the refund ledger rows: renter + refund, owner & platform reversals.
+                    _transactionService.Create(renterWallet.WalletId, null, booking, TransactionType.Refund, refundAmount, PaymentMethod.Wallet, booking.BookingReference, now);
+                    _transactionService.Create(ownerWallet.WalletId, null, booking, TransactionType.Refund, -ownerPayout, PaymentMethod.Wallet, booking.BookingReference, now);
+                    _transactionService.Create(null, platformWallet.PlatformWalletId, booking, TransactionType.Refund, -commission, PaymentMethod.Wallet, booking.BookingReference, now);
+
+                    await _context.SaveChangesAsync();
+                    await dbTransaction.CommitAsync();
+                }
+                catch
+                {
+                    await dbTransaction.RollbackAsync();
+                    throw;
+                }
+            }
+            else
+            {
+                // Booking was never paid (e.g. legacy pending booking): just cancel it.
+                booking.BookingStatus = BookingStatus.Cancelled;
+                booking.CancellationReason = request.CancellationReason;
+                booking.CancelledAt = now;
+                booking.UpdatedAt = now;
+                await _context.SaveChangesAsync();
+            }
 
             _logger.LogInformation(
-                "Booking cancelled. BookingId={BookingId}, UserId={UserId}, Reason={Reason}",
-                booking.BookingId, user.UserId, request.CancellationReason);
+                "Booking cancelled. BookingId={BookingId}, UserId={UserId}, Reason={Reason}, RefundAmount={RefundAmount}",
+                booking.BookingId, user.UserId, request.CancellationReason, refundAmount);
 
-            await _accessLogService.LogAsync(User, "CancelBooking", true, $"BookingId={booking.BookingId}", booking.BookingId);
+            await _accessLogService.LogAsync(User, "CancelBooking", true, $"BookingId={booking.BookingId}; RefundAmount={refundAmount}", booking.BookingId);
 
             return Ok(new CancelBookingResponse
             {
                 Code = StatusCodes.Status200OK,
                 Success = true,
-                Message = "Booking cancelled successfully",
+                Message = refundAmount > 0
+                    ? $"Booking cancelled and RM {refundAmount:0.00} refunded to your wallet."
+                    : "Booking cancelled successfully.",
                 BookingId = booking.BookingId,
                 BookingStatus = booking.BookingStatus.ToString(),
-                CancelledAt = booking.CancelledAt
+                CancelledAt = booking.CancelledAt,
+                RefundAmount = refundAmount
             });
         }
         catch (Exception ex)
