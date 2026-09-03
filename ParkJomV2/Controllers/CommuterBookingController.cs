@@ -178,13 +178,15 @@ public class CommuterBookingsController : ControllerBase
             var bookings = await bookingsQuery
                 .Include(booking => booking.ParkingSpot)
                 .Include(booking => booking.Vehicle)
+                .Include(booking => booking.Reviews.Where(review => review.ReviewerId == user.UserId))
+                    .ThenInclude(review => review.Reviewer)
                 .OrderByDescending(booking => booking.StartDate)
                 .ThenByDescending(booking => booking.CreatedAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
 
-            var data = bookings.Select(MapToBookingResponseDTO).ToList();
+            var data = bookings.Select(MapToBookingHistoryItemDTO).ToList();
 
             await _accessLogService.LogAsync(
                 User,
@@ -800,6 +802,47 @@ public class CommuterBookingsController : ControllerBase
             CancellationReason = booking.CancellationReason,
             CancelledAt = booking.CancelledAt,
             CreatedAt = booking.CreatedAt
+        };
+    }
+
+    /// <summary>
+    /// Maps a booking to the my-bookings item (booking plus its review eligibility and any
+    /// review the current commuter has already submitted for it).
+    /// </summary>
+    private static BookingHistoryItemDTO MapToBookingHistoryItemDTO(Booking booking)
+    {
+        var review = booking.Reviews.SingleOrDefault();
+
+        return new BookingHistoryItemDTO
+        {
+            Booking = MapToBookingResponseDTO(booking),
+            CanReview = booking.BookingStatus == BookingStatus.Completed && review == null,
+            Review = review == null ? null : MapToReviewDTO(review, booking)
+        };
+    }
+
+    private static ReviewDTO MapToReviewDTO(Review review, Booking booking)
+    {
+        var firstName = review.Reviewer.FirstName?.Trim();
+        var lastInitial = string.IsNullOrWhiteSpace(review.Reviewer.LastName)
+            ? string.Empty
+            : $" {char.ToUpperInvariant(review.Reviewer.LastName.Trim()[0])}.";
+
+        return new ReviewDTO
+        {
+            ReviewId = review.ReviewId,
+            ParkingSpotId = review.ParkingSpotId,
+            Rating = review.Rating,
+            Comment = review.Comment,
+            ReviewerDisplayName = string.IsNullOrWhiteSpace(firstName)
+                ? "ParkJom commuter"
+                : firstName + lastInitial,
+            IsVerifiedBooking = booking.RenterId == review.ReviewerId &&
+                                booking.BookingStatus == BookingStatus.Completed,
+            OwnerReply = review.OwnerReply,
+            OwnerReplyAt = review.OwnerReplyAt,
+            CreatedAt = review.CreatedAt,
+            UpdatedAt = review.UpdatedAt
         };
     }
 }

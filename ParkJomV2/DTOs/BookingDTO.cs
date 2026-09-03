@@ -102,6 +102,6 @@ public class CommuterBookingListResponse
     public string? Status { get; set; }
     public string? FromDate { get; set; }
     public string? ToDate { get; set; }
-    public List<BookingResponseDTO> Data { get; set; } = new();
+    public List<BookingHistoryItemDTO> Data { get; set; } = new();
 }
 
