@@ -3,8 +3,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using ParkJomV2.Data;
+using ParkJomV2.Hubs;
+using ParkJomV2.Middleware;
 using ParkJomV2.Models;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Support;
+using ParkJomV2.Services.Support.Workers;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -17,11 +21,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 
 builder.Services.AddScoped<GoogleAuthService>();
-
 builder.Services.AddScoped<JwtTokenService>();
-
 builder.Services.AddScoped<CloudinaryService>();
-
 builder.Services.AddScoped<StripeService>();
 
 builder.Services.AddHttpClient<OsrmService>(client =>
@@ -59,6 +60,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
         options.Events = new JwtBearerEvents
         {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"].FirstOrDefault()
+                                  ?? context.Request.Query["token"].FirstOrDefault();
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && (path.StartsWithSegments("/hubs/support") || path.StartsWithSegments("/api/support/ws")))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            },
             OnTokenValidated = async context =>
             {
                 var userIdText = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -146,6 +158,23 @@ builder.Services.AddScoped<WalletService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserService>();
 
+// Support Module Services
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<SupportWebSocketConnectionManager>();
+builder.Services.AddScoped<ISupportRealtimeNotifier, SupportRealtimeNotifier>();
+builder.Services.AddScoped<SupportAuditService>();
+builder.Services.AddScoped<SupportContextService>();
+builder.Services.AddScoped<SupportWorkflowService>();
+builder.Services.AddScoped<SupportTicketService>();
+builder.Services.AddScoped<ConversationService>();
+builder.Services.AddScoped<IncidentService>();
+builder.Services.AddScoped<DisputeService>();
+builder.Services.AddScoped<SupportOnCallService>();
+
+// Background Hosted Services
+builder.Services.AddHostedService<IncidentEscalationWorker>();
+builder.Services.AddHostedService<SupportSlaWorker>();
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -191,16 +220,20 @@ builder.Services.AddCors(options =>
         });
 });
 
-
-
 var app = builder.Build();
 
 app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+app.UseWebSockets();
+app.UseMiddleware<SupportWebSocketMiddleware>();
+
 app.UseAuthentication();   
 app.UseAuthorization();
+
 app.MapControllers();
+app.MapHub<SupportHub>("/hubs/support");
 
 app.Run();
