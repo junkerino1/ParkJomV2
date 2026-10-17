@@ -89,6 +89,7 @@ public class SupportTicketController : ControllerBase
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(SupportApiResponse<SupportTicketDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<SupportApiResponse<SupportTicketDto>>> CreateTicket([FromForm] CreateSupportTicketRequestDto request)
+    {
         var userId = _currentUserService.UserId;
         if (!userId.HasValue) return Unauthorized();
 
