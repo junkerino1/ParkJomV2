@@ -11,7 +11,7 @@ using System.Security.Claims;
 namespace ParkJomV2.Controllers;
 
 [ApiController]
-[Route("api/parking")]
+[Route("api/public/parking")]
 public class ParkingController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
