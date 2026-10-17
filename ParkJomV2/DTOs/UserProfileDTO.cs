@@ -56,11 +56,6 @@ public class UploadProfilePictureRequest
     public IFormFile Picture { get; set; } = null!;
 }
 
-public class SwitchUserRoleRequest
-{
-    [Required(ErrorMessage = "Target user role is required.")]
-    public UserType UserType { get; set; }
-}
 
 public class DeactivateAccountRequest
 {
