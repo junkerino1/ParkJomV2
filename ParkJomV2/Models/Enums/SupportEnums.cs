@@ -46,15 +46,6 @@ public enum SupportCategory
     General
 }
 
-public enum ConversationStatus
-{
-    Active,
-    WaitingCustomer,
-    WaitingAdmin,
-    Closed,
-    ConvertedToTicket
-}
-
 public enum IncidentStatus
 {
     Open,

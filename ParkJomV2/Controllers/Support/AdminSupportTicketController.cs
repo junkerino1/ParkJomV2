@@ -218,7 +218,7 @@ public class AdminSupportTicketController : ControllerBase
     [ProducesResponseType(typeof(SupportApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<SupportApiResponse<SupportTicketDto>>> CloseTicket(
         int ticketId,
-        [FromBody] CloseConversationRequestDto? request = null)
+        [FromBody] CloseTicketRequestDto? request = null)
     {
         var adminId = _currentUserService.UserId;
         if (!adminId.HasValue) return Unauthorized();

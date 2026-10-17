@@ -279,7 +279,7 @@ public class DisputeService
         dispute.Status = DisputeStatus.MoreInfo;
         dispute.UpdatedAt = now;
 
-        // Add notice to linked ticket if exists
+        // Add notice to linked ticket if exists and set status to WaitingForCustomer
         if (dispute.TicketId.HasValue)
         {
             var msg = new SupportTicketMessage
@@ -287,16 +287,22 @@ public class DisputeService
                 TicketId = dispute.TicketId.Value,
                 SenderUserId = adminUserId,
                 SenderRole = "Admin",
-                Body = $"[Dispute Investigation Update] Evidence Requested: {request.RequiredEvidence}\nMessage: {request.CustomerMessage}\nDeadline: {request.Deadline?.ToString("yyyy-MM-dd") ?? "Within 48 hours"}",
+                Body = $"[Action Required] Supporting documents needed: {request.RequiredEvidence}\nDetails: {request.CustomerMessage}\nDeadline: {request.Deadline?.ToString("yyyy-MM-dd") ?? "Within 48 hours"} (You can upload photos or files directly in this conversation)",
                 CreatedAt = now
             };
             _context.SupportTicketMessages.Add(msg);
+
+            if (dispute.Ticket != null)
+            {
+                dispute.Ticket.Status = SupportTicketStatus.WaitingForCustomer;
+                dispute.Ticket.UpdatedAt = now;
+            }
         }
 
         await _context.SaveChangesAsync();
 
         await _auditService.LogAsync("Dispute", disputeId, dispute.DisputeReference, "EvidenceRequested", adminUserId, "Admin", oldStatus, "MoreInfo", request.RequiredEvidence);
-        await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = disputeId, status = "MoreInfo" }, dispute.CustomerUserId);
+        await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = disputeId, status = "MoreInfo" }, dispute.CustomerUserId, dispute.TicketId);
     }
 
     public async Task<DisputeAdminDto> AssignDisputeAsync(int disputeId, int adminUserId, AssignDisputeRequestDto request)
@@ -335,6 +341,7 @@ public class DisputeService
             .Include(d => d.CustomerUser)
                 .ThenInclude(u => u.Wallet)
             .Include(d => d.Booking)
+            .Include(d => d.Ticket)
             .FirstOrDefaultAsync(d => d.DisputeId == disputeId);
 
         if (dispute == null) throw new KeyNotFoundException("Dispute not found");
@@ -348,10 +355,14 @@ public class DisputeService
         dispute.DecidedAt = now;
         dispute.UpdatedAt = now;
 
+        decimal refundAmount = 0m;
+        string ticketNoticeBody;
+
         if (string.Equals(request.Decision, "ApproveReversal", StringComparison.OrdinalIgnoreCase))
         {
             dispute.Status = DisputeStatus.Approved;
-            var refundAmount = request.Amount ?? (dispute.Amount > 0 ? dispute.Amount : dispute.Booking?.TotalAmount ?? 0m);
+            refundAmount = request.Amount ?? (dispute.Amount > 0 ? dispute.Amount : dispute.Booking?.TotalAmount ?? 0m);
+            dispute.Amount = refundAmount;
 
             if (refundAmount > 0)
             {
@@ -373,20 +384,55 @@ public class DisputeService
                     );
                 }
             }
+
+            ticketNoticeBody = $"[Refund Approved] Your claim has been approved and {dispute.Currency} {refundAmount:F2} has been refunded to your platform wallet. Note: {request.Reason}";
+            if (dispute.Ticket != null)
+            {
+                dispute.Ticket.Status = SupportTicketStatus.Resolved;
+                dispute.Ticket.ResolvedAt = now;
+                dispute.Ticket.ResolutionCode = "RefundApproved";
+                dispute.Ticket.UpdatedAt = now;
+            }
         }
         else if (string.Equals(request.Decision, "Decline", StringComparison.OrdinalIgnoreCase))
         {
             dispute.Status = DisputeStatus.Declined;
+            ticketNoticeBody = $"[Claim Declined] Your fee dispute was not approved. Reason: {request.Reason}";
+            if (dispute.Ticket != null)
+            {
+                dispute.Ticket.Status = SupportTicketStatus.Resolved;
+                dispute.Ticket.ResolvedAt = now;
+                dispute.Ticket.ResolutionCode = "ClaimDeclined";
+                dispute.Ticket.UpdatedAt = now;
+            }
         }
-        else if (string.Equals(request.Decision, "NeedMoreInfo", StringComparison.OrdinalIgnoreCase))
+        else
         {
             dispute.Status = DisputeStatus.MoreInfo;
+            ticketNoticeBody = $"[More Info Needed] Please provide additional information or screenshots in this ticket conversation: {request.Reason}";
+            if (dispute.Ticket != null)
+            {
+                dispute.Ticket.Status = SupportTicketStatus.WaitingForCustomer;
+                dispute.Ticket.UpdatedAt = now;
+            }
+        }
+
+        if (dispute.TicketId.HasValue)
+        {
+            _context.SupportTicketMessages.Add(new SupportTicketMessage
+            {
+                TicketId = dispute.TicketId.Value,
+                SenderUserId = adminUserId,
+                SenderRole = "Admin",
+                Body = ticketNoticeBody,
+                CreatedAt = now
+            });
         }
 
         await _context.SaveChangesAsync();
 
         await _auditService.LogAsync("Dispute", disputeId, dispute.DisputeReference, "DecisionMade", adminUserId, "Admin", oldStatus, dispute.Status.ToString(), $"Decision: {request.Decision}. Reason: {request.Reason}");
-        await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = disputeId, status = dispute.Status.ToString(), decision = dispute.Decision }, dispute.CustomerUserId);
+        await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = disputeId, status = dispute.Status.ToString(), decision = dispute.Decision }, dispute.CustomerUserId, dispute.TicketId);
 
         return (await GetAdminDisputeDetailAsync(disputeId))!;
     }
