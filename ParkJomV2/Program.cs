@@ -102,6 +102,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     context.HttpContext.Items["SuspendedAccount"] = true;
                     context.Fail("The account is suspended.");
                 }
+                else if (string.Equals(
+                    accountStatus,
+                    "Deactivated",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    context.HttpContext.Items["DeactivatedAccount"] = true;
+                    context.Fail("The account is deactivated.");
+                }
             },
             OnChallenge = context =>
             {
@@ -109,10 +117,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
                 var isSuspendedAccount = context.HttpContext.Items.ContainsKey("SuspendedAccount");
+                var isDeactivatedAccount = context.HttpContext.Items.ContainsKey("DeactivatedAccount");
 
                 var (statusCode, message) = isSuspendedAccount
                     ? (StatusCodes.Status403Forbidden, "Your account is suspended. Please contact support.")
-                    : context.AuthenticateFailure switch
+                    : isDeactivatedAccount
+                        ? (StatusCodes.Status403Forbidden, "Your account is deactivated. Please contact support to reactivate.")
+                        : context.AuthenticateFailure switch
                 {
                     SecurityTokenExpiredException => (StatusCodes.Status401Unauthorized, "Your session has expired. Please log in again."),
                     SecurityTokenException => (StatusCodes.Status401Unauthorized, "Invalid token. Please provide a valid authentication token."),
