@@ -48,7 +48,9 @@ public class ParkingSearchController : ControllerBase
                 .Where(ps =>
                         ps.IsPublished &&
                         ps.AvailabilityStatus == AvailabilityStatus.Available &&
-                        ps.Owner.AccountStatus != "Suspended")
+                        ps.Owner.AccountStatus != "Suspended" &&
+                        ps.Owner.AccountStatus != "Deactivated" &&
+                        ps.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved))
                 .AsQueryable();
 
             // Filter by text query — searches Property table for property name
@@ -79,7 +81,6 @@ public class ParkingSearchController : ControllerBase
                 var matchingPropertyIds = propertyIdsByName
                     .Union(propertyIdsByStation)
                     .ToList();
-
 
                 // 5) Filter parking spots by those property IDs
                 queryable = queryable.Where(ps => matchingPropertyIds.Contains(ps.PropertyId));
@@ -171,7 +172,9 @@ public class ParkingSearchController : ControllerBase
                 .Where(ps =>
                         ps.IsPublished &&
                         ps.AvailabilityStatus == AvailabilityStatus.Available &&
-                        ps.Owner.AccountStatus != "Suspended")
+                        ps.Owner.AccountStatus != "Suspended" &&
+                        ps.Owner.AccountStatus != "Deactivated" &&
+                        ps.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved))
                 .Where(ps => ps.Property != null
                     && ps.Property.Latitude >= minLat
                     && ps.Property.Latitude <= maxLat
@@ -195,30 +198,49 @@ public class ParkingSearchController : ControllerBase
                 });
             }
 
-            var totalCount = candidates.Count;
+            // Step 2: Calculate OSRM walking distance from search origin to each candidate property
+            var osrmTasks = candidates.Select(async spot =>
+            {
+                var propLat = (double)(spot.Property?.Latitude ?? 0);
+                var propLon = (double)(spot.Property?.Longitude ?? 0);
+                var (distKm, timeMin) = await _osrmService.GetWalkingDistanceAsync(
+                    (double)latitude, (double)longitude,
+                    propLat, propLon);
+                var fallbackDistKm = HaversineDistanceKm((double)latitude, (double)longitude, propLat, propLon);
+                var effectiveDistKm = distKm ?? fallbackDistKm;
+                var effectiveTimeMin = timeMin ?? (double)(spot.Property?.TimeToStation ?? (decimal)Math.Round(effectiveDistKm * 12.0, 1));
+                return (Spot: spot, DistanceKm: effectiveDistKm, TimeMinutes: effectiveTimeMin);
+            }).ToList();
+
+            var withDistances = (await Task.WhenAll(osrmTasks))
+                .Where(item => item.DistanceKm <= radiusKm)
+                .OrderBy(item => item.DistanceKm)
+                .ToList();
+
+            var totalCount = withDistances.Count;
 
             // paginate
-            var pagedSpots = candidates
+            var pagedSpots = withDistances
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToList();
 
-            var result = pagedSpots.Select(spot => new ParkingSearchResultDTO
+            var result = pagedSpots.Select(item => new ParkingSearchResultDTO
             {
-                ParkingSpotId = spot.ParkingSpotId,
-                ParkingLabel = spot.ParkingLabel,
-                PropertyId = spot.PropertyId,
-                PropertyName = spot.Property?.PropertyName,
-                Address = spot.Property?.Address,
-                Latitude = spot.Property?.Latitude ?? 0,
-                Longitude = spot.Property?.Longitude ?? 0,
-                StationName = spot.Property?.Station?.StationName,
-                DistanceToStation = spot.Property?.DistanceToStation ?? 0,
-                TimeToStationInMinutes = spot.Property?.TimeToStation ?? 0,
-                AvailabilityStatus = spot.AvailabilityStatus.ToString(),
-                MonthlyRate = spot.MonthlyRate,
-                DailyRate = spot.DailyRate,
-                PrimaryImageUrl = spot.ParkingSpotImages
+                ParkingSpotId = item.Spot.ParkingSpotId,
+                ParkingLabel = item.Spot.ParkingLabel,
+                PropertyId = item.Spot.PropertyId,
+                PropertyName = item.Spot.Property?.PropertyName,
+                Address = item.Spot.Property?.Address,
+                Latitude = item.Spot.Property?.Latitude ?? 0,
+                Longitude = item.Spot.Property?.Longitude ?? 0,
+                StationName = item.Spot.Property?.Station?.StationName,
+                DistanceToStation = (decimal)Math.Round(item.DistanceKm, 2),
+                TimeToStationInMinutes = (decimal)Math.Round(item.TimeMinutes, 1),
+                AvailabilityStatus = item.Spot.AvailabilityStatus.ToString(),
+                MonthlyRate = item.Spot.MonthlyRate,
+                DailyRate = item.Spot.DailyRate,
+                PrimaryImageUrl = item.Spot.ParkingSpotImages
                     .Where(psi => psi.IsPrimary)
                     .Select(psi => psi.MediaFile?.SecureUrl)
                     .FirstOrDefault()
@@ -246,6 +268,17 @@ public class ParkingSearchController : ControllerBase
                 Message = "An error occurred while finding nearby parking spots"
             });
         }
+    }
+
+    private static double HaversineDistanceKm(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double R = 6371.0;
+        var dLat = (lat2 - lat1) * Math.PI / 180.0;
+        var dLon = (lon2 - lon1) * Math.PI / 180.0;
+        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                Math.Cos(lat1 * Math.PI / 180.0) * Math.Cos(lat2 * Math.PI / 180.0) *
+                Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        return R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
     }
 
     /// <summary>
@@ -277,7 +310,9 @@ public class ParkingSearchController : ControllerBase
                 .Where(ps =>
                         ps.IsPublished &&
                         ps.AvailabilityStatus == AvailabilityStatus.Available &&
-                        ps.Owner.AccountStatus != "Suspended")
+                        ps.Owner.AccountStatus != "Suspended" &&
+                        ps.Owner.AccountStatus != "Deactivated" &&
+                        ps.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved))
                 .AsQueryable();
 
             // Filter by price

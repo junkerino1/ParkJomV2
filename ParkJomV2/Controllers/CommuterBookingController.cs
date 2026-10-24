@@ -242,7 +242,11 @@ public class CommuterBookingsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        var userId = user!.UserId;
+        if (user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, Error(StatusCodes.Status403Forbidden, "Authenticated user not found."));
+        }
+        var userId = user.UserId;
 
         var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim();
         if (userId <= 0 || string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
@@ -511,6 +515,21 @@ public class CommuterBookingsController : ControllerBase
             }
 
             var now = DateTime.UtcNow;
+            var malaysiaToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
+            var bookingStartDate = DateOnly.FromDateTime(booking.StartDate);
+            if (booking.BookingStatus == BookingStatus.Active ||
+                booking.BookingStatus == BookingStatus.Expired ||
+                malaysiaToday >= bookingStartDate)
+            {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Cannot cancel started or expired booking (bookingId={request.BookingId})");
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Bookings cannot be cancelled once the booking period has started."
+                });
+            }
+
             var refundAmount = 0m;
 
             // Only bookings that were actually paid have a ledger to reverse (legacy pending
@@ -554,9 +573,16 @@ public class CommuterBookingsController : ControllerBase
                         });
                     }
 
-                    refundAmount = booking.TotalAmount;
-                    var ownerPayout = booking.OwnerPayoutAmount;
-                    var commission = booking.PlatformCommissionAmount;
+                    var daysUntilStart = bookingStartDate.DayNumber - malaysiaToday.DayNumber;
+                    var refundRate = daysUntilStart >= 3 ? 1.0m : 0.5m;
+                    var alreadyRefunded = booking.RefundAmount;
+                    var maxRefundable = Math.Max(0m, booking.TotalAmount - alreadyRefunded);
+                    refundAmount = Math.Min(maxRefundable, Math.Round(booking.TotalAmount * refundRate, 2, MidpointRounding.AwayFromZero));
+                    var effectiveRatio = booking.TotalAmount > 0 ? refundAmount / booking.TotalAmount : 0m;
+                    var ownerPayout = Math.Min(ownerWallet.OnHold, Math.Round(booking.OwnerPayoutAmount * effectiveRatio, 2, MidpointRounding.AwayFromZero));
+                    var commission = Math.Round(booking.PlatformCommissionAmount * effectiveRatio, 2, MidpointRounding.AwayFromZero);
+
+
 
                     // 1) Refund the renter's wallet balance.
                     _walletService.Refund(renterWallet, refundAmount, now);
@@ -570,7 +596,7 @@ public class CommuterBookingsController : ControllerBase
                     booking.BookingStatus = BookingStatus.Cancelled;
                     booking.CancellationReason = request.CancellationReason;
                     booking.CancelledAt = now;
-                    booking.RefundAmount = refundAmount;
+                    booking.RefundAmount += refundAmount;
                     booking.UpdatedAt = now;
 
                     // Write the refund ledger rows: renter + refund, owner & platform reversals.

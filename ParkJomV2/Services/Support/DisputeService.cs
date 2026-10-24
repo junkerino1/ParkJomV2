@@ -341,10 +341,15 @@ public class DisputeService
             .Include(d => d.CustomerUser)
                 .ThenInclude(u => u.Wallet)
             .Include(d => d.Booking)
+                .ThenInclude(b => b!.ParkingSpot)
             .Include(d => d.Ticket)
             .FirstOrDefaultAsync(d => d.DisputeId == disputeId);
 
         if (dispute == null) throw new KeyNotFoundException("Dispute not found");
+        if (dispute.Status == DisputeStatus.Approved)
+        {
+            throw new InvalidOperationException("This dispute has already been approved and refunded.");
+        }
 
         var now = DateTime.UtcNow;
         var oldStatus = dispute.Status.ToString();
@@ -361,7 +366,21 @@ public class DisputeService
         if (string.Equals(request.Decision, "ApproveReversal", StringComparison.OrdinalIgnoreCase))
         {
             dispute.Status = DisputeStatus.Approved;
-            refundAmount = request.Amount ?? (dispute.Amount > 0 ? dispute.Amount : dispute.Booking?.TotalAmount ?? 0m);
+            var requestedRefund = request.Amount ?? (dispute.Amount > 0 ? dispute.Amount : dispute.Booking?.TotalAmount ?? 0m);
+            if (dispute.Booking != null)
+            {
+                var alreadyRefunded = dispute.Booking.RefundAmount;
+                var maxRefundable = Math.Max(0m, dispute.Booking.TotalAmount - alreadyRefunded);
+                if (maxRefundable <= 0m)
+                {
+                    throw new InvalidOperationException("The associated booking has already been fully refunded.");
+                }
+                refundAmount = Math.Min(requestedRefund, maxRefundable);
+            }
+            else
+            {
+                refundAmount = requestedRefund;
+            }
             dispute.Amount = refundAmount;
 
             if (refundAmount > 0)
@@ -369,8 +388,7 @@ public class DisputeService
                 var wallet = dispute.CustomerUser.Wallet;
                 if (wallet != null)
                 {
-                    wallet.Balance += refundAmount;
-                    wallet.UpdatedAt = now;
+                    _walletService.Refund(wallet, refundAmount, now);
 
                     _transactionService.Create(
                         wallet.WalletId,
@@ -382,6 +400,78 @@ public class DisputeService
                         $"REF-DSP-{dispute.DisputeReference}",
                         now
                     );
+                }
+
+                if (dispute.Booking != null)
+                {
+                    var ratio = dispute.Booking.TotalAmount > 0
+                        ? refundAmount / dispute.Booking.TotalAmount
+                        : 1m;
+                    var ownerReversal = Math.Round(dispute.Booking.OwnerPayoutAmount * ratio, 2, MidpointRounding.AwayFromZero);
+                    var commissionReversal = Math.Round(dispute.Booking.PlatformCommissionAmount * ratio, 2, MidpointRounding.AwayFromZero);
+
+                    if (dispute.Booking.ParkingSpot != null && ownerReversal > 0)
+                    {
+                        var ownerWallet = await _context.Wallets
+                            .FirstOrDefaultAsync(w => w.UserId == dispute.Booking.ParkingSpot.OwnerId && w.Status == WalletStatus.Active);
+                        if (ownerWallet != null)
+                        {
+                            var holdToRelease = Math.Min(ownerWallet.OnHold, ownerReversal);
+                            if (holdToRelease > 0)
+                            {
+                                _walletService.ReleaseHold(ownerWallet, holdToRelease, now);
+                            }
+                            var balanceDeduction = ownerReversal - holdToRelease;
+                            if (balanceDeduction > 0)
+                            {
+                                _walletService.Deduct(ownerWallet, balanceDeduction, now);
+                            }
+
+                            _transactionService.Create(
+                                ownerWallet.WalletId,
+                                null,
+                                dispute.Booking,
+                                TransactionType.Refund,
+                                -ownerReversal,
+                                PaymentMethod.Wallet,
+                                $"REF-DSP-{dispute.DisputeReference}",
+                                now
+                            );
+                        }
+                    }
+
+                    if (commissionReversal > 0)
+                    {
+                        var platformWallet = await _context.PlatformWallets
+                            .AsNoTracking()
+                            .OrderBy(item => item.PlatformWalletId)
+                            .FirstOrDefaultAsync();
+                        if (platformWallet != null)
+                        {
+                            await _walletService.ApplyRefundToPlatformAsync(platformWallet, commissionReversal, now, CancellationToken.None);
+
+                            _transactionService.Create(
+                                null,
+                                platformWallet.PlatformWalletId,
+                                dispute.Booking,
+                                TransactionType.Refund,
+                                -commissionReversal,
+                                PaymentMethod.Wallet,
+                                $"REF-DSP-{dispute.DisputeReference}",
+                                now
+                            );
+                        }
+                    }
+
+                    dispute.Booking.RefundAmount += refundAmount;
+                    if (dispute.Booking.RefundAmount >= dispute.Booking.TotalAmount &&
+                        dispute.Booking.BookingStatus != BookingStatus.Completed)
+                    {
+                        dispute.Booking.BookingStatus = BookingStatus.Cancelled;
+                        dispute.Booking.CancelledAt ??= now;
+                        dispute.Booking.CancellationReason ??= $"Refunded via dispute {dispute.DisputeReference}";
+                    }
+                    dispute.Booking.UpdatedAt = now;
                 }
             }
 

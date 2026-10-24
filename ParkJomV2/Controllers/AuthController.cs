@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
@@ -7,6 +8,7 @@ using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using System.Text.Json;
 
 namespace ParkJomV2.Controllers
@@ -124,13 +126,34 @@ namespace ParkJomV2.Controllers
                     });
                 }
 
+                if (string.Equals(
+                    user.AccountStatus,
+                    "Deactivated",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    await _accessLogService.LogAsync(
+                        User,
+                        "GoogleLogin",
+                        false,
+                        $"Deactivated account login attempt: UserId={user.UserId}");
+
+                    return StatusCode(StatusCodes.Status403Forbidden, new AuthResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Your account is deactivated. Please contact support to reactivate."
+                    });
+                }
+
                 user.LastLoginAt = DateTime.UtcNow;
                 user.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
             }
 
-            // Step 4 - Profile incomplete
+            var token = _jwtService.GenerateToken(user);
+
+            // Step 4 - Profile incomplete (return JWT so CompleteProfile is authenticated)
             if (!user.IsProfileComplete)
             {
                 await _accessLogService.LogAsync(User, "GoogleLogin", true, "Profile incomplete");
@@ -139,15 +162,13 @@ namespace ParkJomV2.Controllers
                     Code = StatusCodes.Status200OK,
                     Success = true,
                     Message = "Please complete your profile.",
+                    JwtToken = token,
                     IsProfileComplete = false,
                     User = MapUser(user)
                 });
             }
 
-            // Step 5 - Generate JWT
-
-            var token = _jwtService.GenerateToken(user);
-
+            // Step 5 - Login complete
             await _accessLogService.LogAsync(User, "GoogleLogin", true, $"UserId={user.UserId}");
 
             return Ok(new AuthResponse
@@ -161,6 +182,7 @@ namespace ParkJomV2.Controllers
             });
         }
 
+        [Authorize]
         [HttpPost("complete-profile")]
         public async Task<ActionResult<AuthResponse>> CompleteProfile([FromBody] CompleteProfileRequest request)
         {
@@ -175,13 +197,36 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            var claimUserIdText = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!int.TryParse(claimUserIdText, out var authenticatedUserId))
+            {
+                await _accessLogService.LogAsync(User, "CompleteProfile", false, "Missing authenticated user claim");
+                return Unauthorized(new AuthResponse
+                {
+                    Code = StatusCodes.Status401Unauthorized,
+                    Success = false,
+                    Message = "Authentication required."
+                });
+            }
+
+            if (request.UserId.HasValue && request.UserId.Value != authenticatedUserId)
+            {
+                await _accessLogService.LogAsync(User, "CompleteProfile", false, $"UserId mismatch (claim={authenticatedUserId}, request={request.UserId})");
+                return StatusCode(StatusCodes.Status403Forbidden, new AuthResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "You can only complete your own profile."
+                });
+            }
+
             var user = await _context.Users
                 .Include(u => u.Wallet)
-                .FirstOrDefaultAsync(u => u.UserId == request.UserId);
+                .FirstOrDefaultAsync(u => u.UserId == authenticatedUserId);
 
             if (user == null)
             {
-                await _accessLogService.LogAsync(User, "CompleteProfile", false, $"User not found (id={request.UserId})");
+                await _accessLogService.LogAsync(User, "CompleteProfile", false, $"User not found (id={authenticatedUserId})");
                 return NotFound(new AuthResponse
                 {
                     Code = StatusCodes.Status404NotFound,
@@ -209,23 +254,53 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            if (string.Equals(
+                user.AccountStatus,
+                "Deactivated",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                await _accessLogService.LogAsync(
+                    User,
+                    "CompleteProfile",
+                    false,
+                    $"Deactivated account attempted profile completion: UserId={user.UserId}");
+
+                return StatusCode(StatusCodes.Status403Forbidden, new AuthResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Your account is deactivated. Please contact support to reactivate."
+                });
+            }
+
+            if (user.IsProfileComplete)
+            {
+                await _accessLogService.LogAsync(User, "CompleteProfile", false, $"Profile already complete: UserId={user.UserId}");
+                return BadRequest(new AuthResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Profile is already completed."
+                });
+            }
+
+            if (user.UserType == UserType.Admin || request.UserType == UserType.Admin)
+            {
+                await _accessLogService.LogAsync(User, "CompleteProfile", false, $"Admin role rejected: UserId={user.UserId}");
+                return BadRequest(new AuthResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Admin role cannot be self-assigned."
+                });
+            }
+
             user.PhoneNumber = request.PhoneNumber;
             user.IsProfileComplete = true;
             user.UpdatedAt = DateTime.UtcNow;
 
-            // Allow user to set their role during registration
             if (request.UserType.HasValue)
             {
-                if (request.UserType.Value == UserType.Admin)
-                {
-                    return BadRequest(new AuthResponse
-                    {
-                        Code = StatusCodes.Status400BadRequest,
-                        Success = false,
-                        Message = "Admin role cannot be self-assigned."
-                    });
-                }
-
                 user.UserType = request.UserType.Value;
             }
 
@@ -270,6 +345,7 @@ namespace ParkJomV2.Controllers
                 UserType = user.UserType,
                 PhoneNumber = user.PhoneNumber,
                 IsProfileComplete = user.IsProfileComplete,
+                AccountStatus = user.AccountStatus,
                 CreatedAt = user.CreatedAt,
                 LastLoginAt = user.LastLoginAt ?? DateTime.UtcNow
             };

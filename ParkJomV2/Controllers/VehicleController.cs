@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
@@ -259,7 +259,9 @@ namespace ParkJomV2.Controllers
                 }
 
                 var hasActiveBookings = vehicle.Bookings.Any(b =>
-                    b.BookingStatus == BookingStatus.Pending || b.BookingStatus == BookingStatus.Confirmed);
+                    b.BookingStatus == BookingStatus.Pending ||
+                    b.BookingStatus == BookingStatus.Confirmed ||
+                    b.BookingStatus == BookingStatus.Active);
 
                 if (hasActiveBookings)
                 {
@@ -269,6 +271,17 @@ namespace ParkJomV2.Controllers
                         Code = StatusCodes.Status400BadRequest,
                         Success = false,
                         Message = "Cannot delete a vehicle with active bookings."
+                    });
+                }
+
+                if (vehicle.Bookings.Count > 0)
+                {
+                    await _accessLogService.LogAsync(User, "DeleteVehicle", false, $"Vehicle referenced by booking history (id={id})");
+                    return BadRequest(new ErrorResponse
+                    {
+                        Code = StatusCodes.Status400BadRequest,
+                        Success = false,
+                        Message = "Cannot delete a vehicle that is referenced in your booking history."
                     });
                 }
 

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.AspNetCore.Components.Forms;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using System.ComponentModel.DataAnnotations;
@@ -184,6 +184,7 @@ public class ParkingSpotImageDTO
     public string? ResourceType { get; set; }
     public string? Format { get; set; }
     public string? OriginalFileName { get; set; }
+    public string? SecureUrl { get; set; }
     public DateTime UploadedAt { get; set; }
 }
 

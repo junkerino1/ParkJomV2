@@ -101,6 +101,15 @@ public class AdminSupportDisputeController : ControllerBase
                 Data = evidence
             });
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new SupportApiResponse<object>
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = ex.Message
+            });
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new SupportApiResponse<object>
@@ -133,6 +142,15 @@ public class AdminSupportDisputeController : ControllerBase
                 Code = StatusCodes.Status200OK,
                 Success = true,
                 Message = "Evidence request sent to customer"
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new SupportApiResponse<object>
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = ex.Message
             });
         }
         catch (KeyNotFoundException ex)
@@ -170,6 +188,15 @@ public class AdminSupportDisputeController : ControllerBase
                 Data = result
             });
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new SupportApiResponse<object>
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = ex.Message
+            });
+        }
         catch (KeyNotFoundException ex)
         {
             return NotFound(new SupportApiResponse<object>
@@ -203,6 +230,15 @@ public class AdminSupportDisputeController : ControllerBase
                 Success = true,
                 Message = "Dispute assigned successfully",
                 Data = result
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new SupportApiResponse<object>
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = ex.Message
             });
         }
         catch (KeyNotFoundException ex)

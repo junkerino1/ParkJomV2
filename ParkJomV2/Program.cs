@@ -38,6 +38,13 @@ builder.Services.AddHttpClient<NominatimService>(client =>
 });
 
 builder.Services.AddScoped<IPropertyService, PropertyService>();
+builder.Services.AddSingleton<GtfsService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<GtfsRealtimeService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.Add("User-Agent", "ParkJomV2/1.0 (Smart Transit Parking Platform)");
+});
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -107,8 +114,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     "Deactivated",
                     StringComparison.OrdinalIgnoreCase))
                 {
-                    context.HttpContext.Items["DeactivatedAccount"] = true;
-                    context.Fail("The account is deactivated.");
+                    // Allow deactivated users to reach support endpoints to request reactivation.
+                    var requestPath = context.HttpContext.Request.Path;
+                    var isSupportEndpoint = requestPath.StartsWithSegments("/api/support")
+                        || requestPath.StartsWithSegments("/hubs/support");
+                    if (!isSupportEndpoint)
+                    {
+                        context.HttpContext.Items["DeactivatedAccount"] = true;
+                        context.Fail("The account is deactivated.");
+                    }
                 }
             },
             OnChallenge = context =>
