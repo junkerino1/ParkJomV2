@@ -1064,12 +1064,6 @@ namespace ParkJomV2.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<int?>("ConversationId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ConversationMessageId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -1101,10 +1095,6 @@ namespace ParkJomV2.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("AttachmentId");
-
-                    b.HasIndex("ConversationId");
-
-                    b.HasIndex("ConversationMessageId");
 
                     b.HasIndex("MediaFileId");
 
@@ -1172,120 +1162,6 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("ObjectType", "ObjectId");
 
                     b.ToTable("SupportAuditEvents");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.SupportConversation", b =>
-                {
-                    b.Property<int>("ConversationId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ConversationId"));
-
-                    b.Property<int?>("AssignedAdminUserId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Channel")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime?>("ClosedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ClosingReason")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ContextSnapshotJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ConversationReference")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("CurrentBookingId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("CurrentParkingSpotId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("CustomerUserId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("LastMessageAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("ConversationId");
-
-                    b.HasIndex("AssignedAdminUserId");
-
-                    b.HasIndex("ConversationReference")
-                        .IsUnique();
-
-                    b.HasIndex("CurrentBookingId");
-
-                    b.HasIndex("CurrentParkingSpotId");
-
-                    b.HasIndex("CustomerUserId");
-
-                    b.ToTable("SupportConversations");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.SupportConversationMessage", b =>
-                {
-                    b.Property<int>("MessageId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("MessageId"));
-
-                    b.Property<string>("Body")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("ConversationId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsInternal")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("MessageType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("SenderRole")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<int?>("SenderUserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("MessageId");
-
-                    b.HasIndex("ConversationId");
-
-                    b.HasIndex("SenderUserId");
-
-                    b.ToTable("SupportConversationMessages");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.SupportNotificationAttempt", b =>
@@ -1478,9 +1354,6 @@ namespace ParkJomV2.Migrations
                     b.Property<DateTime?>("ClosedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("ConversationId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -1506,6 +1379,10 @@ namespace ParkJomV2.Migrations
                     b.Property<string>("InternalSummary")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("IssueCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<int?>("OperationalIncidentId")
                         .HasColumnType("int");
@@ -1555,16 +1432,11 @@ namespace ParkJomV2.Migrations
                     b.Property<int?>("VehicleId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("WorkflowRunId")
-                        .HasColumnType("int");
-
                     b.HasKey("TicketId");
 
                     b.HasIndex("AssignedAdminUserId");
 
                     b.HasIndex("BookingId");
-
-                    b.HasIndex("ConversationId");
 
                     b.HasIndex("CreatedByUserId");
 
@@ -1580,8 +1452,6 @@ namespace ParkJomV2.Migrations
                         .IsUnique();
 
                     b.HasIndex("VehicleId");
-
-                    b.HasIndex("WorkflowRunId");
 
                     b.ToTable("SupportTickets");
                 });
@@ -1622,97 +1492,6 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("TicketId");
 
                     b.ToTable("SupportTicketMessages");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.SupportWorkflowRun", b =>
-                {
-                    b.Property<int>("WorkflowRunId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("WorkflowRunId"));
-
-                    b.Property<string>("AnswersJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("AssignedTeam")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("ChecksResultJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("ClientRequestId")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("ContextSnapshotJson")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("CustomerMessage")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("CustomerUserId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("DisputeId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("IncidentId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Outcome")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("Priority")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("RunReference")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("TicketId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("WorkflowKey")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("WorkflowVersion")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.HasKey("WorkflowRunId");
-
-                    b.HasIndex("CustomerUserId");
-
-                    b.HasIndex("DisputeId");
-
-                    b.HasIndex("IncidentId");
-
-                    b.HasIndex("RunReference")
-                        .IsUnique();
-
-                    b.HasIndex("TicketId");
-
-                    b.ToTable("SupportWorkflowRuns");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Transaction", b =>
@@ -2331,16 +2110,6 @@ namespace ParkJomV2.Migrations
 
             modelBuilder.Entity("ParkJomV2.Models.SupportAttachment", b =>
                 {
-                    b.HasOne("ParkJomV2.Models.SupportConversation", "Conversation")
-                        .WithMany()
-                        .HasForeignKey("ConversationId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("ParkJomV2.Models.SupportConversationMessage", "ConversationMessage")
-                        .WithMany("Attachments")
-                        .HasForeignKey("ConversationMessageId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.HasOne("ParkJomV2.Models.MediaFile", "MediaFile")
                         .WithMany()
                         .HasForeignKey("MediaFileId")
@@ -2362,10 +2131,6 @@ namespace ParkJomV2.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
-                    b.Navigation("Conversation");
-
-                    b.Navigation("ConversationMessage");
-
                     b.Navigation("MediaFile");
 
                     b.Navigation("Ticket");
@@ -2383,56 +2148,6 @@ namespace ParkJomV2.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("ActorUser");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.SupportConversation", b =>
-                {
-                    b.HasOne("ParkJomV2.Models.User", "AssignedAdminUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedAdminUserId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("ParkJomV2.Models.Booking", "CurrentBooking")
-                        .WithMany()
-                        .HasForeignKey("CurrentBookingId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("ParkJomV2.Models.ParkingSpot", "CurrentParkingSpot")
-                        .WithMany()
-                        .HasForeignKey("CurrentParkingSpotId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("ParkJomV2.Models.User", "CustomerUser")
-                        .WithMany()
-                        .HasForeignKey("CustomerUserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.Navigation("AssignedAdminUser");
-
-                    b.Navigation("CurrentBooking");
-
-                    b.Navigation("CurrentParkingSpot");
-
-                    b.Navigation("CustomerUser");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.SupportConversationMessage", b =>
-                {
-                    b.HasOne("ParkJomV2.Models.SupportConversation", "Conversation")
-                        .WithMany("Messages")
-                        .HasForeignKey("ConversationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ParkJomV2.Models.User", "SenderUser")
-                        .WithMany()
-                        .HasForeignKey("SenderUserId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.Navigation("Conversation");
-
-                    b.Navigation("SenderUser");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.SupportNotificationAttempt", b =>
@@ -2502,11 +2217,6 @@ namespace ParkJomV2.Migrations
                         .HasForeignKey("BookingId")
                         .OnDelete(DeleteBehavior.NoAction);
 
-                    b.HasOne("ParkJomV2.Models.SupportConversation", "Conversation")
-                        .WithMany("ConvertedTickets")
-                        .HasForeignKey("ConversationId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.HasOne("ParkJomV2.Models.User", "CreatedByUser")
                         .WithMany()
                         .HasForeignKey("CreatedByUserId")
@@ -2539,16 +2249,9 @@ namespace ParkJomV2.Migrations
                         .HasForeignKey("VehicleId")
                         .OnDelete(DeleteBehavior.NoAction);
 
-                    b.HasOne("ParkJomV2.Models.SupportWorkflowRun", "WorkflowRun")
-                        .WithMany()
-                        .HasForeignKey("WorkflowRunId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
                     b.Navigation("AssignedAdminUser");
 
                     b.Navigation("Booking");
-
-                    b.Navigation("Conversation");
 
                     b.Navigation("CreatedByUser");
 
@@ -2561,8 +2264,6 @@ namespace ParkJomV2.Migrations
                     b.Navigation("ParkingSpot");
 
                     b.Navigation("Vehicle");
-
-                    b.Navigation("WorkflowRun");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.SupportTicketMessage", b =>
@@ -2579,38 +2280,6 @@ namespace ParkJomV2.Migrations
                         .IsRequired();
 
                     b.Navigation("SenderUser");
-
-                    b.Navigation("Ticket");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.SupportWorkflowRun", b =>
-                {
-                    b.HasOne("ParkJomV2.Models.User", "CustomerUser")
-                        .WithMany()
-                        .HasForeignKey("CustomerUserId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("ParkJomV2.Models.DisputeInvestigation", "Dispute")
-                        .WithMany()
-                        .HasForeignKey("DisputeId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("ParkJomV2.Models.OperationalIncident", "Incident")
-                        .WithMany()
-                        .HasForeignKey("IncidentId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("ParkJomV2.Models.SupportTicket", "Ticket")
-                        .WithMany()
-                        .HasForeignKey("TicketId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.Navigation("CustomerUser");
-
-                    b.Navigation("Dispute");
-
-                    b.Navigation("Incident");
 
                     b.Navigation("Ticket");
                 });
@@ -2749,18 +2418,6 @@ namespace ParkJomV2.Migrations
             modelBuilder.Entity("ParkJomV2.Models.Station", b =>
                 {
                     b.Navigation("Properties");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.SupportConversation", b =>
-                {
-                    b.Navigation("ConvertedTickets");
-
-                    b.Navigation("Messages");
-                });
-
-            modelBuilder.Entity("ParkJomV2.Models.SupportConversationMessage", b =>
-                {
-                    b.Navigation("Attachments");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.SupportTicket", b =>

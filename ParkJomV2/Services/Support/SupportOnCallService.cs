@@ -24,11 +24,11 @@ public class SupportOnCallService
 
     public async Task<SupportDashboardDto> GetDashboardMetricsAsync()
     {
-        var waitingConvs = await _context.SupportConversations
-            .CountAsync(c => c.Status == ConversationStatus.Active || c.Status == ConversationStatus.WaitingAdmin);
-
         var openTickets = await _context.SupportTickets
             .CountAsync(t => t.Status != SupportTicketStatus.Resolved && t.Status != SupportTicketStatus.Closed && t.Status != SupportTicketStatus.Cancelled);
+
+        var actionRequiredTickets = await _context.SupportTickets
+            .CountAsync(t => t.Status == SupportTicketStatus.WaitingForCustomer);
 
         var activeIncidents = await _context.OperationalIncidents
             .CountAsync(i => i.Status == IncidentStatus.Open || i.Status == IncidentStatus.Acknowledged || i.Status == IncidentStatus.Monitoring || i.Status == IncidentStatus.Escalated);
@@ -42,31 +42,22 @@ public class SupportOnCallService
                 && ((t.FirstResponseDueAt.HasValue && t.FirstResponseDueAt.Value <= now.AddMinutes(30) && !t.FirstResponseAt.HasValue)
                     || (t.ResolutionDueAt.HasValue && t.ResolutionDueAt.Value <= now.AddHours(2) && !t.ResolvedAt.HasValue)));
 
-        var recentTickets = await _context.SupportTickets
+        var recentTicketEntities = await _context.SupportTickets
+            .AsNoTracking()
             .OrderByDescending(t => t.CreatedAt)
             .Take(5)
             .Include(t => t.CustomerUser)
             .Include(t => t.AssignedAdminUser)
-            .Select(t => new SupportTicketSummaryDto
-            {
-                TicketId = t.TicketId,
-                TicketReference = t.TicketReference,
-                Subject = t.Subject,
-                Status = t.Status.ToString(),
-                Priority = t.Priority.ToString(),
-                Category = t.Category.ToString(),
-                CustomerUserId = t.CustomerUserId,
-                CustomerName = $"{t.CustomerUser.FirstName} {t.CustomerUser.LastName}".Trim(),
-                CustomerEmail = t.CustomerUser.Email,
-                AssignedAdminName = t.AssignedAdminUser != null ? $"{t.AssignedAdminUser.FirstName} {t.AssignedAdminUser.LastName}".Trim() : null,
-                AssignedTeam = t.AssignedTeam,
-                CreatedAt = t.CreatedAt,
-                FirstResponseDueAt = t.FirstResponseDueAt,
-                ResolutionDueAt = t.ResolutionDueAt
-            })
+            .Include(t => t.Booking)
+            .Include(t => t.ParkingSpot)
+            .Include(t => t.DisputeInvestigation)
+            .Include(t => t.Messages)
             .ToListAsync();
 
+        var recentTickets = recentTicketEntities.Select(SupportTicketService.MapToSummaryDto).ToList();
+
         var recentIncidents = await _context.OperationalIncidents
+            .AsNoTracking()
             .OrderByDescending(i => i.CreatedAt)
             .Take(5)
             .Select(i => new OperationalIncidentSummaryDto
@@ -83,39 +74,15 @@ public class SupportOnCallService
             })
             .ToListAsync();
 
-        var activeConversations = await _context.SupportConversations
-            .Where(c => c.Status == ConversationStatus.Active || c.Status == ConversationStatus.WaitingAdmin)
-            .OrderByDescending(c => c.LastMessageAt ?? c.CreatedAt)
-            .Take(5)
-            .Include(c => c.CustomerUser)
-            .Include(c => c.AssignedAdminUser)
-            .Select(c => new ConversationDto
-            {
-                ConversationId = c.ConversationId,
-                ConversationReference = c.ConversationReference,
-                CustomerUserId = c.CustomerUserId,
-                CustomerName = $"{c.CustomerUser.FirstName} {c.CustomerUser.LastName}".Trim(),
-                CustomerEmail = c.CustomerUser.Email,
-                Channel = c.Channel,
-                Status = c.Status.ToString(),
-                AssignedAdminUserId = c.AssignedAdminUserId,
-                AssignedAdminName = c.AssignedAdminUser != null ? $"{c.AssignedAdminUser.FirstName} {c.AssignedAdminUser.LastName}".Trim() : null,
-                StartedAt = c.StartedAt,
-                LastMessageAt = c.LastMessageAt,
-                MessageCount = c.Messages.Count
-            })
-            .ToListAsync();
-
         return new SupportDashboardDto
         {
-            WaitingConversationsCount = waitingConvs,
             OpenTicketsCount = openTickets,
+            ActionRequiredTicketsCount = actionRequiredTickets,
             ActiveIncidentsCount = activeIncidents,
             OpenDisputesCount = openDisputes,
             SlaRiskTicketsCount = slaRiskTickets,
             RecentTickets = recentTickets,
-            RecentIncidents = recentIncidents,
-            ActiveConversations = activeConversations
+            RecentIncidents = recentIncidents
         };
     }
 

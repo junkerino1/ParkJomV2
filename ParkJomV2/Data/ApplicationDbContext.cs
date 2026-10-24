@@ -40,11 +40,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<Review> Reviews => Set<Review>();
 
     // Support Module
-    public DbSet<SupportConversation> SupportConversations => Set<SupportConversation>();
-    public DbSet<SupportConversationMessage> SupportConversationMessages => Set<SupportConversationMessage>();
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
     public DbSet<SupportTicketMessage> SupportTicketMessages => Set<SupportTicketMessage>();
-    public DbSet<SupportWorkflowRun> SupportWorkflowRuns => Set<SupportWorkflowRun>();
     public DbSet<OperationalIncident> OperationalIncidents => Set<OperationalIncident>();
     public DbSet<IncidentTicket> IncidentTickets => Set<IncidentTicket>();
     public DbSet<DisputeInvestigation> DisputeInvestigations => Set<DisputeInvestigation>();
@@ -308,52 +305,6 @@ public class ApplicationDbContext : DbContext
         // Support Module Configurations
         // =========================
 
-        // SupportConversation
-        modelBuilder.Entity<SupportConversation>()
-            .HasIndex(c => c.ConversationReference)
-            .IsUnique();
-
-        modelBuilder.Entity<SupportConversation>()
-            .Property(c => c.Status)
-            .HasConversion<string>();
-
-        modelBuilder.Entity<SupportConversation>()
-            .HasOne(c => c.CustomerUser)
-            .WithMany()
-            .HasForeignKey(c => c.CustomerUserId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportConversation>()
-            .HasOne(c => c.AssignedAdminUser)
-            .WithMany()
-            .HasForeignKey(c => c.AssignedAdminUserId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportConversation>()
-            .HasOne(c => c.CurrentBooking)
-            .WithMany()
-            .HasForeignKey(c => c.CurrentBookingId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportConversation>()
-            .HasOne(c => c.CurrentParkingSpot)
-            .WithMany()
-            .HasForeignKey(c => c.CurrentParkingSpotId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        // SupportConversationMessage
-        modelBuilder.Entity<SupportConversationMessage>()
-            .HasOne(m => m.Conversation)
-            .WithMany(c => c.Messages)
-            .HasForeignKey(m => m.ConversationId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        modelBuilder.Entity<SupportConversationMessage>()
-            .HasOne(m => m.SenderUser)
-            .WithMany()
-            .HasForeignKey(m => m.SenderUserId)
-            .OnDelete(DeleteBehavior.NoAction);
-
         // SupportTicket
         modelBuilder.Entity<SupportTicket>()
             .HasIndex(t => t.TicketReference)
@@ -398,18 +349,6 @@ public class ApplicationDbContext : DbContext
             .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<SupportTicket>()
-            .HasOne(t => t.Conversation)
-            .WithMany(c => c.ConvertedTickets)
-            .HasForeignKey(t => t.ConversationId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportTicket>()
-            .HasOne(t => t.WorkflowRun)
-            .WithMany()
-            .HasForeignKey(t => t.WorkflowRunId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportTicket>()
             .HasOne(t => t.Booking)
             .WithMany()
             .HasForeignKey(t => t.BookingId)
@@ -450,35 +389,6 @@ public class ApplicationDbContext : DbContext
             .HasOne(m => m.SenderUser)
             .WithMany()
             .HasForeignKey(m => m.SenderUserId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        // SupportWorkflowRun
-        modelBuilder.Entity<SupportWorkflowRun>()
-            .HasIndex(r => r.RunReference)
-            .IsUnique();
-
-        modelBuilder.Entity<SupportWorkflowRun>()
-            .HasOne(r => r.CustomerUser)
-            .WithMany()
-            .HasForeignKey(r => r.CustomerUserId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportWorkflowRun>()
-            .HasOne(r => r.Ticket)
-            .WithMany()
-            .HasForeignKey(r => r.TicketId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportWorkflowRun>()
-            .HasOne(r => r.Incident)
-            .WithMany()
-            .HasForeignKey(r => r.IncidentId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportWorkflowRun>()
-            .HasOne(r => r.Dispute)
-            .WithMany()
-            .HasForeignKey(r => r.DisputeId)
             .OnDelete(DeleteBehavior.NoAction);
 
         // OperationalIncident
@@ -625,18 +535,6 @@ public class ApplicationDbContext : DbContext
             .HasOne(a => a.TicketMessage)
             .WithMany(m => m.Attachments)
             .HasForeignKey(a => a.TicketMessageId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportAttachment>()
-            .HasOne(a => a.Conversation)
-            .WithMany()
-            .HasForeignKey(a => a.ConversationId)
-            .OnDelete(DeleteBehavior.NoAction);
-
-        modelBuilder.Entity<SupportAttachment>()
-            .HasOne(a => a.ConversationMessage)
-            .WithMany(m => m.Attachments)
-            .HasForeignKey(a => a.ConversationMessageId)
             .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<SupportAttachment>()

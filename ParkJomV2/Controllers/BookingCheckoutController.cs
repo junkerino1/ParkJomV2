@@ -317,8 +317,8 @@ public class BookingCheckoutController : ControllerBase
                 RentalSubtotal = subtotal,
                 PlatformCommissionRate = PlatformConstants.CommissionRate,
                 PlatformCommissionAmount = platformFee,
-                OwnerPayoutAmount = subtotal,
-                RenterTotal = RoundMoney(subtotal + platformFee),
+                OwnerPayoutAmount = RoundMoney(subtotal - platformFee),
+                RenterTotal = subtotal,
                 CreatedAt = now,
                 ExpiresAt = now.AddMinutes(60)
             };

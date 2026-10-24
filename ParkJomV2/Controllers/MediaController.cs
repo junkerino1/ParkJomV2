@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
@@ -70,8 +70,6 @@ namespace ParkJomV2.Controllers
 
                 var media = await _context.MediaFiles.FirstOrDefaultAsync(m => m.MediaFileId == mediaFileId);
 
-                // return Ok(media);
-
                 if (media == null)
                 {
                     await _accessLogService.LogAsync(User, "ViewMedia", false, $"Media not found (mediaFileId={mediaFileId})");
@@ -87,11 +85,10 @@ namespace ParkJomV2.Controllers
                     media.PublicId,
                     media.ResourceType);
 
-                    if(media.ResourceType == "image"){
-                        cloudinaryUrl = cloudinaryUrl + "." + media.Format;
-                    }
-
-                // return Ok(cloudinaryUrl);
+                if (media.ResourceType == "image" && !string.IsNullOrEmpty(media.Format))
+                {
+                    cloudinaryUrl = cloudinaryUrl + "." + media.Format;
+                }
 
                 var client = _httpClientFactory.CreateClient();
 
@@ -156,57 +153,102 @@ namespace ParkJomV2.Controllers
             }
         }
 
+        [Authorize]
         [HttpGet("view/image/{mediaFileId}")]
         public async Task<IActionResult> ViewImage(int mediaFileId)
         {
-            var media = await _context.MediaFiles.FirstOrDefaultAsync(m => m.MediaFileId == mediaFileId);
-            if (media == null)
+            try
             {
-                await _accessLogService.LogAsync(User, "ViewImage", false, $"Media not found (mediaFileId={mediaFileId})");
-                return NotFound(new ErrorResponse
+                var user = await _currentUser.GetCurrentUserAsync();
+                if (user == null)
                 {
-                    Code = StatusCodes.Status404NotFound,
+                    await _accessLogService.LogAsync(User, "ViewImage", false, $"Unauthorized (mediaFileId={mediaFileId})");
+                    return Unauthorized(new ErrorResponse
+                    {
+                        Code = StatusCodes.Status401Unauthorized,
+                        Success = false,
+                        Message = "Unauthorized."
+                    });
+                }
+
+                var media = await _context.MediaFiles.FirstOrDefaultAsync(m => m.MediaFileId == mediaFileId);
+                if (media == null)
+                {
+                    await _accessLogService.LogAsync(User, "ViewImage", false, $"Media not found (mediaFileId={mediaFileId})");
+                    return NotFound(new ErrorResponse
+                    {
+                        Code = StatusCodes.Status404NotFound,
+                        Success = false,
+                        Message = "Media file not found."
+                    });
+                }
+
+                var isListingImage = await _context.ParkingSpotImages.AnyAsync(psi => psi.MediaFileId == mediaFileId);
+                if (user.UserType != UserType.Admin && media.UploadedBy != user.UserId && !isListingImage)
+                {
+                    await _accessLogService.LogAsync(User, "ViewImage", false, $"Forbidden (mediaFileId={mediaFileId})");
+                    return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                    {
+                        Code = StatusCodes.Status403Forbidden,
+                        Success = false,
+                        Message = "Forbidden."
+                    });
+                }
+
+                var cloudinaryUrl = _cloudinaryService.GeneratePrivateUrl(media.PublicId, media.ResourceType);
+                if (media.ResourceType == "image" && !string.IsNullOrEmpty(media.Format))
+                {
+                    cloudinaryUrl = cloudinaryUrl + "." + media.Format;
+                }
+
+                var client = _httpClientFactory.CreateClient();
+                var response = await client.GetAsync(
+                    cloudinaryUrl,
+                    HttpCompletionOption.ResponseHeadersRead);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning(
+                        "Cloudinary returned {StatusCode} for MediaFileId={MediaFileId}",
+                        response.StatusCode,
+                        mediaFileId);
+                    await _accessLogService.LogAsync(User, "ViewImage", false, $"Cloudinary status {(int)response.StatusCode}");
+                    return StatusCode((int)response.StatusCode, new ErrorResponse
+                    {
+                        Code = (int)response.StatusCode,
+                        Success = false,
+                        Message = "Failed to retrieve media from storage."
+                    });
+                }
+                var stream = await response.Content.ReadAsStreamAsync();
+                var resourceType = media.ResourceType == "raw" ? "application" : media.ResourceType;
+                // prevent MIME sniffing
+                // prevent web caching of sensitive media
+                Response.Headers.Append(
+                    "Content-Disposition",
+                    $"inline; filename=\"{media.OriginalFileName}\"");
+                Response.Headers.Append(
+                    "Cache-Control",
+                    "no-store");
+                Response.Headers.Append(
+                    "X-Content-Type-Options",
+                    "nosniff");
+                await _accessLogService.LogAsync(User, "ViewImage", true, $"MediaFileId={mediaFileId}");
+                return File(
+                    stream,
+                    resourceType + "/" + media.Format,
+                    enableRangeProcessing: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to retrieve image {MediaFileId}", mediaFileId);
+                await _accessLogService.LogAsync(User, "ViewImage", false, ex.Message);
+                return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+                {
+                    Code = StatusCodes.Status500InternalServerError,
                     Success = false,
-                    Message = "Media file not found."
+                    Message = "Unable to retrieve media."
                 });
             }
-            var cloudinaryUrl = _cloudinaryService.GeneratePrivateUrl(media.PublicId, media.ResourceType);
-            var client = _httpClientFactory.CreateClient();
-            var response = await client.GetAsync(
-                cloudinaryUrl,
-                HttpCompletionOption.ResponseHeadersRead);
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning(
-                    "Cloudinary returned {StatusCode} for MediaFileId={MediaFileId}",
-                    response.StatusCode,
-                    mediaFileId);
-                await _accessLogService.LogAsync(User, "ViewImage", false, $"Cloudinary status {(int)response.StatusCode}");
-                return StatusCode((int)response.StatusCode, new ErrorResponse
-                {
-                    Code = (int)response.StatusCode,
-                    Success = false,
-                    Message = "Failed to retrieve media from storage."
-                });
-            }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var resourceType = media.ResourceType == "raw" ? "application" : media.ResourceType;
-            // prevent MIME sniffing
-            // prevent web caching of sensitive media
-            Response.Headers.Append(
-                "Content-Disposition",
-                $"inline; filename=\"{media.OriginalFileName}\"");
-            Response.Headers.Append(
-                "Cache-Control",
-                "no-store");
-            Response.Headers.Append(
-                "X-Content-Type-Options",
-                "nosniff");
-            await _accessLogService.LogAsync(User, "ViewImage", true, $"MediaFileId={mediaFileId}");
-            return File(
-                stream,
-                resourceType + "/" + media.Format,
-                enableRangeProcessing: true);
         }
     }
 }

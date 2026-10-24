@@ -1,4 +1,4 @@
-﻿using ParkJomV2.Models.Enums;
+using ParkJomV2.Models.Enums;
 using System.ComponentModel.DataAnnotations;
 
 namespace ParkJomV2.DTOs;
@@ -11,8 +11,7 @@ public class GoogleAuthRequest
 
 public class CompleteProfileRequest
 {
-    [Required]
-    public int UserId { get; set; }
+    public int? UserId { get; set; }
 
     [Required]
     [Phone(ErrorMessage = "Invalid phone number")]
@@ -32,6 +31,7 @@ public class UserDTO
     public UserType UserType { get; set; }
     public bool IsProfileComplete { get; set; }
     public string? PhoneNumber { get; set; }
+    public string AccountStatus { get; set; } = "Active";
     public DateTime CreatedAt { get; set; }
     public DateTime LastLoginAt { get; set; }
 }

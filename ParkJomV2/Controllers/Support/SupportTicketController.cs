@@ -28,7 +28,60 @@ public class SupportTicketController : ControllerBase
     }
 
     /// <summary>
-    /// U-12: List my support tickets (frontend compatible).
+    /// Get role-aware Quick Issue Templates (Commuter vs PropertyOwner) for 1-click ticket creation.
+    /// </summary>
+    [HttpGet("templates")]
+    [ProducesResponseType(typeof(SupportApiResponse<List<QuickIssueTemplateDto>>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<SupportApiResponse<List<QuickIssueTemplateDto>>>> GetQuickIssueTemplates()
+    {
+        var user = await _currentUserService.GetCurrentUserAsync();
+        if (user == null) return Unauthorized();
+
+        var templates = SupportContextService.GetQuickIssueTemplates(user.UserType);
+        return Ok(new SupportApiResponse<List<QuickIssueTemplateDto>>
+        {
+            Code = StatusCodes.Status200OK,
+            Success = true,
+            Message = "Quick issue templates retrieved successfully",
+            Data = templates
+        });
+    }
+
+    /// <summary>
+    /// Self-service emergency gate unlock for active bookings with online IoT barrier.
+    /// </summary>
+    [HttpPost("gate-unlock")]
+    [ProducesResponseType(typeof(SupportApiResponse<SelfUnlockGateResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(SupportApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<SupportApiResponse<SelfUnlockGateResultDto>>> SelfUnlockGate([FromBody] SelfUnlockGateRequestDto? request = null)
+    {
+        var userId = _currentUserService.UserId;
+        if (!userId.HasValue) return Unauthorized();
+
+        try
+        {
+            var result = await _ticketService.SelfUnlockGateAsync(userId.Value, request ?? new SelfUnlockGateRequestDto());
+            return Ok(new SupportApiResponse<SelfUnlockGateResultDto>
+            {
+                Code = StatusCodes.Status200OK,
+                Success = result.Success,
+                Message = result.Message,
+                Data = result
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new SupportApiResponse<object>
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// List my unified support tickets (supports filtering by UserDisplayStatus: Processing, ActionRequired, Resolved, Closed).
     /// </summary>
     [HttpGet("tickets/mine")]
     [ProducesResponseType(typeof(SupportApiResponse<List<SupportTicketSummaryDto>>), StatusCodes.Status200OK)]
@@ -50,7 +103,7 @@ public class SupportTicketController : ControllerBase
     }
 
     /// <summary>
-    /// U-13: Get support ticket details, messages, and attachments.
+    /// Get unified support ticket details, chat messages, attachments, and embedded refund/dispute summary.
     /// </summary>
     [HttpGet("tickets/{ticketId:int}")]
     [ProducesResponseType(typeof(SupportApiResponse<SupportTicketDto>), StatusCodes.Status200OK)]
@@ -83,12 +136,13 @@ public class SupportTicketController : ControllerBase
     }
 
     /// <summary>
-    /// U-14: Create a new support ticket (frontend compatible, multipart/form-data or JSON).
+    /// Create a new support ticket via 1-click IssueCode or custom description (auto-binds active booking and silently dispatches Incident/Dispute).
     /// </summary>
     [HttpPost("tickets")]
-    [Consumes("multipart/form-data")]
+    [Consumes("multipart/form-data", "application/json")]
     [ProducesResponseType(typeof(SupportApiResponse<SupportTicketDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<SupportApiResponse<SupportTicketDto>>> CreateTicket([FromForm] CreateSupportTicketRequestDto request)
+    {
         var userId = _currentUserService.UserId;
         if (!userId.HasValue) return Unauthorized();
 
@@ -103,7 +157,7 @@ public class SupportTicketController : ControllerBase
     }
 
     /// <summary>
-    /// U-15: Send a message/reply to a ticket (frontend compatible).
+    /// Send a message or upload evidence/photos to a ticket (auto-syncs attachments to DisputeEvidence if applicable).
     /// </summary>
     [HttpPost("tickets/{ticketId:int}/messages")]
     [Consumes("multipart/form-data", "application/json")]
@@ -128,7 +182,42 @@ public class SupportTicketController : ControllerBase
     }
 
     /// <summary>
-    /// U-16: Reopen a resolved or closed ticket.
+    /// Customer self-closes or confirms resolution of their own ticket (e.g., gate opened or issue resolved).
+    /// </summary>
+    [HttpPost("tickets/{ticketId:int}/close")]
+    [ProducesResponseType(typeof(SupportApiResponse<SupportTicketDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SupportApiResponse<SupportTicketDto>>> CloseMyTicket(
+        int ticketId,
+        [FromBody] CloseTicketRequestDto? request = null)
+    {
+        var userId = _currentUserService.UserId;
+        if (!userId.HasValue) return Unauthorized();
+
+        try
+        {
+            var ticket = await _ticketService.CloseCustomerTicketAsync(ticketId, userId.Value, request);
+            return Ok(new SupportApiResponse<SupportTicketDto>
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Ticket closed successfully",
+                Data = ticket
+            });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new SupportApiResponse<object>
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Reopen a resolved or closed ticket.
     /// </summary>
     [HttpPost("tickets/{ticketId:int}/reopen")]
     [ProducesResponseType(typeof(SupportApiResponse<SupportTicketDto>), StatusCodes.Status200OK)]
@@ -152,7 +241,7 @@ public class SupportTicketController : ControllerBase
     }
 
     /// <summary>
-    /// U-20: Download or access authorized private support attachment.
+    /// Download or access authorized private support attachment.
     /// </summary>
     [HttpGet("attachments/{attachmentId:int}")]
     [ProducesResponseType(typeof(SupportApiResponse<SupportAttachmentDto>), StatusCodes.Status200OK)]
@@ -164,7 +253,6 @@ public class SupportTicketController : ControllerBase
 
         var attachment = await _context.SupportAttachments
             .Include(a => a.Ticket)
-            .Include(a => a.Conversation)
             .FirstOrDefaultAsync(a => a.AttachmentId == attachmentId);
 
         if (attachment == null)
@@ -177,11 +265,9 @@ public class SupportTicketController : ControllerBase
             });
         }
 
-        // Authorization check
         var isAdmin = user.UserType == Models.Enums.UserType.Admin;
         var isOwner = attachment.UploadedByUserId == user.UserId
-                      || (attachment.Ticket != null && attachment.Ticket.CustomerUserId == user.UserId)
-                      || (attachment.Conversation != null && attachment.Conversation.CustomerUserId == user.UserId);
+                      || (attachment.Ticket != null && attachment.Ticket.CustomerUserId == user.UserId);
 
         if (!isAdmin && !isOwner)
         {

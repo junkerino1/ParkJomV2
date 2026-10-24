@@ -249,7 +249,7 @@ public class OwnerParkingController : ControllerBase
         }
 
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null)
+        if (user == null || user.UserType != UserType.PropertyOwner)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -382,7 +382,7 @@ public class OwnerParkingController : ControllerBase
         [FromBody] UpdateParkingImagesRequest request)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null)
+        if (user == null || user.UserType != UserType.PropertyOwner)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -521,7 +521,7 @@ public class OwnerParkingController : ControllerBase
     public async Task<ActionResult<OwnerParkingImagesResponse>> DeleteImage(int spotId, int imageId)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null)
+        if (user == null || user.UserType != UserType.PropertyOwner)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -617,7 +617,7 @@ public class OwnerParkingController : ControllerBase
     {
         var user = await _currentUser.GetCurrentUserAsync();
 
-        if (user == null)
+        if (user == null || user.UserType != UserType.PropertyOwner)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -818,7 +818,17 @@ public class OwnerParkingController : ControllerBase
         int ruleId,
         [FromBody] UpdateOwnerAvailabilityRuleRequest request)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
@@ -1002,7 +1012,17 @@ public class OwnerParkingController : ControllerBase
         int spotId,
         int ruleId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
@@ -1141,7 +1161,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<OwnerAvailabilityRulesResponse>> GetAvailabilityRules(int spotId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1228,7 +1258,17 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1357,7 +1397,17 @@ public class OwnerParkingController : ControllerBase
         [FromQuery] string? month = null,
         [FromQuery] string? status = null)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         if (!TryParseBookingStatus(status, out var bookingStatus))
         {
@@ -1488,7 +1538,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<OwnerBookingDetailResponse>> GetParkingSpotBooking(int spotId, int bookingId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1552,7 +1612,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(DisplayMyParkingResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking()
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
         var spots = await _context.ParkingSpots
             .AsNoTracking()
             .Where(p => p.OwnerId == userId)
@@ -1573,7 +1643,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(DeleteParkingSpotResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DeleteParkingSpotResponse>> DeleteParking(int spotId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
         var spot = await _context.ParkingSpots
             .Include(p => p.Bookings)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
@@ -1630,7 +1710,17 @@ public class OwnerParkingController : ControllerBase
         int spotId,
         [FromBody] UpdateOwnerParkingConfigurationRequest request)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1744,7 +1834,17 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1870,7 +1970,17 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {

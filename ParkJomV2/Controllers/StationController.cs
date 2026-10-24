@@ -38,8 +38,6 @@ namespace ParkJomV2.Controllers
         {
             var station = await _context.Stations.FindAsync(stationId);
 
-            // return Ok(station);
-
             if (station == null)
             {
                 await _accessLogService.LogAsync(User, "GetPropertyByStationId", false, $"Station not found (id={stationId})");
@@ -95,9 +93,11 @@ namespace ParkJomV2.Controllers
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<GetPropertyResponse>> GetParkingSpotByPropertyId(int propertyId)
         {
-            var property = await _context.Properties.FindAsync(propertyId);
-
-            //return Ok(property);
+            var property = await _context.Properties
+                .AsNoTracking()
+                .Include(p => p.ParkingSpots)
+                    .ThenInclude(ps => ps.VerificationRequests.Where(vr => vr.IsCurrent))
+                .FirstOrDefaultAsync(p => p.PropertyId == propertyId);
 
             if (property == null)
             {
@@ -110,7 +110,14 @@ namespace ParkJomV2.Controllers
                 });
             }
 
-            if (property.ParkingSpots == null || property.ParkingSpots.Count == 0)
+            var availableParkingSpots = property.ParkingSpots
+                .Where(ps =>
+                    ps.AvailabilityStatus == AvailabilityStatus.Available &&
+                    ps.IsPublished &&
+                    ps.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved))
+                .ToList();
+
+            if (availableParkingSpots.Count == 0)
             {
                 await _accessLogService.LogAsync(User, "GetParkingSpotByPropertyId", false, $"No parking spots (propertyId={propertyId})");
                 return NotFound(new ErrorResponse
@@ -120,11 +127,6 @@ namespace ParkJomV2.Controllers
                     Message = "No parking spots found for the given property."
                 });
             }
-
-            List<ParkingSpot> availableParkingSpots = property.ParkingSpots
-                .Where(ps => ps.AvailabilityStatus == AvailabilityStatus.Available)
-                .Where(ps => ps.IsPublished == true)
-                .ToList();
 
             await _accessLogService.LogAsync(User, "GetParkingSpotByPropertyId", true, $"PropertyId={propertyId}");
 

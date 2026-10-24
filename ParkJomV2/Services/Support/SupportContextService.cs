@@ -115,6 +115,8 @@ public class SupportContextService
             })
             .ToListAsync();
 
+        var activeBookingDto = activeBookingEntity != null ? MapBookingSummary(activeBookingEntity, now) : null;
+
         return new SupportContextDto
         {
             UserId = user.UserId,
@@ -122,8 +124,10 @@ public class SupportContextService
             UserEmail = user.Email,
             UserType = user.UserType.ToString(),
             WalletBalance = user.Wallet?.Balance ?? 0m,
-            ActiveBooking = activeBookingEntity != null ? MapBookingSummary(activeBookingEntity) : null,
-            RecentBookings = recentBookingsEntities.Select(MapBookingSummary).ToList(),
+            ActiveBooking = activeBookingDto,
+            CanSelfUnlockGate = activeBookingDto?.CanSelfUnlockGate ?? false,
+            QuickIssueTemplates = GetQuickIssueTemplates(user.UserType),
+            RecentBookings = recentBookingsEntities.Select(b => MapBookingSummary(b, now)).ToList(),
             Vehicles = vehicles,
             RecentTransactions = recentTransactions,
             OwnedSpots = ownedSpots,
@@ -131,7 +135,137 @@ public class SupportContextService
         };
     }
 
-    private static SupportBookingSummaryDto MapBookingSummary(Booking b)
+    public static List<QuickIssueTemplateDto> GetQuickIssueTemplates(UserType userType)
+    {
+        if (userType == UserType.PropertyOwner)
+        {
+            return new List<QuickIssueTemplateDto>
+            {
+                new()
+                {
+                    IssueCode = "RENTER_OVERSTAY",
+                    Title = "Renter Overstay / Blocking Spot",
+                    Description = "Current booking has ended, but renter vehicle is still parked in the spot blocking subsequent reservations.",
+                    Category = "OwnerSupport",
+                    DefaultPriority = "P1",
+                    EstimatedResponseTime = "Within 15 minutes",
+                    RequiresBooking = true,
+                    SuggestPhotoUpload = true,
+                    SupportsSelfUnlock = false
+                },
+                new()
+                {
+                    IssueCode = "IOT_OFFLINE",
+                    Title = "Smart Barrier / Hardware Issue",
+                    Description = "Barrier gate is unresponsive, sensor offline, or hardware failure requires on-site inspection.",
+                    Category = "ParkingAccess",
+                    DefaultPriority = "P1",
+                    EstimatedResponseTime = "Within 15 minutes",
+                    RequiresBooking = false,
+                    SuggestPhotoUpload = true,
+                    SupportsSelfUnlock = false
+                },
+                new()
+                {
+                    IssueCode = "OWNER_PAYOUT",
+                    Title = "Host Payout & Revenue Inquiry",
+                    Description = "Booking earnings breakdown, commission verification, or wallet payout timeline inquiries.",
+                    Category = "OwnerSupport",
+                    DefaultPriority = "P2",
+                    EstimatedResponseTime = "Within 1 hour",
+                    RequiresBooking = false,
+                    SuggestPhotoUpload = false,
+                    SupportsSelfUnlock = false
+                },
+                new()
+                {
+                    IssueCode = "OTHER",
+                    Title = "Other Host Inquiries",
+                    Description = "Spot verification, calendar scheduling, listing details, or account assistance.",
+                    Category = "OwnerSupport",
+                    DefaultPriority = "P2",
+                    EstimatedResponseTime = "Within 1 hour",
+                    RequiresBooking = false,
+                    SuggestPhotoUpload = false,
+                    SupportsSelfUnlock = false
+                }
+            };
+        }
+
+        return new List<QuickIssueTemplateDto>
+        {
+            new()
+            {
+                IssueCode = "GATE_STUCK",
+                Title = "Gate Stuck / Cannot Enter or Exit",
+                Description = "Barrier failed to open or license plate was not recognized upon arrival. Emergency self-unlock or human agent available.",
+                Category = "ParkingAccess",
+                DefaultPriority = "P0",
+                EstimatedResponseTime = "Immediate self-unlock / 24/7 urgent dispatch",
+                RequiresBooking = true,
+                SuggestPhotoUpload = false,
+                SupportsSelfUnlock = true
+            },
+            new()
+            {
+                IssueCode = "SPOT_OCCUPIED",
+                Title = "Reserved Spot Occupied",
+                Description = "Reserved spot is occupied by an unauthorized vehicle. Attach a photo for immediate relocation or full refund.",
+                Category = "ParkingAccess",
+                DefaultPriority = "P0",
+                EstimatedResponseTime = "Within 5 minutes",
+                RequiresBooking = true,
+                SuggestPhotoUpload = true,
+                SupportsSelfUnlock = false
+            },
+            new()
+            {
+                IssueCode = "REFUND_REQUEST",
+                Title = "Refund or Cancellation Request",
+                Description = "Unable to park, facility malfunction, or requesting refund assistance for a booking charge.",
+                Category = "Payment",
+                DefaultPriority = "P2",
+                EstimatedResponseTime = "Within 30 minutes",
+                RequiresBooking = true,
+                SuggestPhotoUpload = false,
+                SupportsSelfUnlock = false
+            },
+            new()
+            {
+                IssueCode = "DUPLICATE_CHARGE",
+                Title = "Duplicate Charge / Billing Dispute",
+                Description = "Charged twice for the same booking, incorrect amount, or disputing overstay penalty charges.",
+                Category = "Payment",
+                DefaultPriority = "P1",
+                EstimatedResponseTime = "Within 15 minutes",
+                RequiresBooking = false,
+                SuggestPhotoUpload = true,
+                SupportsSelfUnlock = false
+            },
+            new()
+            {
+                IssueCode = "OTHER",
+                Title = "General Inquiry & Feedback",
+                Description = "Account settings, license plate update, app feedback, or general support.",
+                Category = "General",
+                DefaultPriority = "P2",
+                EstimatedResponseTime = "Within 1 hour",
+                RequiresBooking = false,
+                SuggestPhotoUpload = false,
+                SupportsSelfUnlock = false
+            }
+        };
+    }
+
+    public static bool CanBookingSelfUnlock(Booking b, DateTime now)
+    {
+        var isEligibleStatus = b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Active;
+        var isWithinWindow = b.StartDate <= now.AddHours(1) && b.EndDate >= now.AddHours(-2);
+        var isIotOnline = b.ParkingSpot?.IoTDevice != null && b.ParkingSpot.IoTDevice.DeviceStatus == DeviceStatus.Online;
+        return isEligibleStatus && isWithinWindow && isIotOnline;
+    }
+
+    private static SupportBookingSummaryDto MapBookingSummary(Booking b, DateTime now)
     {
         var iot = b.ParkingSpot?.IoTDevice;
         return new SupportBookingSummaryDto
@@ -147,7 +281,8 @@ public class SupportContextService
             TotalAmount = b.TotalAmount,
             HasIoTDevice = iot != null,
             IoTDeviceStatus = iot?.DeviceStatus.ToString(),
-            LastHeartbeatAt = iot?.LastHeartbeatAt
+            LastHeartbeatAt = iot?.LastHeartbeatAt,
+            CanSelfUnlockGate = CanBookingSelfUnlock(b, now)
         };
     }
 }

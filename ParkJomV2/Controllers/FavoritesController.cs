@@ -68,7 +68,9 @@ public class FavoritesController : ControllerBase
                 spot.ParkingSpotId == parkingSpotId &&
                 spot.IsPublished &&
                 spot.AvailabilityStatus == AvailabilityStatus.Available &&
-                spot.Owner.AccountStatus != "Suspended");
+                spot.Owner.AccountStatus != "Suspended" &&
+                spot.Owner.AccountStatus != "Deactivated" &&
+                spot.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved));
 
             if (!parkingSpotExists)
             {
@@ -208,7 +210,9 @@ public class FavoritesController : ControllerBase
                 spot.ParkingSpotId == parkingSpotId &&
                 spot.IsPublished &&
                 spot.AvailabilityStatus == AvailabilityStatus.Available &&
-                spot.Owner.AccountStatus != "Suspended");
+                spot.Owner.AccountStatus != "Suspended" &&
+                spot.Owner.AccountStatus != "Deactivated" &&
+                spot.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved));
 
             if (!parkingSpotExists)
             {
