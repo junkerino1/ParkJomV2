@@ -701,18 +701,15 @@ public class UserController : ControllerBase
                 : request.PhoneNumber.Trim();
         }
 
-        if (request.UserType.HasValue)
+        if (request.UserType.HasValue && request.UserType.Value != targetUser.UserType)
         {
-            if (isSelf && request.UserType.Value != UserType.Admin)
+            await _accessLogService.LogAsync(User, "AdminUpdateUserProfile", false, $"Role change rejected: TargetUserId={targetUser.UserId}, Requested={request.UserType.Value}, Current={targetUser.UserType}");
+            return BadRequest(new ErrorResponse
             {
-                return BadRequest(new ErrorResponse
-                {
-                    Code = StatusCodes.Status400BadRequest,
-                    Success = false,
-                    Message = "You cannot demote your own admin role."
-                });
-            }
-            targetUser.UserType = request.UserType.Value;
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "User roles are permanent and cannot be changed."
+            });
         }
 
         if (request.IsProfileComplete.HasValue)
