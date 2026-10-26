@@ -704,6 +704,49 @@ namespace ParkJomV2.Migrations
                     b.ToTable("OperationalIncidents");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.OwnerPayoutAccount", b =>
+                {
+                    b.Property<int>("OwnerPayoutAccountId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("OwnerPayoutAccountId"));
+
+                    b.Property<string>("AccountHolderName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("AutoWithdraw")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("BankName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("OwnerPayoutAccountId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("OwnerPayoutAccounts");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.ParkingSpot", b =>
                 {
                     b.Property<int>("ParkingSpotId")
@@ -2029,6 +2072,17 @@ namespace ParkJomV2.Migrations
                     b.Navigation("ParkingSpot");
 
                     b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.OwnerPayoutAccount", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.ParkingSpot", b =>

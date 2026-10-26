@@ -42,6 +42,7 @@ public class OwnerParkingController : ControllerBase
     /// Creates a private parking draft and submits its first verification document.
     /// The spot cannot be published or booked until its verification is approved.
     /// </summary>
+    [HttpPost("register")]
     [HttpPost("/register")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ParkingRegistrationResponse), StatusCodes.Status200OK)]
@@ -2247,6 +2248,34 @@ public class OwnerParkingController : ControllerBase
     }
 
     /// <summary>
+    /// Legacy compatibility endpoint for publishing or unpublishing a parking spot.
+    /// </summary>
+    [HttpPut("/api/parking/publish")]
+    [ProducesResponseType(typeof(OwnerParkingPublicationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OwnerParkingPublicationResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerParkingPublicationResponse>> UpdateParkingPublicationLegacy(
+        [FromBody] ParkingPublicationUpdateRequest request)
+    {
+        if (request == null || request.ParkingSpotId <= 0)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "ParkingSpotId must be greater than zero."
+            });
+        }
+
+        if (request.IsPublished)
+        {
+            return await PublishParking(request.ParkingSpotId);
+        }
+        return await UnpublishParking(request.ParkingSpotId);
+    }
+    /// <summary>
     /// Recomputes every condition required for publication and reports the missing conditions in
     /// a stable order so the owner can correct the listing without relying on a cached flag.
     /// </summary>
@@ -2267,10 +2296,6 @@ public class OwnerParkingController : ControllerBase
         missing.AddRange(configurationRequirements);
         isConfigurationComplete = configurationRequirements.Count == 0;
 
-        if (!HasFutureAvailabilityRule(spot.ParkingAvailabilities, firstBookableDate))
-        {
-            missing.Add("future availability rule");
-        }
 
         return missing;
     }

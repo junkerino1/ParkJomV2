@@ -40,6 +40,12 @@ public class OwnerParkingPublicationResponse
     public DateTime UpdatedAt { get; set; }
 }
 
+public class ParkingPublicationUpdateRequest
+{
+    public int ParkingSpotId { get; set; }
+    public bool IsPublished { get; set; }
+}
+
 public class UpdateParkingImagesRequest
 {
     [Required]

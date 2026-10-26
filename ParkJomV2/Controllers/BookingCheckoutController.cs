@@ -292,6 +292,12 @@ public class BookingCheckoutController : ControllerBase
                 return BadRequest(Error(StatusCodes.Status400BadRequest, "The selected period is invalid. Please try other dates."));
             }
 
+            var userOverlap = await HasUserBookingOverlap(user.UserId, startDate, endExclusive, cancellationToken);
+            if (userOverlap)
+            {
+                return Conflict(Error(StatusCodes.Status409Conflict, "You already have an active or confirmed reservation that overlaps with the selected period."));
+            }
+
             var overlap = await HasBookingOverlap(spotId, startDate, endExclusive, cancellationToken);
             if (overlap)
             {
@@ -436,6 +442,17 @@ public class BookingCheckoutController : ControllerBase
     /// The end date is exclusive, so a booking that ends on the requested start date does not count as an overlap. 
     /// This method uses a database query with a cancellation token to avoid long-running
     /// </summary>
+    private async Task<bool> HasUserBookingOverlap(int userId, DateOnly start, DateOnly endExclusive, CancellationToken cancellationToken)
+    {
+        var startBoundary = start.ToDateTime(TimeOnly.MinValue);
+        var endBoundary = endExclusive.ToDateTime(TimeOnly.MinValue);
+        return await _context.Bookings.AnyAsync(item =>
+            item.RenterId == userId &&
+            (item.BookingStatus == BookingStatus.Confirmed || item.BookingStatus == BookingStatus.Active) &&
+            item.StartDate < endBoundary && item.EndDate > startBoundary,
+            cancellationToken);
+    }
+
     private async Task<bool> HasBookingOverlap(int spotId, DateOnly start, DateOnly endExclusive, CancellationToken cancellationToken)
     {
         var startBoundary = start.ToDateTime(TimeOnly.MinValue);

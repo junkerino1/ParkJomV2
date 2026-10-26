@@ -229,6 +229,84 @@ public class CommuterBookingsController : ControllerBase
 
 
     /// <summary>
+    /// GET /api/commuter/bookings/active
+    /// Retrieves the commuter's currently active or upcoming reservation across devices.
+    /// </summary>
+    [HttpGet("active")]
+    [ProducesResponseType(typeof(ActiveBookingResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<ActiveBookingResponse>> GetActiveBooking()
+    {
+        try
+        {
+            var user = await _currentUser.GetCurrentUserAsync();
+            if (user == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "User not found"
+                });
+            }
+
+            var now = DateTime.UtcNow;
+
+            var allActiveBookings = await _context.Bookings
+                .AsNoTracking()
+                .Include(b => b.ParkingSpot)
+                    .ThenInclude(ps => ps.Property)
+                        .ThenInclude(p => p.Station)
+                .Include(b => b.ParkingSpot.Owner)
+                .Include(b => b.ParkingSpot.ParkingSpotImages.OrderBy(psi => psi.DisplayOrder))
+                    .ThenInclude(psi => psi.MediaFile)
+                .Include(b => b.Vehicle)
+                .Where(b => b.RenterId == user.UserId &&
+                            (b.BookingStatus == BookingStatus.Active ||
+                             (b.BookingStatus == BookingStatus.Confirmed && b.EndDate > now)))
+                .OrderBy(b => b.StartDate)
+                .ToListAsync();
+
+            if (allActiveBookings.Count == 0)
+            {
+                return Ok(new ActiveBookingResponse
+                {
+                    Code = StatusCodes.Status200OK,
+                    Success = true,
+                    Message = "No active booking found.",
+                    Data = null,
+                    UpcomingBookings = new List<ActiveBookingDTO>()
+                });
+            }
+
+            var primaryBooking = allActiveBookings[0];
+            var activeDto = MapToActiveBookingDTO(primaryBooking);
+            var upcomingDtos = allActiveBookings.Skip(1).Select(MapToActiveBookingDTO).ToList();
+
+            await _accessLogService.LogAsync(User, "GetActiveBooking", true, $"BookingId={primaryBooking.BookingId}, UpcomingCount={upcomingDtos.Count}", primaryBooking.BookingId);
+
+            return Ok(new ActiveBookingResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Active booking retrieved successfully.",
+                Data = activeDto,
+                UpcomingBookings = upcomingDtos
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving active commuter booking");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while retrieving active booking."
+            });
+        }
+    }
+
+    /// <summary>
     /// Confirms and pays for a quote in one idempotent database transaction.
     /// </summary>
     [HttpPost("confirm")]
@@ -328,6 +406,26 @@ public class CommuterBookingsController : ControllerBase
                 await HasBookingOverlap(quote.ParkingSpotId, quoteStart, quoteEndExclusive, cancellationToken))
             {
                 return Conflict(Error(StatusCodes.Status409Conflict, "The selected period is no longer available."));
+            }
+
+            var hasUserOverlap = await _context.Bookings.AnyAsync(item =>
+                item.RenterId == userId &&
+                (item.BookingStatus == BookingStatus.Confirmed || item.BookingStatus == BookingStatus.Active) &&
+                item.StartDate < quote.EndDate && item.EndDate > quote.StartDate,
+                cancellationToken);
+            if (hasUserOverlap)
+            {
+                return Conflict(Error(StatusCodes.Status409Conflict, "You already have an active or confirmed reservation that overlaps with the selected period."));
+            }
+
+            var hasVehicleOverlap = await _context.Bookings.AnyAsync(item =>
+                item.VehicleId == request.VehicleId &&
+                (item.BookingStatus == BookingStatus.Confirmed || item.BookingStatus == BookingStatus.Active) &&
+                item.StartDate < quote.EndDate && item.EndDate > quote.StartDate,
+                cancellationToken);
+            if (hasVehicleOverlap)
+            {
+                return Conflict(Error(StatusCodes.Status409Conflict, "This vehicle is already assigned to another active or confirmed reservation during the selected period."));
             }
 
             // lock wallet to prevent race conditions when multiple bookings are being processed at the same time
@@ -826,6 +924,42 @@ public class CommuterBookingsController : ControllerBase
             CancellationReason = booking.CancellationReason,
             CancelledAt = booking.CancelledAt,
             CreatedAt = booking.CreatedAt
+        };
+    }
+
+    private static ActiveBookingDTO MapToActiveBookingDTO(Booking booking)
+    {
+        var primaryImg = booking.ParkingSpot.ParkingSpotImages.FirstOrDefault()?.MediaFile?.SecureUrl;
+        var spot = booking.ParkingSpot;
+        var property = spot.Property;
+
+        return new ActiveBookingDTO
+        {
+            BookingId = booking.BookingId,
+            BookingReference = booking.BookingReference,
+            StartTime = booking.StartDate,
+            EndTime = booking.EndDate,
+            VehiclePlate = booking.Vehicle?.NumberPlate ?? string.Empty,
+            Status = booking.BookingStatus.ToString(),
+            TotalPaid = booking.TotalAmount,
+            Spot = new ActiveBookingSpotDTO
+            {
+                ParkingSpotId = spot.ParkingSpotId,
+                ParkingLabel = spot.ParkingLabel,
+                PropertyId = spot.PropertyId,
+                PropertyName = property?.PropertyName,
+                Address = property?.Address,
+                Latitude = property?.Latitude ?? 0m,
+                Longitude = property?.Longitude ?? 0m,
+                StationName = property?.Station?.StationName,
+                DistanceToStation = property?.DistanceToStation ?? 0m,
+                TimeToStationInMinutes = property?.TimeToStation ?? 0m,
+                AvailabilityStatus = spot.AvailabilityStatus.ToString(),
+                MonthlyRate = spot.MonthlyRate,
+                DailyRate = spot.DailyRate,
+                PrimaryImageUrl = primaryImg,
+                OwnerName = spot.Owner != null ? $"{spot.Owner.FirstName} {spot.Owner.LastName}".Trim() : null
+            }
         };
     }
 }

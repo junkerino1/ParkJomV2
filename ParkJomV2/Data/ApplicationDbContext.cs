@@ -32,6 +32,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<IoTStatusLog> IoTStatusLogs => Set<IoTStatusLog>();
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
     public DbSet<SystemConfiguration> SystemConfigurations => Set<SystemConfiguration>();
+    public DbSet<OwnerPayoutAccount> OwnerPayoutAccounts => Set<OwnerPayoutAccount>();
 
     public DbSet<Availability> Availabilities => Set<Availability>();
     public DbSet<MediaFile> MediaFiles => Set<MediaFile>();
@@ -601,6 +602,16 @@ public class ApplicationDbContext : DbContext
             .WithMany()
             .HasForeignKey(s => s.OperationsManagerId)
             .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<OwnerPayoutAccount>(entity =>
+        {
+            entity.HasKey(e => e.OwnerPayoutAccountId);
+            entity.HasIndex(e => e.UserId).IsUnique();
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder.Entity<SystemConfiguration>(entity =>
         {
