@@ -1494,6 +1494,43 @@ namespace ParkJomV2.Migrations
                     b.ToTable("SupportTicketMessages");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.SystemConfiguration", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("CommissionRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("GracePeriodMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.ToTable("SystemConfigurations");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CommissionRate = 10.00m,
+                            GracePeriodMinutes = 15,
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.Transaction", b =>
                 {
                     b.Property<int>("TransactionId")
@@ -2282,6 +2319,16 @@ namespace ParkJomV2.Migrations
                     b.Navigation("SenderUser");
 
                     b.Navigation("Ticket");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SystemConfiguration", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("UpdatedByUser");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Transaction", b =>

@@ -31,6 +31,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<IoTDevice> IoTDevices => Set<IoTDevice>();
     public DbSet<IoTStatusLog> IoTStatusLogs => Set<IoTStatusLog>();
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
+    public DbSet<SystemConfiguration> SystemConfigurations => Set<SystemConfiguration>();
 
     public DbSet<Availability> Availabilities => Set<Availability>();
     public DbSet<MediaFile> MediaFiles => Set<MediaFile>();
@@ -600,5 +601,24 @@ public class ApplicationDbContext : DbContext
             .WithMany()
             .HasForeignKey(s => s.OperationsManagerId)
             .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<SystemConfiguration>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CommissionRate).HasPrecision(5, 2);
+            entity.HasOne(e => e.UpdatedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.UpdatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasData(new SystemConfiguration
+            {
+                Id = 1,
+                CommissionRate = 10.00m,
+                GracePeriodMinutes = 15,
+                UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedByUserId = null
+            });
+        });
     }
 }

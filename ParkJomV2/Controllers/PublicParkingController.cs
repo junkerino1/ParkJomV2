@@ -44,6 +44,7 @@ public class ParkingController : ControllerBase
         {
             var spot = await _context.ParkingSpots
                 .Include(ps => ps.Property)
+                    .ThenInclude(p => p.Station)
                 .Include(ps => ps.Owner)
                 .Include(ps => ps.VerificationRequests.Where(vr => vr.IsCurrent))
                 .Include(ps => ps.ParkingSpotImages.OrderBy(psi => psi.DisplayOrder))
@@ -73,6 +74,11 @@ public class ParkingController : ControllerBase
                 PropertyId = spot.PropertyId,
                 PropertyName = spot.Property?.PropertyName,
                 Address = spot.Property?.Address,
+                Latitude = spot.Property?.Latitude,
+                Longitude = spot.Property?.Longitude,
+                StationName = spot.Property?.Station?.StationName,
+                DistanceToStation = spot.Property?.DistanceToStation,
+                TimeToStation = spot.Property?.TimeToStation,
                 OwnerId = spot.OwnerId,
                 OwnerName = $"{spot.Owner?.FirstName} {spot.Owner?.LastName}".Trim(),
                 ParkingLabel = spot.ParkingLabel,

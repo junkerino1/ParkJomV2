@@ -303,8 +303,19 @@ public class BookingCheckoutController : ControllerBase
                 return BadRequest(Error(StatusCodes.Status400BadRequest, priceError));
             }
 
+            var activeCommissionRate = await _context.SystemConfigurations
+                .AsNoTracking()
+                .Where(c => c.Id == 1)
+                .Select(c => c.CommissionRate)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (activeCommissionRate <= 0m)
+            {
+                activeCommissionRate = PlatformConstants.CommissionRate;
+            }
+
             var now = DateTime.UtcNow;
-            var platformFee = RoundMoney(subtotal * PlatformConstants.CommissionRate / 100m);
+            var platformFee = RoundMoney(subtotal * activeCommissionRate / 100m);
             var quote = new BookingQuote
             {
                 RenterId = user.UserId,
@@ -315,7 +326,7 @@ public class BookingCheckoutController : ControllerBase
                 RateType = rateType,
                 RatePerDay = ratePerDay,
                 RentalSubtotal = subtotal,
-                PlatformCommissionRate = PlatformConstants.CommissionRate,
+                PlatformCommissionRate = activeCommissionRate,
                 PlatformCommissionAmount = platformFee,
                 OwnerPayoutAmount = RoundMoney(subtotal - platformFee),
                 RenterTotal = subtotal,
