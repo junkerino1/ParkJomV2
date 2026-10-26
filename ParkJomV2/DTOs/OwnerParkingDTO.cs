@@ -109,6 +109,17 @@ public class UpdateOwnerAvailabilityRuleRequest : CreateOwnerAvailabilityRuleReq
 {
 }
 
+public class CloseOwnerAvailabilityDatesRequest
+{
+    [Required]
+    [RegularExpression(@"^\d{4}-\d{2}-\d{2}$", ErrorMessage = "fromDate must use YYYY-MM-DD format.")]
+    public string FromDate { get; set; } = string.Empty;
+
+    [Required]
+    [RegularExpression(@"^\d{4}-\d{2}-\d{2}$", ErrorMessage = "toDate must use YYYY-MM-DD format.")]
+    public string ToDate { get; set; } = string.Empty;
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter<OwnerAvailabilityDayPattern>))]
 public enum OwnerAvailabilityDayPattern
 {
