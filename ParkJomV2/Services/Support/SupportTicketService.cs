@@ -11,6 +11,7 @@ public class SupportTicketService
 {
     private readonly ApplicationDbContext _context;
     private readonly SupportAuditService _auditService;
+    private readonly AccessLogService _accessLogService;
     private readonly ISupportRealtimeNotifier _realtimeNotifier;
     private readonly CloudinaryService _cloudinaryService;
     private readonly ILogger<SupportTicketService> _logger;
@@ -18,15 +19,150 @@ public class SupportTicketService
     public SupportTicketService(
         ApplicationDbContext context,
         SupportAuditService auditService,
+        AccessLogService accessLogService,
         ISupportRealtimeNotifier realtimeNotifier,
         CloudinaryService cloudinaryService,
         ILogger<SupportTicketService> logger)
     {
         _context = context;
         _auditService = auditService;
+        _accessLogService = accessLogService;
         _realtimeNotifier = realtimeNotifier;
         _cloudinaryService = cloudinaryService;
         _logger = logger;
+    }
+
+    public async Task<SelfUnlockGateResultDto> SelfUnlockGateAsync(int userId, SelfUnlockGateRequestDto request)
+    {
+        var now = DateTime.UtcNow;
+        var bookingsQuery = _context.Bookings
+            .Include(b => b.ParkingSpot)
+                .ThenInclude(p => p.IoTDevice)
+            .Where(b => b.RenterId == userId);
+
+        var booking = request.BookingId.HasValue
+            ? await bookingsQuery.FirstOrDefaultAsync(b => b.BookingId == request.BookingId.Value)
+            : await bookingsQuery
+                .OrderByDescending(b => b.StartDate)
+                .FirstOrDefaultAsync(b => b.BookingStatus == BookingStatus.Confirmed
+                    || b.BookingStatus == BookingStatus.Active
+                    || (b.StartDate <= now.AddHours(2) && b.EndDate >= now.AddHours(-2)));
+
+        if (booking == null)
+        {
+            throw new ArgumentException("No eligible active booking found. Please select a booking or submit an urgent assistance request.");
+        }
+
+        var spotName = booking.ParkingSpot?.ParkingLabel ?? $"Spot #{booking.ParkingSpotId}";
+        var iot = booking.ParkingSpot?.IoTDevice;
+        var isEligibleStatus = booking.BookingStatus == BookingStatus.Confirmed || booking.BookingStatus == BookingStatus.Active;
+        var isWithinWindow = booking.StartDate <= now.AddHours(1) && booking.EndDate >= now.AddHours(-2);
+
+        if (!isEligibleStatus || !isWithinWindow)
+        {
+            return new SelfUnlockGateResultDto
+            {
+                Success = false,
+                Message = $"Booking #{booking.BookingReference} is not currently within the valid access window. Please submit a support ticket for assistance.",
+                BookingId = booking.BookingId,
+                BookingReference = booking.BookingReference,
+                ParkingSpotName = spotName,
+                IoTDeviceId = iot?.IoTDeviceId,
+                IoTDeviceStatus = iot?.DeviceStatus.ToString(),
+                SuggestUrgentTicket = true,
+                ExecutedAt = now
+            };
+        }
+
+        if (iot == null || iot.DeviceStatus != DeviceStatus.Online)
+        {
+            return new SelfUnlockGateResultDto
+            {
+                Success = false,
+                Message = "The parking barrier device is currently offline and remote self-unlock is unavailable. Please click below to contact 24/7 on-call support.",
+                BookingId = booking.BookingId,
+                BookingReference = booking.BookingReference,
+                ParkingSpotName = spotName,
+                IoTDeviceId = iot?.IoTDeviceId,
+                IoTDeviceStatus = iot?.DeviceStatus.ToString() ?? "NoDevice",
+                SuggestUrgentTicket = true,
+                ExecutedAt = now
+            };
+        }
+
+        // Rate limit: max 1 self-unlock per 2 minutes per booking
+        var recentSelfUnlock = await _context.AccessLogs
+            .AsNoTracking()
+            .AnyAsync(a => a.UserId == userId
+                && a.BookingId == booking.BookingId
+                && a.AccessedAt >= now.AddMinutes(-2)
+                && a.Actions.Contains("Self-Service Gate Unlock"));
+
+        if (recentSelfUnlock)
+        {
+            return new SelfUnlockGateResultDto
+            {
+                Success = false,
+                Message = "A gate unlock command was recently dispatched. If the barrier has not opened, please submit an urgent assistance request for immediate intervention.",
+                BookingId = booking.BookingId,
+                BookingReference = booking.BookingReference,
+                ParkingSpotName = spotName,
+                IoTDeviceId = iot.IoTDeviceId,
+                IoTDeviceStatus = iot.DeviceStatus.ToString(),
+                SuggestUrgentTicket = true,
+                ExecutedAt = now
+            };
+        }
+
+        var actionType = string.Equals(request.Action, "Exit", StringComparison.OrdinalIgnoreCase) ? "Exit" : "Enter";
+        var commandId = $"CMD-SELF-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+
+        if (actionType == "Enter" && !booking.CheckedInAt.HasValue)
+        {
+            booking.CheckedInAt = now;
+            booking.BookingStatus = BookingStatus.Active;
+            booking.UpdatedAt = now;
+        }
+        else if (actionType == "Exit")
+        {
+            booking.ActualExitAt = now;
+            booking.UpdatedAt = now;
+        }
+
+        await _context.SaveChangesAsync();
+
+        await _accessLogService.LogAsync(
+            userId,
+            $"Self-Service Gate Unlock ({actionType} - {commandId})",
+            true,
+            $"Customer triggered emergency self-unlock for Booking #{booking.BookingReference} at {spotName}",
+            booking.BookingId,
+            iot.IoTDeviceId);
+
+        await _auditService.LogAsync(
+            "GateUnlock",
+            booking.BookingId,
+            booking.BookingReference,
+            "SelfUnlockExecuted",
+            userId,
+            "Customer",
+            null,
+            actionType,
+            $"Self-service gate unlock ({actionType}) dispatched to IoT device {iot.Esp32Serial}");
+
+        return new SelfUnlockGateResultDto
+        {
+            Success = true,
+            CommandId = commandId,
+            Message = $"Remote gate unlock command ({commandId}) sent to spot {spotName}. Please proceed safely. If the barrier does not open, request urgent assistance.",
+            BookingId = booking.BookingId,
+            BookingReference = booking.BookingReference,
+            ParkingSpotName = spotName,
+            IoTDeviceId = iot.IoTDeviceId,
+            IoTDeviceStatus = iot.DeviceStatus.ToString(),
+            SuggestUrgentTicket = false,
+            ExecutedAt = now
+        };
     }
 
     public async Task<List<SupportTicketSummaryDto>> GetMyTicketsAsync(int userId, string? status = null, string? search = null)
@@ -37,7 +173,20 @@ public class SupportTicketService
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            if (Enum.TryParse<SupportTicketStatus>(status, true, out var parsedStatus))
+            var trimmedStatus = status.Trim();
+            if (string.Equals(trimmedStatus, "Processing", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(t => t.Status == SupportTicketStatus.New
+                    || t.Status == SupportTicketStatus.Assigned
+                    || t.Status == SupportTicketStatus.InProgress
+                    || t.Status == SupportTicketStatus.WaitingForInternalTeam
+                    || t.Status == SupportTicketStatus.Reopened);
+            }
+            else if (string.Equals(trimmedStatus, "ActionRequired", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(t => t.Status == SupportTicketStatus.WaitingForCustomer);
+            }
+            else if (Enum.TryParse<SupportTicketStatus>(trimmedStatus, true, out var parsedStatus))
             {
                 query = query.Where(t => t.Status == parsedStatus);
             }
@@ -52,9 +201,12 @@ public class SupportTicketService
         }
 
         var tickets = await query
-            .OrderByDescending(t => t.CreatedAt)
+            .OrderByDescending(t => t.UpdatedAt)
             .Include(t => t.CustomerUser)
             .Include(t => t.AssignedAdminUser)
+            .Include(t => t.Booking)
+            .Include(t => t.ParkingSpot)
+            .Include(t => t.DisputeInvestigation)
             .Include(t => t.Messages)
             .ToListAsync();
 
@@ -116,6 +268,9 @@ public class SupportTicketService
             .Take(pageSize)
             .Include(t => t.CustomerUser)
             .Include(t => t.AssignedAdminUser)
+            .Include(t => t.Booking)
+            .Include(t => t.ParkingSpot)
+            .Include(t => t.DisputeInvestigation)
             .Include(t => t.Messages)
             .ToListAsync();
 
@@ -124,12 +279,15 @@ public class SupportTicketService
 
     public async Task<SupportTicketDto?> GetTicketDetailAsync(int ticketId, int callerUserId, bool isAdmin)
     {
-        var query = _context.SupportTickets
+        var ticket = await _context.SupportTickets
             .Include(t => t.CustomerUser)
             .Include(t => t.AssignedAdminUser)
-            .Include(t => t.Conversation)
-            .Include(t => t.WorkflowRun)
             .Include(t => t.Booking)
+                .ThenInclude(b => b!.ParkingSpot)
+                    .ThenInclude(p => p.IoTDevice)
+            .Include(t => t.ParkingSpot)
+                .ThenInclude(p => p!.IoTDevice)
+            .Include(t => t.Vehicle)
             .Include(t => t.OperationalIncident)
             .Include(t => t.DisputeInvestigation)
             .Include(t => t.Messages)
@@ -137,9 +295,8 @@ public class SupportTicketService
             .Include(t => t.Messages)
                 .ThenInclude(m => m.Attachments)
             .Include(t => t.Attachments)
-            .AsQueryable();
+            .FirstOrDefaultAsync(t => t.TicketId == ticketId);
 
-        var ticket = await query.FirstOrDefaultAsync(t => t.TicketId == ticketId);
         if (ticket == null) return null;
         if (!isAdmin && ticket.CustomerUserId != callerUserId) return null;
 
@@ -169,7 +326,6 @@ public class SupportTicketService
                 .ToListAsync();
         }
 
-        // Filter out internal messages for customers
         var visibleMessages = ticket.Messages
             .Where(m => isAdmin || !m.IsInternal)
             .OrderBy(m => m.CreatedAt)
@@ -196,15 +352,22 @@ public class SupportTicketService
             })
             .ToList();
 
+        var (displayStatus, statusLabel) = MapUserDisplayStatus(ticket.Status);
+        var now = DateTime.UtcNow;
+        var canSelfUnlock = ticket.Booking != null && SupportContextService.CanBookingSelfUnlock(ticket.Booking, now);
+
         return new SupportTicketDto
         {
             TicketId = ticket.TicketId,
             TicketReference = ticket.TicketReference,
+            IssueCode = ticket.IssueCode,
             TicketType = ticket.TicketType.ToString(),
             Source = ticket.Source.ToString(),
             Category = ticket.Category.ToString(),
             Priority = ticket.Priority.ToString(),
             Status = ticket.Status.ToString(),
+            UserDisplayStatus = displayStatus,
+            UserStatusLabel = statusLabel,
             Subject = ticket.Subject,
             Description = ticket.Description,
             CustomerUserId = ticket.CustomerUserId,
@@ -214,18 +377,18 @@ public class SupportTicketService
             AssignedAdminUserId = ticket.AssignedAdminUserId,
             AssignedAdminName = ticket.AssignedAdminUser != null ? $"{ticket.AssignedAdminUser.FirstName} {ticket.AssignedAdminUser.LastName}".Trim() : null,
             AssignedTeam = ticket.AssignedTeam,
-            ConversationId = ticket.ConversationId,
-            ConversationReference = ticket.Conversation?.ConversationReference,
-            WorkflowRunId = ticket.WorkflowRunId,
-            WorkflowRunReference = ticket.WorkflowRun?.RunReference,
             BookingId = ticket.BookingId,
             BookingReference = ticket.Booking?.BookingReference,
             ParkingSpotId = ticket.ParkingSpotId,
+            ParkingSpotName = ticket.ParkingSpot?.ParkingLabel ?? ticket.Booking?.ParkingSpot?.ParkingLabel,
             VehicleId = ticket.VehicleId,
+            VehiclePlate = ticket.Vehicle?.NumberPlate,
+            CanSelfUnlockGate = canSelfUnlock,
             OperationalIncidentId = ticket.OperationalIncidentId,
             IncidentReference = ticket.OperationalIncident?.IncidentReference,
             DisputeInvestigationId = ticket.DisputeInvestigationId,
             DisputeReference = ticket.DisputeInvestigation?.DisputeReference,
+            RefundSummary = MapRefundSummary(ticket.DisputeInvestigation),
             AcceptedAt = ticket.AcceptedAt,
             FirstResponseAt = ticket.FirstResponseAt,
             FirstResponseDueAt = ticket.FirstResponseDueAt,
@@ -268,26 +431,72 @@ public class SupportTicketService
         if (user == null) throw new KeyNotFoundException("User not found");
 
         var now = DateTime.UtcNow;
-        var priority = ParsePriority(request.Priority);
-        var category = ParseCategory(request.Category);
+        var issueCode = NormalizeIssueCode(request.IssueCode);
+
+        // 1. Auto-resolve Booking context (explicit BookingId or auto-detect active booking for parking/booking/refund issues)
+        Booking? booking = null;
+        if (request.BookingId.HasValue)
+        {
+            booking = await _context.Bookings
+                .Include(b => b.ParkingSpot)
+                    .ThenInclude(p => p.IoTDevice)
+                .Include(b => b.Vehicle)
+                .FirstOrDefaultAsync(b => b.BookingId == request.BookingId.Value
+                    && (b.RenterId == userId || b.ParkingSpot.OwnerId == userId));
+        }
+        else if (ShouldAutoBindActiveBooking(issueCode, request.Category))
+        {
+            booking = await _context.Bookings
+                .Include(b => b.ParkingSpot)
+                    .ThenInclude(p => p.IoTDevice)
+                .Include(b => b.Vehicle)
+                .Where(b => b.RenterId == userId)
+                .OrderByDescending(b => b.StartDate)
+                .FirstOrDefaultAsync(b => b.BookingStatus == BookingStatus.Confirmed
+                    || b.BookingStatus == BookingStatus.Active
+                    || (b.StartDate <= now.AddHours(2) && b.EndDate >= now.AddHours(-2)));
+        }
+
+        var resolvedSpotId = request.ParkingSpotId ?? booking?.ParkingSpotId;
+        var resolvedVehicleId = request.VehicleId ?? booking?.VehicleId;
+
+        ParkingSpot? spot = booking?.ParkingSpot;
+        if (spot == null && resolvedSpotId.HasValue)
+        {
+            spot = await _context.ParkingSpots
+                .Include(p => p.IoTDevice)
+                .FirstOrDefaultAsync(p => p.ParkingSpotId == resolvedSpotId.Value);
+        }
+
+        // 2. Automatically infer Category, Priority, AssignedTeam, Subject, and opening message
+        var (category, priority, assignedTeam, defaultTitle) = ResolveIssueMetadata(issueCode, request.Category, spot?.IoTDevice);
         var (firstResponseHours, resolutionHours) = CalculateSlaHours(priority);
+
+        var spotLabel = spot?.ParkingLabel ?? (resolvedSpotId.HasValue ? $"Spot #{resolvedSpotId.Value}" : null);
+        var subject = !string.IsNullOrWhiteSpace(request.Subject)
+            ? request.Subject.Trim()
+            : BuildAutomaticSubject(defaultTitle, spotLabel, booking?.BookingReference);
+
+        var description = !string.IsNullOrWhiteSpace(request.Message)
+            ? request.Message.Trim()
+            : BuildAutomaticDescription(defaultTitle, spotLabel, booking);
 
         var ticket = new SupportTicket
         {
             TicketReference = $"TKT-{now:yyyy}-{Random.Shared.Next(10000, 99999)}",
-            TicketType = SupportTicketType.Custom,
-            Source = request.ConversationId.HasValue ? SupportSource.LiveChat : SupportSource.QuickHelp,
+            IssueCode = issueCode,
+            TicketType = !string.IsNullOrWhiteSpace(issueCode) ? SupportTicketType.Preset : SupportTicketType.Custom,
+            Source = SupportSource.QuickHelp,
             Category = category,
             Priority = priority,
             CustomerUserId = userId,
             CreatedByUserId = userId,
-            AssignedTeam = DetermineDefaultTeam(category),
-            BookingId = request.BookingId,
-            ParkingSpotId = request.ParkingSpotId,
-            VehicleId = request.VehicleId,
-            ConversationId = request.ConversationId,
-            Subject = string.IsNullOrWhiteSpace(request.Subject) ? "Support Request" : request.Subject.Trim(),
-            Description = request.Message.Trim(),
+            AssignedTeam = assignedTeam,
+            BookingId = booking?.BookingId ?? request.BookingId,
+            ParkingSpotId = resolvedSpotId,
+            VehicleId = resolvedVehicleId,
+            Subject = subject,
+            Description = description,
             Status = SupportTicketStatus.New,
             FirstResponseDueAt = now.AddHours(firstResponseHours),
             ResolutionDueAt = now.AddHours(resolutionHours),
@@ -298,23 +507,108 @@ public class SupportTicketService
         _context.SupportTickets.Add(ticket);
         await _context.SaveChangesAsync();
 
-        var message = new SupportTicketMessage
+        var openingMessage = new SupportTicketMessage
         {
             TicketId = ticket.TicketId,
             SenderUserId = userId,
             SenderRole = "Customer",
-            Body = request.Message,
+            Body = description,
             CreatedAt = now
         };
-        _context.SupportTicketMessages.Add(message);
+        _context.SupportTicketMessages.Add(openingMessage);
         await _context.SaveChangesAsync();
 
-        if (request.Attachments != null && request.Attachments.Count > 0)
+        // 3. Silent Background Orchestration: Auto-create OperationalIncident for urgent gate/spot/IoT issues
+        if (ShouldAutoCreateIncident(issueCode, category, priority, spot?.IoTDevice))
         {
-            await SaveAttachmentsAsync(request.Attachments, userId, ticket.TicketId, message.MessageId);
+            var incPriority = priority == SupportTicketPriority.P0 ? IncidentPriority.P0 : IncidentPriority.P1;
+            var incident = new OperationalIncident
+            {
+                IncidentReference = $"INC-{now:yyyy}-{Random.Shared.Next(10000, 99999)}",
+                IncidentType = issueCode switch
+                {
+                    "GATE_STUCK" => "GateFailure",
+                    "SPOT_OCCUPIED" => "SpotOccupied",
+                    "IOT_OFFLINE" => "DeviceOffline",
+                    "RENTER_OVERSTAY" => "OverstayBlocking",
+                    _ => "GateFailure"
+                },
+                Priority = incPriority,
+                Status = IncidentStatus.Open,
+                Title = subject,
+                Description = $"Auto-escalated from Ticket #{ticket.TicketReference} ({user.Email}). {description}",
+                PropertyId = spot?.PropertyId,
+                ParkingSpotId = resolvedSpotId,
+                IoTDeviceId = spot?.IoTDevice?.IoTDeviceId,
+                Source = "TicketAutoTriage",
+                AssignedTeam = "ParkingOperations",
+                AffectedCustomerCount = 1,
+                NextEscalationAt = incPriority == IncidentPriority.P0 ? now.AddMinutes(2) : now.AddMinutes(5),
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+
+            _context.OperationalIncidents.Add(incident);
+            await _context.SaveChangesAsync();
+
+            ticket.OperationalIncidentId = incident.IncidentId;
+            _context.IncidentTickets.Add(new IncidentTicket
+            {
+                IncidentId = incident.IncidentId,
+                TicketId = ticket.TicketId,
+                LinkedAt = now
+            });
+            await _context.SaveChangesAsync();
+
+            await _auditService.LogAsync("Incident", incident.IncidentId, incident.IncidentReference, "Created", userId, "System", null, "Open", $"Auto-created from Ticket #{ticket.TicketReference}");
+            await _realtimeNotifier.BroadcastEventAsync("incident.created", new { incidentId = incident.IncidentId, reference = incident.IncidentReference, priority = incident.Priority.ToString() });
         }
 
-        await _auditService.LogAsync("Ticket", ticket.TicketId, ticket.TicketReference, "Created", userId, "Customer", null, "New", "Ticket created by customer");
+        // 4. Silent Background Orchestration: Auto-create DisputeInvestigation for refund/payment/payout claims
+        if (ShouldAutoCreateDispute(issueCode, category))
+        {
+            var disputeType = issueCode switch
+            {
+                "DUPLICATE_CHARGE" => DisputeType.DuplicateCharge,
+                "UNRECOGNIZED_CHARGE" => DisputeType.UnrecognizedCharge,
+                "OWNER_PAYOUT" => DisputeType.OwnerPayout,
+                _ => DisputeType.Refund
+            };
+
+            var claimAmount = request.ClaimAmount ?? booking?.TotalAmount ?? 0m;
+            var dispute = new DisputeInvestigation
+            {
+                DisputeReference = $"DSP-{now:yyyy}-{Random.Shared.Next(10000, 99999)}",
+                DisputeType = disputeType,
+                Status = DisputeStatus.Opened,
+                CustomerUserId = userId,
+                TicketId = ticket.TicketId,
+                BookingId = ticket.BookingId,
+                Amount = claimAmount,
+                Currency = "MYR",
+                Reason = description,
+                AssignedTeam = "Payments",
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+
+            _context.DisputeInvestigations.Add(dispute);
+            await _context.SaveChangesAsync();
+
+            ticket.DisputeInvestigationId = dispute.DisputeId;
+            await _context.SaveChangesAsync();
+
+            await _auditService.LogAsync("Dispute", dispute.DisputeId, dispute.DisputeReference, "Created", userId, "Customer", null, "Opened", $"Auto-created from Ticket #{ticket.TicketReference}");
+            await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = dispute.DisputeId, reference = dispute.DisputeReference });
+        }
+
+        // 5. Save attachments (and auto-sync to DisputeEvidence if linked to a Dispute)
+        if (request.Attachments != null && request.Attachments.Count > 0)
+        {
+            await SaveAttachmentsAsync(request.Attachments, userId, "Customer", ticket.TicketId, openingMessage.MessageId, ticket.DisputeInvestigationId);
+        }
+
+        await _auditService.LogAsync("Ticket", ticket.TicketId, ticket.TicketReference, "Created", userId, "Customer", null, "New", $"Ticket created ({issueCode ?? "CUSTOM"})");
         await _realtimeNotifier.BroadcastEventAsync("ticket.created", new { ticketId = ticket.TicketId, reference = ticket.TicketReference }, userId, ticket.TicketId);
 
         return (await GetTicketDetailAsync(ticket.TicketId, userId, false))!;
@@ -345,6 +639,7 @@ public class SupportTicketService
         var ticket = new SupportTicket
         {
             TicketReference = $"TKT-{now:yyyy}-{Random.Shared.Next(10000, 99999)}",
+            IssueCode = NormalizeIssueCode(request.IssueCode),
             TicketType = SupportTicketType.Custom,
             Source = SupportSource.Admin,
             Category = category,
@@ -356,7 +651,6 @@ public class SupportTicketService
             BookingId = request.BookingId,
             ParkingSpotId = request.ParkingSpotId,
             VehicleId = request.VehicleId,
-            ConversationId = request.ConversationId,
             Subject = string.IsNullOrWhiteSpace(request.Subject) ? "Admin Created Ticket" : request.Subject.Trim(),
             Description = request.Message.Trim(),
             InternalSummary = request.InternalSummary,
@@ -386,7 +680,7 @@ public class SupportTicketService
 
             if (request.Attachments != null && request.Attachments.Count > 0)
             {
-                await SaveAttachmentsAsync(request.Attachments, adminUserId, ticket.TicketId, msg.MessageId);
+                await SaveAttachmentsAsync(request.Attachments, adminUserId, "Admin", ticket.TicketId, msg.MessageId, ticket.DisputeInvestigationId);
             }
         }
 
@@ -398,7 +692,9 @@ public class SupportTicketService
 
     public async Task<SupportTicketMessageDto> AddMessageAsync(int ticketId, int senderUserId, string role, SendTicketMessageRequestDto request)
     {
-        var ticket = await _context.SupportTickets.FindAsync(ticketId);
+        var ticket = await _context.SupportTickets
+            .Include(t => t.DisputeInvestigation)
+            .FirstOrDefaultAsync(t => t.TicketId == ticketId);
         if (ticket == null) throw new KeyNotFoundException("Ticket not found");
 
         var now = DateTime.UtcNow;
@@ -414,7 +710,6 @@ public class SupportTicketService
 
         _context.SupportTicketMessages.Add(message);
 
-        // Update ticket response timestamps and status flow
         if (role == "Admin")
         {
             if (!ticket.FirstResponseAt.HasValue && !request.IsInternal)
@@ -432,6 +727,11 @@ public class SupportTicketService
             {
                 ticket.Status = SupportTicketStatus.InProgress;
             }
+            if (ticket.DisputeInvestigation != null && ticket.DisputeInvestigation.Status == DisputeStatus.MoreInfo)
+            {
+                ticket.DisputeInvestigation.Status = DisputeStatus.EvidenceReview;
+                ticket.DisputeInvestigation.UpdatedAt = now;
+            }
         }
 
         ticket.UpdatedAt = now;
@@ -439,13 +739,28 @@ public class SupportTicketService
 
         if (request.Attachments != null && request.Attachments.Count > 0)
         {
-            await SaveAttachmentsAsync(request.Attachments, senderUserId, ticketId, message.MessageId);
+            await SaveAttachmentsAsync(request.Attachments, senderUserId, role, ticketId, message.MessageId, ticket.DisputeInvestigationId);
         }
 
         await _auditService.LogAsync("Ticket", ticketId, ticket.TicketReference, "MessageAdded", senderUserId, role, null, ticket.Status.ToString(), $"Message added by {role}");
         await _realtimeNotifier.BroadcastEventAsync("message.created", new { ticketId = ticketId, messageId = message.MessageId, isInternal = message.IsInternal }, ticket.CustomerUserId, ticketId);
 
         var sender = await _context.Users.FindAsync(senderUserId);
+        var savedAttachments = await _context.SupportAttachments
+            .AsNoTracking()
+            .Where(a => a.TicketMessageId == message.MessageId)
+            .Select(a => new SupportAttachmentDto
+            {
+                AttachmentId = a.AttachmentId,
+                FileName = a.FileName,
+                FileUrl = a.FileUrl,
+                ContentType = a.ContentType,
+                FileSize = a.FileSize,
+                IsPrivate = a.IsPrivate,
+                CreatedAt = a.CreatedAt
+            })
+            .ToListAsync();
+
         return new SupportTicketMessageDto
         {
             MessageId = message.MessageId,
@@ -455,8 +770,59 @@ public class SupportTicketService
             SenderRole = role,
             Body = message.Body,
             IsInternal = message.IsInternal,
-            CreatedAt = message.CreatedAt
+            CreatedAt = message.CreatedAt,
+            Attachments = savedAttachments
         };
+    }
+
+    public async Task<SupportTicketDto> CloseCustomerTicketAsync(int ticketId, int customerUserId, CloseTicketRequestDto? request)
+    {
+        var ticket = await _context.SupportTickets
+            .Include(t => t.OperationalIncident)
+            .FirstOrDefaultAsync(t => t.TicketId == ticketId);
+
+        if (ticket == null || ticket.CustomerUserId != customerUserId)
+        {
+            throw new KeyNotFoundException("Ticket not found");
+        }
+
+        var oldState = ticket.Status.ToString();
+        var now = DateTime.UtcNow;
+        var reason = string.IsNullOrWhiteSpace(request?.Reason)
+            ? "Issue resolved, closed by customer"
+            : request.Reason.Trim();
+
+        ticket.Status = SupportTicketStatus.Closed;
+        ticket.ResolvedAt ??= now;
+        ticket.ClosedAt = now;
+        ticket.ResolutionCode = "ClosedByCustomer";
+        ticket.UpdatedAt = now;
+
+        _context.SupportTicketMessages.Add(new SupportTicketMessage
+        {
+            TicketId = ticketId,
+            SenderUserId = customerUserId,
+            SenderRole = "Customer",
+            Body = $"[Ticket Closed by Customer] {reason}",
+            CreatedAt = now
+        });
+
+        // Auto-resolve single-customer OperationalIncident if still open
+        if (ticket.OperationalIncident != null
+            && ticket.OperationalIncident.AffectedCustomerCount <= 1
+            && (ticket.OperationalIncident.Status == IncidentStatus.Open || ticket.OperationalIncident.Status == IncidentStatus.Acknowledged || ticket.OperationalIncident.Status == IncidentStatus.Escalated))
+        {
+            ticket.OperationalIncident.Status = IncidentStatus.Resolved;
+            ticket.OperationalIncident.ResolvedAt = now;
+            ticket.OperationalIncident.NextEscalationAt = null;
+            ticket.OperationalIncident.UpdatedAt = now;
+        }
+
+        await _context.SaveChangesAsync();
+        await _auditService.LogAsync("Ticket", ticketId, ticket.TicketReference, "ClosedByCustomer", customerUserId, "Customer", oldState, "Closed", reason);
+        await _realtimeNotifier.BroadcastEventAsync("ticket.updated", new { ticketId = ticketId, status = "Closed" }, ticket.CustomerUserId, ticketId);
+
+        return (await GetTicketDetailAsync(ticketId, customerUserId, false))!;
     }
 
     public async Task<SupportTicketDto> AcceptTicketAsync(int ticketId, int adminUserId)
@@ -634,11 +1000,6 @@ public class SupportTicketService
         return (await GetTicketDetailAsync(ticket.TicketId, actorAdminUserId, true))!;
     }
 
-    public Task<SupportTicketDto> LinkIncidentAsync(int ticketId, int incidentId, int actorAdminUserId)
-    {
-        return LinkIncidentAsync(ticketId.ToString(), new LinkIncidentRequestDto { IncidentId = incidentId }, actorAdminUserId);
-    }
-
     public async Task<SupportTicketDto> LinkDisputeAsync(string ticketIdentifier, LinkDisputeRequestDto request, int actorAdminUserId)
     {
         if (string.IsNullOrWhiteSpace(ticketIdentifier))
@@ -692,31 +1053,46 @@ public class SupportTicketService
         return (await GetTicketDetailAsync(ticket.TicketId, actorAdminUserId, true))!;
     }
 
-    public Task<SupportTicketDto> LinkDisputeAsync(int ticketId, int disputeId, int actorAdminUserId)
+    private async Task SaveAttachmentsAsync(List<IFormFile> files, int userId, string role, int ticketId, int? messageId = null, int? disputeId = null)
     {
-        return LinkDisputeAsync(ticketId.ToString(), new LinkDisputeRequestDto { DisputeId = disputeId }, actorAdminUserId);
-    }
-
-    private async Task SaveAttachmentsAsync(List<IFormFile> files, int userId, int ticketId, int? messageId = null)
-    {
+        var now = DateTime.UtcNow;
         foreach (var file in files)
         {
             try
             {
                 var uploadResult = await _cloudinaryService.UploadPrivateDocumentAsync(file, "support_attachments");
+                var fileUrl = uploadResult.SecureUrl?.ToString() ?? uploadResult.Url?.ToString() ?? string.Empty;
+
                 var attachment = new SupportAttachment
                 {
                     TicketId = ticketId,
                     TicketMessageId = messageId,
                     FileName = file.FileName,
-                    FileUrl = uploadResult.SecureUrl?.ToString() ?? uploadResult.Url?.ToString() ?? string.Empty,
+                    FileUrl = fileUrl,
                     ContentType = file.ContentType,
                     FileSize = file.Length,
                     UploadedByUserId = userId,
                     IsPrivate = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = now
                 };
                 _context.SupportAttachments.Add(attachment);
+
+                // Automatically mirror attachment as DisputeEvidence when the ticket has an active DisputeInvestigation
+                if (disputeId.HasValue)
+                {
+                    _context.DisputeEvidences.Add(new DisputeEvidence
+                    {
+                        DisputeId = disputeId.Value,
+                        EvidenceType = "TicketAttachment",
+                        FileName = file.FileName,
+                        FileUrl = fileUrl,
+                        UploadedByUserId = userId,
+                        UploadedRole = role,
+                        IsVerified = role == "Admin",
+                        Description = "Uploaded via Support Ticket conversation",
+                        CreatedAt = now
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -726,17 +1102,21 @@ public class SupportTicketService
         await _context.SaveChangesAsync();
     }
 
-    private static SupportTicketSummaryDto MapToSummaryDto(SupportTicket t)
+    public static SupportTicketSummaryDto MapToSummaryDto(SupportTicket t)
     {
+        var (displayStatus, statusLabel) = MapUserDisplayStatus(t.Status);
         return new SupportTicketSummaryDto
         {
             TicketId = t.TicketId,
             TicketReference = t.TicketReference,
+            IssueCode = t.IssueCode,
             TicketType = t.TicketType.ToString(),
             Source = t.Source.ToString(),
             Category = t.Category.ToString(),
             Priority = t.Priority.ToString(),
             Status = t.Status.ToString(),
+            UserDisplayStatus = displayStatus,
+            UserStatusLabel = statusLabel,
             Subject = t.Subject,
             CustomerUserId = t.CustomerUserId,
             CustomerName = t.CustomerUser != null ? $"{t.CustomerUser.FirstName} {t.CustomerUser.LastName}".Trim() : "Customer",
@@ -744,14 +1124,126 @@ public class SupportTicketService
             AssignedAdminName = t.AssignedAdminUser != null ? $"{t.AssignedAdminUser.FirstName} {t.AssignedAdminUser.LastName}".Trim() : null,
             AssignedTeam = t.AssignedTeam,
             BookingId = t.BookingId,
+            BookingReference = t.Booking?.BookingReference,
+            ParkingSpotName = t.ParkingSpot?.ParkingLabel,
             OperationalIncidentId = t.OperationalIncidentId,
             DisputeInvestigationId = t.DisputeInvestigationId,
+            RefundSummary = MapRefundSummary(t.DisputeInvestigation),
             CreatedAt = t.CreatedAt,
             UpdatedAt = t.UpdatedAt,
             FirstResponseDueAt = t.FirstResponseDueAt,
             ResolutionDueAt = t.ResolutionDueAt,
             MessageCount = t.Messages.Count
         };
+    }
+
+    public static (string DisplayStatus, string StatusLabel) MapUserDisplayStatus(SupportTicketStatus status) => status switch
+    {
+        SupportTicketStatus.WaitingForCustomer => ("ActionRequired", "Action Required"),
+        SupportTicketStatus.Resolved => ("Resolved", "Resolved"),
+        SupportTicketStatus.Closed or SupportTicketStatus.Cancelled or SupportTicketStatus.Duplicate => ("Closed", "Closed"),
+        _ => ("Processing", "In Progress")
+    };
+
+    private static TicketRefundSummaryDto? MapRefundSummary(DisputeInvestigation? d)
+    {
+        if (d == null) return null;
+        return new TicketRefundSummaryDto
+        {
+            DisputeId = d.DisputeId,
+            DisputeReference = d.DisputeReference,
+            DisputeType = d.DisputeType.ToString(),
+            Status = d.Status.ToString(),
+            ClaimAmount = d.Amount,
+            Currency = d.Currency,
+            Decision = d.Decision,
+            DecisionReason = d.DecisionReason,
+            DecidedAt = d.DecidedAt
+        };
+    }
+
+    private static string? NormalizeIssueCode(string? issueCode)
+    {
+        return string.IsNullOrWhiteSpace(issueCode) ? null : issueCode.Trim().ToUpperInvariant();
+    }
+
+    private static bool ShouldAutoBindActiveBooking(string? issueCode, string? category)
+    {
+        if (issueCode is "GATE_STUCK" or "SPOT_OCCUPIED" or "REFUND_REQUEST" or "RENTER_OVERSTAY")
+            return true;
+
+        var parsedCat = ParseCategory(category);
+        return parsedCat is SupportCategory.ParkingAccess or SupportCategory.Booking;
+    }
+
+    private static bool ShouldAutoCreateIncident(string? issueCode, SupportCategory category, SupportTicketPriority priority, IoTDevice? iot)
+    {
+        if (issueCode is "GATE_STUCK" or "SPOT_OCCUPIED" or "IOT_OFFLINE" or "RENTER_OVERSTAY")
+            return true;
+
+        if (category == SupportCategory.ParkingAccess && (priority == SupportTicketPriority.P0 || (iot != null && iot.DeviceStatus == DeviceStatus.Offline)))
+            return true;
+
+        return false;
+    }
+
+    private static bool ShouldAutoCreateDispute(string? issueCode, SupportCategory category)
+    {
+        if (issueCode is "REFUND_REQUEST" or "DUPLICATE_CHARGE" or "UNRECOGNIZED_CHARGE" or "OWNER_PAYOUT")
+            return true;
+
+        return category == SupportCategory.Payment;
+    }
+
+    private static (SupportCategory Category, SupportTicketPriority Priority, string AssignedTeam, string DefaultTitle) ResolveIssueMetadata(
+        string? issueCode,
+        string? rawCategory,
+        IoTDevice? iot)
+    {
+        return issueCode switch
+        {
+            "GATE_STUCK" => (SupportCategory.ParkingAccess, SupportTicketPriority.P0, "ParkingOperations", "Barrier Gate Stuck / Entry Denied"),
+            "SPOT_OCCUPIED" => (SupportCategory.ParkingAccess, SupportTicketPriority.P0, "ParkingOperations", "Reserved Spot Occupied"),
+            "RENTER_OVERSTAY" => (SupportCategory.OwnerSupport, SupportTicketPriority.P1, "ParkingOperations", "Renter Overstay / Blocking Spot"),
+            "IOT_OFFLINE" => (SupportCategory.ParkingAccess, SupportTicketPriority.P1, "ParkingOperations", "IoT Barrier / Hardware Fault"),
+            "DUPLICATE_CHARGE" => (SupportCategory.Payment, SupportTicketPriority.P1, "Payments", "Duplicate Charge / Billing Issue"),
+            "UNRECOGNIZED_CHARGE" => (SupportCategory.Payment, SupportTicketPriority.P1, "Payments", "Unrecognized Charge Dispute"),
+            "REFUND_REQUEST" => (SupportCategory.Payment, SupportTicketPriority.P2, "Payments", "Refund Request"),
+            "OWNER_PAYOUT" => (SupportCategory.OwnerSupport, SupportTicketPriority.P2, "Payments", "Host Payout & Revenue Inquiry"),
+            _ => ResolveFromFallbackCategory(rawCategory, iot)
+        };
+    }
+
+    private static (SupportCategory Category, SupportTicketPriority Priority, string AssignedTeam, string DefaultTitle) ResolveFromFallbackCategory(
+        string? rawCategory,
+        IoTDevice? iot)
+    {
+        var category = ParseCategory(rawCategory);
+        var priority = category switch
+        {
+            SupportCategory.ParkingAccess => iot?.DeviceStatus == DeviceStatus.Offline ? SupportTicketPriority.P0 : SupportTicketPriority.P1,
+            SupportCategory.Payment => SupportTicketPriority.P2,
+            _ => SupportTicketPriority.P2
+        };
+        var team = DetermineDefaultTeam(category);
+        return (category, priority, team, "Support Request");
+    }
+
+    private static string BuildAutomaticSubject(string defaultTitle, string? spotLabel, string? bookingReference)
+    {
+        var parts = new List<string> { defaultTitle };
+        if (!string.IsNullOrWhiteSpace(spotLabel)) parts.Add(spotLabel);
+        if (!string.IsNullOrWhiteSpace(bookingReference)) parts.Add($"({bookingReference})");
+        return string.Join(" - ", parts);
+    }
+
+    private static string BuildAutomaticDescription(string defaultTitle, string? spotLabel, Booking? booking)
+    {
+        if (booking != null)
+        {
+            return $"{defaultTitle}. Linked booking: #{booking.BookingReference}, spot: {spotLabel ?? "Unknown"}, plate: {booking.Vehicle?.NumberPlate ?? "Unknown"}.";
+        }
+        return $"{defaultTitle}.";
     }
 
     private static SupportTicketPriority ParsePriority(string? p) => p?.ToLowerInvariant() switch

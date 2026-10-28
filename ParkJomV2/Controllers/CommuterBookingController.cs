@@ -229,6 +229,84 @@ public class CommuterBookingsController : ControllerBase
 
 
     /// <summary>
+    /// GET /api/commuter/bookings/active
+    /// Retrieves the commuter's currently active or upcoming reservation across devices.
+    /// </summary>
+    [HttpGet("active")]
+    [ProducesResponseType(typeof(ActiveBookingResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<ActiveBookingResponse>> GetActiveBooking()
+    {
+        try
+        {
+            var user = await _currentUser.GetCurrentUserAsync();
+            if (user == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "User not found"
+                });
+            }
+
+            var now = DateTime.UtcNow;
+
+            var allActiveBookings = await _context.Bookings
+                .AsNoTracking()
+                .Include(b => b.ParkingSpot)
+                    .ThenInclude(ps => ps.Property)
+                        .ThenInclude(p => p.Station)
+                .Include(b => b.ParkingSpot.Owner)
+                .Include(b => b.ParkingSpot.ParkingSpotImages.OrderBy(psi => psi.DisplayOrder))
+                    .ThenInclude(psi => psi.MediaFile)
+                .Include(b => b.Vehicle)
+                .Where(b => b.RenterId == user.UserId &&
+                            (b.BookingStatus == BookingStatus.Active ||
+                             (b.BookingStatus == BookingStatus.Confirmed && b.EndDate > now)))
+                .OrderBy(b => b.StartDate)
+                .ToListAsync();
+
+            if (allActiveBookings.Count == 0)
+            {
+                return Ok(new ActiveBookingResponse
+                {
+                    Code = StatusCodes.Status200OK,
+                    Success = true,
+                    Message = "No active booking found.",
+                    Data = null,
+                    UpcomingBookings = new List<ActiveBookingDTO>()
+                });
+            }
+
+            var primaryBooking = allActiveBookings[0];
+            var activeDto = MapToActiveBookingDTO(primaryBooking);
+            var upcomingDtos = allActiveBookings.Skip(1).Select(MapToActiveBookingDTO).ToList();
+
+            await _accessLogService.LogAsync(User, "GetActiveBooking", true, $"BookingId={primaryBooking.BookingId}, UpcomingCount={upcomingDtos.Count}", primaryBooking.BookingId);
+
+            return Ok(new ActiveBookingResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Active booking retrieved successfully.",
+                Data = activeDto,
+                UpcomingBookings = upcomingDtos
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving active commuter booking");
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while retrieving active booking."
+            });
+        }
+    }
+
+    /// <summary>
     /// Confirms and pays for a quote in one idempotent database transaction.
     /// </summary>
     [HttpPost("confirm")]
@@ -242,7 +320,11 @@ public class CommuterBookingsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        var userId = user!.UserId;
+        if (user == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, Error(StatusCodes.Status403Forbidden, "Authenticated user not found."));
+        }
+        var userId = user.UserId;
 
         var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim();
         if (userId <= 0 || string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
@@ -324,6 +406,26 @@ public class CommuterBookingsController : ControllerBase
                 await HasBookingOverlap(quote.ParkingSpotId, quoteStart, quoteEndExclusive, cancellationToken))
             {
                 return Conflict(Error(StatusCodes.Status409Conflict, "The selected period is no longer available."));
+            }
+
+            var hasUserOverlap = await _context.Bookings.AnyAsync(item =>
+                item.RenterId == userId &&
+                (item.BookingStatus == BookingStatus.Confirmed || item.BookingStatus == BookingStatus.Active) &&
+                item.StartDate < quote.EndDate && item.EndDate > quote.StartDate,
+                cancellationToken);
+            if (hasUserOverlap)
+            {
+                return Conflict(Error(StatusCodes.Status409Conflict, "You already have an active or confirmed reservation that overlaps with the selected period."));
+            }
+
+            var hasVehicleOverlap = await _context.Bookings.AnyAsync(item =>
+                item.VehicleId == request.VehicleId &&
+                (item.BookingStatus == BookingStatus.Confirmed || item.BookingStatus == BookingStatus.Active) &&
+                item.StartDate < quote.EndDate && item.EndDate > quote.StartDate,
+                cancellationToken);
+            if (hasVehicleOverlap)
+            {
+                return Conflict(Error(StatusCodes.Status409Conflict, "This vehicle is already assigned to another active or confirmed reservation during the selected period."));
             }
 
             // lock wallet to prevent race conditions when multiple bookings are being processed at the same time
@@ -511,6 +613,21 @@ public class CommuterBookingsController : ControllerBase
             }
 
             var now = DateTime.UtcNow;
+            var malaysiaToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
+            var bookingStartDate = DateOnly.FromDateTime(booking.StartDate);
+            if (booking.BookingStatus == BookingStatus.Active ||
+                booking.BookingStatus == BookingStatus.Expired ||
+                malaysiaToday >= bookingStartDate)
+            {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Cannot cancel started or expired booking (bookingId={request.BookingId})");
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Bookings cannot be cancelled once the booking period has started."
+                });
+            }
+
             var refundAmount = 0m;
 
             // Only bookings that were actually paid have a ledger to reverse (legacy pending
@@ -554,9 +671,16 @@ public class CommuterBookingsController : ControllerBase
                         });
                     }
 
-                    refundAmount = booking.TotalAmount;
-                    var ownerPayout = booking.OwnerPayoutAmount;
-                    var commission = booking.PlatformCommissionAmount;
+                    var daysUntilStart = bookingStartDate.DayNumber - malaysiaToday.DayNumber;
+                    var refundRate = daysUntilStart >= 3 ? 1.0m : 0.5m;
+                    var alreadyRefunded = booking.RefundAmount;
+                    var maxRefundable = Math.Max(0m, booking.TotalAmount - alreadyRefunded);
+                    refundAmount = Math.Min(maxRefundable, Math.Round(booking.TotalAmount * refundRate, 2, MidpointRounding.AwayFromZero));
+                    var effectiveRatio = booking.TotalAmount > 0 ? refundAmount / booking.TotalAmount : 0m;
+                    var ownerPayout = Math.Min(ownerWallet.OnHold, Math.Round(booking.OwnerPayoutAmount * effectiveRatio, 2, MidpointRounding.AwayFromZero));
+                    var commission = Math.Round(booking.PlatformCommissionAmount * effectiveRatio, 2, MidpointRounding.AwayFromZero);
+
+
 
                     // 1) Refund the renter's wallet balance.
                     _walletService.Refund(renterWallet, refundAmount, now);
@@ -570,7 +694,7 @@ public class CommuterBookingsController : ControllerBase
                     booking.BookingStatus = BookingStatus.Cancelled;
                     booking.CancellationReason = request.CancellationReason;
                     booking.CancelledAt = now;
-                    booking.RefundAmount = refundAmount;
+                    booking.RefundAmount += refundAmount;
                     booking.UpdatedAt = now;
 
                     // Write the refund ledger rows: renter + refund, owner & platform reversals.
@@ -800,6 +924,42 @@ public class CommuterBookingsController : ControllerBase
             CancellationReason = booking.CancellationReason,
             CancelledAt = booking.CancelledAt,
             CreatedAt = booking.CreatedAt
+        };
+    }
+
+    private static ActiveBookingDTO MapToActiveBookingDTO(Booking booking)
+    {
+        var primaryImg = booking.ParkingSpot.ParkingSpotImages.FirstOrDefault()?.MediaFile?.SecureUrl;
+        var spot = booking.ParkingSpot;
+        var property = spot.Property;
+
+        return new ActiveBookingDTO
+        {
+            BookingId = booking.BookingId,
+            BookingReference = booking.BookingReference,
+            StartTime = booking.StartDate,
+            EndTime = booking.EndDate,
+            VehiclePlate = booking.Vehicle?.NumberPlate ?? string.Empty,
+            Status = booking.BookingStatus.ToString(),
+            TotalPaid = booking.TotalAmount,
+            Spot = new ActiveBookingSpotDTO
+            {
+                ParkingSpotId = spot.ParkingSpotId,
+                ParkingLabel = spot.ParkingLabel,
+                PropertyId = spot.PropertyId,
+                PropertyName = property?.PropertyName,
+                Address = property?.Address,
+                Latitude = property?.Latitude ?? 0m,
+                Longitude = property?.Longitude ?? 0m,
+                StationName = property?.Station?.StationName,
+                DistanceToStation = property?.DistanceToStation ?? 0m,
+                TimeToStationInMinutes = property?.TimeToStation ?? 0m,
+                AvailabilityStatus = spot.AvailabilityStatus.ToString(),
+                MonthlyRate = spot.MonthlyRate,
+                DailyRate = spot.DailyRate,
+                PrimaryImageUrl = primaryImg,
+                OwnerName = spot.Owner != null ? $"{spot.Owner.FirstName} {spot.Owner.LastName}".Trim() : null
+            }
         };
     }
 }

@@ -38,6 +38,13 @@ builder.Services.AddHttpClient<NominatimService>(client =>
 });
 
 builder.Services.AddScoped<IPropertyService, PropertyService>();
+builder.Services.AddSingleton<GtfsService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<GtfsRealtimeService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.Add("User-Agent", "ParkJomV2/1.0 (Smart Transit Parking Platform)");
+});
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -102,6 +109,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     context.HttpContext.Items["SuspendedAccount"] = true;
                     context.Fail("The account is suspended.");
                 }
+                else if (string.Equals(
+                    accountStatus,
+                    "Deactivated",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    // Allow deactivated users to reach support endpoints to request reactivation.
+                    var requestPath = context.HttpContext.Request.Path;
+                    var isSupportEndpoint = requestPath.StartsWithSegments("/api/support")
+                        || requestPath.StartsWithSegments("/hubs/support");
+                    if (!isSupportEndpoint)
+                    {
+                        context.HttpContext.Items["DeactivatedAccount"] = true;
+                        context.Fail("The account is deactivated.");
+                    }
+                }
             },
             OnChallenge = context =>
             {
@@ -109,10 +131,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
                 var isSuspendedAccount = context.HttpContext.Items.ContainsKey("SuspendedAccount");
+                var isDeactivatedAccount = context.HttpContext.Items.ContainsKey("DeactivatedAccount");
 
                 var (statusCode, message) = isSuspendedAccount
                     ? (StatusCodes.Status403Forbidden, "Your account is suspended. Please contact support.")
-                    : context.AuthenticateFailure switch
+                    : isDeactivatedAccount
+                        ? (StatusCodes.Status403Forbidden, "Your account is deactivated. Please contact support to reactivate.")
+                        : context.AuthenticateFailure switch
                 {
                     SecurityTokenExpiredException => (StatusCodes.Status401Unauthorized, "Your session has expired. Please log in again."),
                     SecurityTokenException => (StatusCodes.Status401Unauthorized, "Invalid token. Please provide a valid authentication token."),
@@ -164,9 +189,7 @@ builder.Services.AddSingleton<SupportWebSocketConnectionManager>();
 builder.Services.AddScoped<ISupportRealtimeNotifier, SupportRealtimeNotifier>();
 builder.Services.AddScoped<SupportAuditService>();
 builder.Services.AddScoped<SupportContextService>();
-builder.Services.AddScoped<SupportWorkflowService>();
 builder.Services.AddScoped<SupportTicketService>();
-builder.Services.AddScoped<ConversationService>();
 builder.Services.AddScoped<IncidentService>();
 builder.Services.AddScoped<DisputeService>();
 builder.Services.AddScoped<SupportOnCallService>();

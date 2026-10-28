@@ -36,9 +36,8 @@ public class SupportTicket
     [StringLength(100)]
     public string? AssignedTeam { get; set; } = "CustomerSupport";
 
-    public int? ConversationId { get; set; }
-
-    public int? WorkflowRunId { get; set; }
+    [StringLength(50)]
+    public string? IssueCode { get; set; }
 
     public int? BookingId { get; set; }
 
@@ -90,11 +89,6 @@ public class SupportTicket
 
     [ForeignKey(nameof(AssignedAdminUserId))]
     public User? AssignedAdminUser { get; set; }
-
-    [ForeignKey(nameof(ConversationId))]
-    public SupportConversation? Conversation { get; set; }
-
-    public SupportWorkflowRun? WorkflowRun { get; set; }
 
     [ForeignKey(nameof(BookingId))]
     public Booking? Booking { get; set; }

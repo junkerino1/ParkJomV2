@@ -50,14 +50,4 @@ public class SupportHub : Hub
     {
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Ticket-{ticketId}");
     }
-
-    public async Task JoinConversation(int conversationId)
-    {
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"Conversation-{conversationId}");
-    }
-
-    public async Task LeaveConversation(int conversationId)
-    {
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Conversation-{conversationId}");
-    }
 }

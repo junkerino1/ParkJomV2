@@ -14,10 +14,6 @@ public class SupportAttachment
 
     public int? TicketMessageId { get; set; }
 
-    public int? ConversationId { get; set; }
-
-    public int? ConversationMessageId { get; set; }
-
     [Required]
     [StringLength(255)]
     public string FileName { get; set; } = string.Empty;
@@ -45,12 +41,6 @@ public class SupportAttachment
 
     [ForeignKey(nameof(TicketMessageId))]
     public SupportTicketMessage? TicketMessage { get; set; }
-
-    [ForeignKey(nameof(ConversationId))]
-    public SupportConversation? Conversation { get; set; }
-
-    [ForeignKey(nameof(ConversationMessageId))]
-    public SupportConversationMessage? ConversationMessage { get; set; }
 
     [ForeignKey(nameof(UploadedByUserId))]
     public User UploadedByUser { get; set; } = null!;

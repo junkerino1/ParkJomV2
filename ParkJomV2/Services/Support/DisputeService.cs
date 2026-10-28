@@ -279,7 +279,7 @@ public class DisputeService
         dispute.Status = DisputeStatus.MoreInfo;
         dispute.UpdatedAt = now;
 
-        // Add notice to linked ticket if exists
+        // Add notice to linked ticket if exists and set status to WaitingForCustomer
         if (dispute.TicketId.HasValue)
         {
             var msg = new SupportTicketMessage
@@ -287,16 +287,22 @@ public class DisputeService
                 TicketId = dispute.TicketId.Value,
                 SenderUserId = adminUserId,
                 SenderRole = "Admin",
-                Body = $"[Dispute Investigation Update] Evidence Requested: {request.RequiredEvidence}\nMessage: {request.CustomerMessage}\nDeadline: {request.Deadline?.ToString("yyyy-MM-dd") ?? "Within 48 hours"}",
+                Body = $"[Action Required] Supporting documents needed: {request.RequiredEvidence}\nDetails: {request.CustomerMessage}\nDeadline: {request.Deadline?.ToString("yyyy-MM-dd") ?? "Within 48 hours"} (You can upload photos or files directly in this conversation)",
                 CreatedAt = now
             };
             _context.SupportTicketMessages.Add(msg);
+
+            if (dispute.Ticket != null)
+            {
+                dispute.Ticket.Status = SupportTicketStatus.WaitingForCustomer;
+                dispute.Ticket.UpdatedAt = now;
+            }
         }
 
         await _context.SaveChangesAsync();
 
         await _auditService.LogAsync("Dispute", disputeId, dispute.DisputeReference, "EvidenceRequested", adminUserId, "Admin", oldStatus, "MoreInfo", request.RequiredEvidence);
-        await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = disputeId, status = "MoreInfo" }, dispute.CustomerUserId);
+        await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = disputeId, status = "MoreInfo" }, dispute.CustomerUserId, dispute.TicketId);
     }
 
     public async Task<DisputeAdminDto> AssignDisputeAsync(int disputeId, int adminUserId, AssignDisputeRequestDto request)
@@ -335,9 +341,15 @@ public class DisputeService
             .Include(d => d.CustomerUser)
                 .ThenInclude(u => u.Wallet)
             .Include(d => d.Booking)
+                .ThenInclude(b => b!.ParkingSpot)
+            .Include(d => d.Ticket)
             .FirstOrDefaultAsync(d => d.DisputeId == disputeId);
 
         if (dispute == null) throw new KeyNotFoundException("Dispute not found");
+        if (dispute.Status == DisputeStatus.Approved)
+        {
+            throw new InvalidOperationException("This dispute has already been approved and refunded.");
+        }
 
         var now = DateTime.UtcNow;
         var oldStatus = dispute.Status.ToString();
@@ -348,18 +360,35 @@ public class DisputeService
         dispute.DecidedAt = now;
         dispute.UpdatedAt = now;
 
+        decimal refundAmount = 0m;
+        string ticketNoticeBody;
+
         if (string.Equals(request.Decision, "ApproveReversal", StringComparison.OrdinalIgnoreCase))
         {
             dispute.Status = DisputeStatus.Approved;
-            var refundAmount = request.Amount ?? (dispute.Amount > 0 ? dispute.Amount : dispute.Booking?.TotalAmount ?? 0m);
+            var requestedRefund = request.Amount ?? (dispute.Amount > 0 ? dispute.Amount : dispute.Booking?.TotalAmount ?? 0m);
+            if (dispute.Booking != null)
+            {
+                var alreadyRefunded = dispute.Booking.RefundAmount;
+                var maxRefundable = Math.Max(0m, dispute.Booking.TotalAmount - alreadyRefunded);
+                if (maxRefundable <= 0m)
+                {
+                    throw new InvalidOperationException("The associated booking has already been fully refunded.");
+                }
+                refundAmount = Math.Min(requestedRefund, maxRefundable);
+            }
+            else
+            {
+                refundAmount = requestedRefund;
+            }
+            dispute.Amount = refundAmount;
 
             if (refundAmount > 0)
             {
                 var wallet = dispute.CustomerUser.Wallet;
                 if (wallet != null)
                 {
-                    wallet.Balance += refundAmount;
-                    wallet.UpdatedAt = now;
+                    _walletService.Refund(wallet, refundAmount, now);
 
                     _transactionService.Create(
                         wallet.WalletId,
@@ -372,21 +401,128 @@ public class DisputeService
                         now
                     );
                 }
+
+                if (dispute.Booking != null)
+                {
+                    var ratio = dispute.Booking.TotalAmount > 0
+                        ? refundAmount / dispute.Booking.TotalAmount
+                        : 1m;
+                    var ownerReversal = Math.Round(dispute.Booking.OwnerPayoutAmount * ratio, 2, MidpointRounding.AwayFromZero);
+                    var commissionReversal = Math.Round(dispute.Booking.PlatformCommissionAmount * ratio, 2, MidpointRounding.AwayFromZero);
+
+                    if (dispute.Booking.ParkingSpot != null && ownerReversal > 0)
+                    {
+                        var ownerWallet = await _context.Wallets
+                            .FirstOrDefaultAsync(w => w.UserId == dispute.Booking.ParkingSpot.OwnerId && w.Status == WalletStatus.Active);
+                        if (ownerWallet != null)
+                        {
+                            var holdToRelease = Math.Min(ownerWallet.OnHold, ownerReversal);
+                            if (holdToRelease > 0)
+                            {
+                                _walletService.ReleaseHold(ownerWallet, holdToRelease, now);
+                            }
+                            var balanceDeduction = ownerReversal - holdToRelease;
+                            if (balanceDeduction > 0)
+                            {
+                                _walletService.Deduct(ownerWallet, balanceDeduction, now);
+                            }
+
+                            _transactionService.Create(
+                                ownerWallet.WalletId,
+                                null,
+                                dispute.Booking,
+                                TransactionType.Refund,
+                                -ownerReversal,
+                                PaymentMethod.Wallet,
+                                $"REF-DSP-{dispute.DisputeReference}",
+                                now
+                            );
+                        }
+                    }
+
+                    if (commissionReversal > 0)
+                    {
+                        var platformWallet = await _context.PlatformWallets
+                            .AsNoTracking()
+                            .OrderBy(item => item.PlatformWalletId)
+                            .FirstOrDefaultAsync();
+                        if (platformWallet != null)
+                        {
+                            await _walletService.ApplyRefundToPlatformAsync(platformWallet, commissionReversal, now, CancellationToken.None);
+
+                            _transactionService.Create(
+                                null,
+                                platformWallet.PlatformWalletId,
+                                dispute.Booking,
+                                TransactionType.Refund,
+                                -commissionReversal,
+                                PaymentMethod.Wallet,
+                                $"REF-DSP-{dispute.DisputeReference}",
+                                now
+                            );
+                        }
+                    }
+
+                    dispute.Booking.RefundAmount += refundAmount;
+                    if (dispute.Booking.RefundAmount >= dispute.Booking.TotalAmount &&
+                        dispute.Booking.BookingStatus != BookingStatus.Completed)
+                    {
+                        dispute.Booking.BookingStatus = BookingStatus.Cancelled;
+                        dispute.Booking.CancelledAt ??= now;
+                        dispute.Booking.CancellationReason ??= $"Refunded via dispute {dispute.DisputeReference}";
+                    }
+                    dispute.Booking.UpdatedAt = now;
+                }
+            }
+
+            ticketNoticeBody = $"[Refund Approved] Your claim has been approved and {dispute.Currency} {refundAmount:F2} has been refunded to your platform wallet. Note: {request.Reason}";
+            if (dispute.Ticket != null)
+            {
+                dispute.Ticket.Status = SupportTicketStatus.Resolved;
+                dispute.Ticket.ResolvedAt = now;
+                dispute.Ticket.ResolutionCode = "RefundApproved";
+                dispute.Ticket.UpdatedAt = now;
             }
         }
         else if (string.Equals(request.Decision, "Decline", StringComparison.OrdinalIgnoreCase))
         {
             dispute.Status = DisputeStatus.Declined;
+            ticketNoticeBody = $"[Claim Declined] Your fee dispute was not approved. Reason: {request.Reason}";
+            if (dispute.Ticket != null)
+            {
+                dispute.Ticket.Status = SupportTicketStatus.Resolved;
+                dispute.Ticket.ResolvedAt = now;
+                dispute.Ticket.ResolutionCode = "ClaimDeclined";
+                dispute.Ticket.UpdatedAt = now;
+            }
         }
-        else if (string.Equals(request.Decision, "NeedMoreInfo", StringComparison.OrdinalIgnoreCase))
+        else
         {
             dispute.Status = DisputeStatus.MoreInfo;
+            ticketNoticeBody = $"[More Info Needed] Please provide additional information or screenshots in this ticket conversation: {request.Reason}";
+            if (dispute.Ticket != null)
+            {
+                dispute.Ticket.Status = SupportTicketStatus.WaitingForCustomer;
+                dispute.Ticket.UpdatedAt = now;
+            }
+        }
+
+        if (dispute.TicketId.HasValue)
+        {
+            _context.SupportTicketMessages.Add(new SupportTicketMessage
+            {
+                TicketId = dispute.TicketId.Value,
+                SenderUserId = adminUserId,
+                SenderRole = "Admin",
+                Body = ticketNoticeBody,
+                CreatedAt = now
+            });
         }
 
         await _context.SaveChangesAsync();
 
         await _auditService.LogAsync("Dispute", disputeId, dispute.DisputeReference, "DecisionMade", adminUserId, "Admin", oldStatus, dispute.Status.ToString(), $"Decision: {request.Decision}. Reason: {request.Reason}");
-        await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = disputeId, status = dispute.Status.ToString(), decision = dispute.Decision }, dispute.CustomerUserId);
+        await _realtimeNotifier.BroadcastEventAsync("dispute.updated", new { disputeId = disputeId, status = dispute.Status.ToString(), decision = dispute.Decision }, dispute.CustomerUserId, dispute.TicketId);
 
         return (await GetAdminDisputeDetailAsync(disputeId))!;
     }

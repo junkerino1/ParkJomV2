@@ -287,7 +287,10 @@ public class IncidentService
 
     public async Task<OperationalIncidentDto> TransitionStatusAsync(int incidentId, int actorUserId, IncidentTransitionRequestDto request)
     {
-        var incident = await _context.OperationalIncidents.FindAsync(incidentId);
+        var incident = await _context.OperationalIncidents
+            .Include(i => i.IncidentTickets)
+                .ThenInclude(it => it.Ticket)
+            .FirstOrDefaultAsync(i => i.IncidentId == incidentId);
         if (incident == null) throw new KeyNotFoundException("Incident not found");
 
         if (!Enum.TryParse<IncidentStatus>(request.ToStatus, true, out var newStatus))
@@ -303,6 +306,27 @@ public class IncidentService
         {
             incident.ResolvedAt = now;
             incident.NextEscalationAt = null;
+
+            foreach (var join in incident.IncidentTickets)
+            {
+                var linkedTicket = join.Ticket;
+                if (linkedTicket != null && linkedTicket.Status != SupportTicketStatus.Resolved && linkedTicket.Status != SupportTicketStatus.Closed)
+                {
+                    linkedTicket.Status = SupportTicketStatus.Resolved;
+                    linkedTicket.ResolvedAt = now;
+                    linkedTicket.ResolutionCode = "IncidentResolved";
+                    linkedTicket.UpdatedAt = now;
+
+                    _context.SupportTicketMessages.Add(new SupportTicketMessage
+                    {
+                        TicketId = linkedTicket.TicketId,
+                        SenderUserId = actorUserId,
+                        SenderRole = "Admin",
+                        Body = $"[Incident Resolved] The linked hardware/on-site incident (#{incident.IncidentReference}) has been resolved. {request.Reason}",
+                        CreatedAt = now
+                    });
+                }
+            }
         }
         else if (newStatus == IncidentStatus.Closed)
         {

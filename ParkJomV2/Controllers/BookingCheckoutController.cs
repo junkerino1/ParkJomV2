@@ -292,6 +292,12 @@ public class BookingCheckoutController : ControllerBase
                 return BadRequest(Error(StatusCodes.Status400BadRequest, "The selected period is invalid. Please try other dates."));
             }
 
+            var userOverlap = await HasUserBookingOverlap(user.UserId, startDate, endExclusive, cancellationToken);
+            if (userOverlap)
+            {
+                return Conflict(Error(StatusCodes.Status409Conflict, "You already have an active or confirmed reservation that overlaps with the selected period."));
+            }
+
             var overlap = await HasBookingOverlap(spotId, startDate, endExclusive, cancellationToken);
             if (overlap)
             {
@@ -303,8 +309,19 @@ public class BookingCheckoutController : ControllerBase
                 return BadRequest(Error(StatusCodes.Status400BadRequest, priceError));
             }
 
+            var activeCommissionRate = await _context.SystemConfigurations
+                .AsNoTracking()
+                .Where(c => c.Id == 1)
+                .Select(c => c.CommissionRate)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (activeCommissionRate <= 0m)
+            {
+                activeCommissionRate = PlatformConstants.CommissionRate;
+            }
+
             var now = DateTime.UtcNow;
-            var platformFee = RoundMoney(subtotal * PlatformConstants.CommissionRate / 100m);
+            var platformFee = RoundMoney(subtotal * activeCommissionRate / 100m);
             var quote = new BookingQuote
             {
                 RenterId = user.UserId,
@@ -315,10 +332,10 @@ public class BookingCheckoutController : ControllerBase
                 RateType = rateType,
                 RatePerDay = ratePerDay,
                 RentalSubtotal = subtotal,
-                PlatformCommissionRate = PlatformConstants.CommissionRate,
+                PlatformCommissionRate = activeCommissionRate,
                 PlatformCommissionAmount = platformFee,
-                OwnerPayoutAmount = subtotal,
-                RenterTotal = RoundMoney(subtotal + platformFee),
+                OwnerPayoutAmount = RoundMoney(subtotal - platformFee),
+                RenterTotal = subtotal,
                 CreatedAt = now,
                 ExpiresAt = now.AddMinutes(60)
             };
@@ -425,6 +442,17 @@ public class BookingCheckoutController : ControllerBase
     /// The end date is exclusive, so a booking that ends on the requested start date does not count as an overlap. 
     /// This method uses a database query with a cancellation token to avoid long-running
     /// </summary>
+    private async Task<bool> HasUserBookingOverlap(int userId, DateOnly start, DateOnly endExclusive, CancellationToken cancellationToken)
+    {
+        var startBoundary = start.ToDateTime(TimeOnly.MinValue);
+        var endBoundary = endExclusive.ToDateTime(TimeOnly.MinValue);
+        return await _context.Bookings.AnyAsync(item =>
+            item.RenterId == userId &&
+            (item.BookingStatus == BookingStatus.Confirmed || item.BookingStatus == BookingStatus.Active) &&
+            item.StartDate < endBoundary && item.EndDate > startBoundary,
+            cancellationToken);
+    }
+
     private async Task<bool> HasBookingOverlap(int spotId, DateOnly start, DateOnly endExclusive, CancellationToken cancellationToken)
     {
         var startBoundary = start.ToDateTime(TimeOnly.MinValue);

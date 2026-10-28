@@ -42,6 +42,7 @@ public class OwnerParkingController : ControllerBase
     /// Creates a private parking draft and submits its first verification document.
     /// The spot cannot be published or booked until its verification is approved.
     /// </summary>
+    [HttpPost("register")]
     [HttpPost("/register")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ParkingRegistrationResponse), StatusCodes.Status200OK)]
@@ -249,7 +250,7 @@ public class OwnerParkingController : ControllerBase
         }
 
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null)
+        if (user == null || user.UserType != UserType.PropertyOwner)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -382,7 +383,7 @@ public class OwnerParkingController : ControllerBase
         [FromBody] UpdateParkingImagesRequest request)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null)
+        if (user == null || user.UserType != UserType.PropertyOwner)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -521,7 +522,7 @@ public class OwnerParkingController : ControllerBase
     public async Task<ActionResult<OwnerParkingImagesResponse>> DeleteImage(int spotId, int imageId)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null)
+        if (user == null || user.UserType != UserType.PropertyOwner)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -617,7 +618,7 @@ public class OwnerParkingController : ControllerBase
     {
         var user = await _currentUser.GetCurrentUserAsync();
 
-        if (user == null)
+        if (user == null || user.UserType != UserType.PropertyOwner)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -731,42 +732,61 @@ public class OwnerParkingController : ControllerBase
                 });
             }
 
-            var identicalExistingRule = spot.ParkingAvailabilities.FirstOrDefault(existingRule =>
-                    existingRule.EffectiveFrom == availabilityRule.EffectiveFrom &&
-                    existingRule.EffectiveUntil == availabilityRule.EffectiveUntil &&
-                    existingRule.StartTime == availabilityRule.StartTime &&
-                    existingRule.EndTime == availabilityRule.EndTime &&
-                    existingRule.DayType == availabilityRule.DayType);
-
-            if (identicalExistingRule != null)
-            {
-                return Conflict(new ErrorResponse
-                {
-                    Code = StatusCodes.Status409Conflict,
-                    Success = false,
-                    Message = "An identical availability rule already exists."
-                });
-            }
-
-            var overlappingExistingRule = spot.ParkingAvailabilities.FirstOrDefault(existingRule =>
-                AvailabilityCoverageOverlaps(existingRule, availabilityRule));
-
-            if (overlappingExistingRule != null)
-            {
-                return Conflict(new ErrorResponse
-                {
-                    Code = StatusCodes.Status409Conflict,
-                    Success = false,
-                    Message = "The selected date range overlap with an existing availability rule."
-                });
-            }
-
             availabilityRules.Add(availabilityRule);
+        }
+
+        // Plan carve-out and override against existing availability rules
+        var plans = CreateRulePlans(spot.ParkingAvailabilities, spotId);
+        foreach (var rule in availabilityRules)
+        {
+            plans = CarveOutDateRange(plans, rule.EffectiveFrom!.Value, rule.EffectiveUntil!.Value, spotId);
+            plans.Add(new AvailabilityRulePlan
+            {
+                SourceEntity = null,
+                AvailabilityId = 0,
+                ParkingSpotId = spotId,
+                EffectiveFrom = rule.EffectiveFrom!.Value,
+                EffectiveUntil = rule.EffectiveUntil!.Value,
+                StartTime = rule.StartTime,
+                EndTime = rule.EndTime,
+                DayType = rule.DayType,
+                IsNew = true
+            });
+        }
+
+        var proposedRules = plans.Select(p => new Availability
+        {
+            AvailabilityId = p.AvailabilityId,
+            ParkingSpotId = p.ParkingSpotId,
+            EffectiveFrom = p.EffectiveFrom,
+            EffectiveUntil = p.EffectiveUntil,
+            StartTime = p.StartTime,
+            EndTime = p.EndTime,
+            DayType = p.DayType
+        }).ToList();
+
+        var malaysiaTodayStart = malaysiaToday.ToDateTime(TimeOnly.MinValue);
+        var protectedBookings = await _context.Bookings
+            .AsNoTracking()
+            .Where(booking =>
+                booking.ParkingSpotId == spotId &&
+                (booking.BookingStatus == BookingStatus.Confirmed || booking.BookingStatus == BookingStatus.Active) &&
+                booking.EndDate > malaysiaTodayStart)
+            .ToListAsync();
+
+        if (!PreservesBookingCoverage(spot.ParkingAvailabilities, proposedRules, protectedBookings))
+        {
+            return Conflict(new ErrorResponse
+            {
+                Code = StatusCodes.Status409Conflict,
+                Success = false,
+                Message = "This change would remove configured availability from a confirmed or active booking."
+            });
         }
 
         try
         {
-            _context.Availabilities.AddRange(availabilityRules);
+            ApplyAvailabilityRulePlans(spot, spot.ParkingAvailabilities.ToList(), plans);
             spot.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -782,7 +802,7 @@ public class OwnerParkingController : ControllerBase
                 Success = true,
                 Message = "Availability rules created successfully.",
                 ParkingSpotId = spotId,
-                Data = availabilityRules
+                Data = proposedRules
                     .OrderBy(rule => rule.EffectiveFrom)
                     .ThenBy(rule => rule.StartTime)
                     .Select(MapAvailabilityRuleResponse)
@@ -818,7 +838,17 @@ public class OwnerParkingController : ControllerBase
         int ruleId,
         [FromBody] UpdateOwnerAvailabilityRuleRequest request)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
@@ -989,6 +1019,179 @@ public class OwnerParkingController : ControllerBase
     }
 
     /// <summary>
+    /// Closes a date range by carving out and removing availability rules across the specified dates.
+    /// Does not allow closing dates that have active or confirmed bookings.
+    /// </summary>
+    [HttpPost("{spotId:int}/availability-rules/close")]
+    [ProducesResponseType(typeof(OwnerAvailabilityRulesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<OwnerAvailabilityRulesResponse>> CloseAvailabilityDates(
+        int spotId,
+        [FromBody] CloseOwnerAvailabilityDatesRequest request)
+    {
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Authenticated user not found."
+            });
+        }
+
+        var spot = await _context.ParkingSpots
+            .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.ParkingAvailabilities)
+            .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
+
+        if (spot == null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "Parking spot not found."
+            });
+        }
+
+        if (spot.OwnerId != user.UserId)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "You are not authorized to manage this parking spot's availability."
+            });
+        }
+
+        if (spot.AvailabilityStatus == AvailabilityStatus.Deleted)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "A deleted parking spot cannot have availability rules."
+            });
+        }
+
+        if (!spot.VerificationRequests.Any(v => v.VerificationStatus == VerificationStatus.Approved))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Availability rules can be managed only after verification is approved."
+            });
+        }
+
+        if (!DateOnly.TryParseExact(request.FromDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var fromDate))
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "Start date must be in a valid format."
+            });
+        }
+
+        if (!DateOnly.TryParseExact(request.ToDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var toDate))
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "End date must be in a valid format."
+            });
+        }
+
+        if (fromDate > toDate)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "Start date must be on or before end date."
+            });
+        }
+
+        var plans = CreateRulePlans(spot.ParkingAvailabilities, spotId);
+        plans = CarveOutDateRange(plans, fromDate, toDate, spotId);
+
+        var proposedRules = plans.Select(p => new Availability
+        {
+            AvailabilityId = p.AvailabilityId,
+            ParkingSpotId = p.ParkingSpotId,
+            EffectiveFrom = p.EffectiveFrom,
+            EffectiveUntil = p.EffectiveUntil,
+            StartTime = p.StartTime,
+            EndTime = p.EndTime,
+            DayType = p.DayType
+        }).ToList();
+
+        var malaysiaToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
+        var malaysiaTodayStart = malaysiaToday.ToDateTime(TimeOnly.MinValue);
+        var protectedBookings = await _context.Bookings
+            .AsNoTracking()
+            .Where(booking =>
+                booking.ParkingSpotId == spotId &&
+                (booking.BookingStatus == BookingStatus.Confirmed || booking.BookingStatus == BookingStatus.Active) &&
+                booking.EndDate > malaysiaTodayStart)
+            .ToListAsync();
+
+        if (!PreservesBookingCoverage(spot.ParkingAvailabilities, proposedRules, protectedBookings))
+        {
+            return Conflict(new ErrorResponse
+            {
+                Code = StatusCodes.Status409Conflict,
+                Success = false,
+                Message = "Cannot close these dates because there is a confirmed or active booking."
+            });
+        }
+
+        try
+        {
+            ApplyAvailabilityRulePlans(spot, spot.ParkingAvailabilities.ToList(), plans);
+            spot.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            await _accessLogService.LogAsync(
+                User,
+                "CloseOwnerAvailabilityDates",
+                true,
+                $"ParkingSpotId={spotId}; FromDate={fromDate:yyyy-MM-dd}; ToDate={toDate:yyyy-MM-dd}");
+
+            return Ok(new OwnerAvailabilityRulesResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Dates closed successfully.",
+                ParkingSpotId = spotId,
+                Data = proposedRules
+                    .OrderBy(rule => rule.EffectiveFrom)
+                    .ThenBy(rule => rule.StartTime)
+                    .Select(MapAvailabilityRuleResponse)
+                    .ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error closing availability dates for parking spot {ParkingSpotId}", spotId);
+            await _accessLogService.LogAsync(User, "CloseOwnerAvailabilityDates", false, ex.Message);
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+            {
+                Code = StatusCodes.Status500InternalServerError,
+                Success = false,
+                Message = "An error occurred while closing availability dates."
+            });
+        }
+    }
+
+    /// <summary>
     /// Deletes one availability rule only when the remaining rules continue to cover every
     /// confirmed or active booking for the parking spot.
     /// </summary>
@@ -1002,7 +1205,17 @@ public class OwnerParkingController : ControllerBase
         int spotId,
         int ruleId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
@@ -1141,7 +1354,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<OwnerAvailabilityRulesResponse>> GetAvailabilityRules(int spotId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1228,7 +1451,17 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1357,7 +1590,17 @@ public class OwnerParkingController : ControllerBase
         [FromQuery] string? month = null,
         [FromQuery] string? status = null)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         if (!TryParseBookingStatus(status, out var bookingStatus))
         {
@@ -1488,7 +1731,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<OwnerBookingDetailResponse>> GetParkingSpotBooking(int spotId, int bookingId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1552,7 +1805,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(DisplayMyParkingResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking()
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
         var spots = await _context.ParkingSpots
             .AsNoTracking()
             .Where(p => p.OwnerId == userId)
@@ -1573,7 +1836,17 @@ public class OwnerParkingController : ControllerBase
     [ProducesResponseType(typeof(DeleteParkingSpotResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<DeleteParkingSpotResponse>> DeleteParking(int spotId)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
         var spot = await _context.ParkingSpots
             .Include(p => p.Bookings)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
@@ -1630,7 +1903,17 @@ public class OwnerParkingController : ControllerBase
         int spotId,
         [FromBody] UpdateOwnerParkingConfigurationRequest request)
     {
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1744,7 +2027,17 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1870,7 +2163,17 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        var userId = _currentUser.UserId!.Value;
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.PropertyOwner)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = user == null ? "Authenticated user not found." : "Only property owners can access this resource."
+            });
+        }
+        var userId = user.UserId;
 
         try
         {
@@ -1945,6 +2248,34 @@ public class OwnerParkingController : ControllerBase
     }
 
     /// <summary>
+    /// Legacy compatibility endpoint for publishing or unpublishing a parking spot.
+    /// </summary>
+    [HttpPut("/api/parking/publish")]
+    [ProducesResponseType(typeof(OwnerParkingPublicationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OwnerParkingPublicationResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerParkingPublicationResponse>> UpdateParkingPublicationLegacy(
+        [FromBody] ParkingPublicationUpdateRequest request)
+    {
+        if (request == null || request.ParkingSpotId <= 0)
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "ParkingSpotId must be greater than zero."
+            });
+        }
+
+        if (request.IsPublished)
+        {
+            return await PublishParking(request.ParkingSpotId);
+        }
+        return await UnpublishParking(request.ParkingSpotId);
+    }
+    /// <summary>
     /// Recomputes every condition required for publication and reports the missing conditions in
     /// a stable order so the owner can correct the listing without relying on a cached flag.
     /// </summary>
@@ -1965,10 +2296,6 @@ public class OwnerParkingController : ControllerBase
         missing.AddRange(configurationRequirements);
         isConfigurationComplete = configurationRequirements.Count == 0;
 
-        if (!HasFutureAvailabilityRule(spot.ParkingAvailabilities, firstBookableDate))
-        {
-            missing.Add("future availability rule");
-        }
 
         return missing;
     }
@@ -2120,11 +2447,7 @@ public class OwnerParkingController : ControllerBase
             return false;
         }
 
-        if (toDate < malaysiaToday)
-        {
-            validationMessage = "The availability period has already expired.";
-            return false;
-        }
+
 
         if (!TimeOnly.TryParseExact(
                 request.FromTime,
@@ -2348,6 +2671,164 @@ public class OwnerParkingController : ControllerBase
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Represents an in-memory mutable representation of an availability rule used
+    /// when planning carve-outs, trims, and additions.
+    /// </summary>
+    private sealed class AvailabilityRulePlan
+    {
+        public Availability? SourceEntity { get; set; }
+        public int AvailabilityId { get; set; }
+        public int ParkingSpotId { get; set; }
+        public DateOnly EffectiveFrom { get; set; }
+        public DateOnly EffectiveUntil { get; set; }
+        public TimeOnly StartTime { get; set; }
+        public TimeOnly EndTime { get; set; }
+        public DayType DayType { get; set; }
+        public bool IsNew { get; set; }
+    }
+
+    /// <summary>
+    /// Creates planning representations from existing availability entities.
+    /// </summary>
+    private static List<AvailabilityRulePlan> CreateRulePlans(IEnumerable<Availability> rules, int spotId)
+    {
+        return rules.Select(rule => new AvailabilityRulePlan
+        {
+            SourceEntity = rule,
+            AvailabilityId = rule.AvailabilityId,
+            ParkingSpotId = spotId,
+            EffectiveFrom = rule.EffectiveFrom ?? DateOnly.MinValue,
+            EffectiveUntil = rule.EffectiveUntil ?? DateOnly.MaxValue,
+            StartTime = rule.StartTime,
+            EndTime = rule.EndTime,
+            DayType = rule.DayType,
+            IsNew = false
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Carves out a date range [fromDate, toDate] from the given rule plans.
+    /// Existing plans intersecting the range are trimmed, split into before/after slices, or removed.
+    /// </summary>
+    private static List<AvailabilityRulePlan> CarveOutDateRange(
+        List<AvailabilityRulePlan> plans,
+        DateOnly fromDate,
+        DateOnly toDate,
+        int spotId)
+    {
+        var nextPlans = new List<AvailabilityRulePlan>();
+
+        foreach (var plan in plans)
+        {
+            if (plan.EffectiveUntil < fromDate || plan.EffectiveFrom > toDate)
+            {
+                nextPlans.Add(plan);
+                continue;
+            }
+
+            var hasLeftSlice = plan.EffectiveFrom < fromDate;
+            var hasRightSlice = plan.EffectiveUntil > toDate;
+
+            var leftFrom = plan.EffectiveFrom;
+            var leftUntil = fromDate.AddDays(-1);
+            var isLeftValid = hasLeftSlice &&
+                              leftFrom <= leftUntil &&
+                              DateRangeContainsDayType(leftFrom, leftUntil, plan.DayType);
+
+            var rightFrom = toDate.AddDays(1);
+            var rightUntil = plan.EffectiveUntil;
+            var isRightValid = hasRightSlice &&
+                               rightFrom <= rightUntil &&
+                               DateRangeContainsDayType(rightFrom, rightUntil, plan.DayType);
+
+            if (isLeftValid && isRightValid)
+            {
+                plan.EffectiveUntil = leftUntil;
+                nextPlans.Add(plan);
+
+                nextPlans.Add(new AvailabilityRulePlan
+                {
+                    SourceEntity = null,
+                    AvailabilityId = 0,
+                    ParkingSpotId = spotId,
+                    EffectiveFrom = rightFrom,
+                    EffectiveUntil = rightUntil,
+                    StartTime = plan.StartTime,
+                    EndTime = plan.EndTime,
+                    DayType = plan.DayType,
+                    IsNew = true
+                });
+            }
+            else if (isLeftValid)
+            {
+                plan.EffectiveUntil = leftUntil;
+                nextPlans.Add(plan);
+            }
+            else if (isRightValid)
+            {
+                plan.EffectiveFrom = rightFrom;
+                nextPlans.Add(plan);
+            }
+        }
+
+        return nextPlans;
+    }
+
+    /// <summary>
+    /// Applies planned availability changes to the database context and parking spot entity.
+    /// Updates modified entities, removes deleted entities, and adds new split or requested rules.
+    /// </summary>
+    private void ApplyAvailabilityRulePlans(
+        ParkingSpot spot,
+        IEnumerable<Availability> originalEntities,
+        List<AvailabilityRulePlan> finalPlans)
+    {
+        var originalList = originalEntities.ToList();
+        var survivingEntityPlans = finalPlans
+            .Where(p => p.SourceEntity != null)
+            .ToDictionary(p => p.SourceEntity!);
+
+        foreach (var original in originalList)
+        {
+            if (survivingEntityPlans.TryGetValue(original, out var plan))
+            {
+                original.EffectiveFrom = plan.EffectiveFrom;
+                original.EffectiveUntil = plan.EffectiveUntil;
+                original.StartTime = plan.StartTime;
+                original.EndTime = plan.EndTime;
+                original.DayType = plan.DayType;
+            }
+            else
+            {
+                _context.Availabilities.Remove(original);
+                spot.ParkingAvailabilities.Remove(original);
+            }
+        }
+
+        var newEntities = finalPlans
+            .Where(p => p.IsNew || p.SourceEntity == null)
+            .Select(p => new Availability
+            {
+                ParkingSpotId = p.ParkingSpotId,
+                EffectiveFrom = p.EffectiveFrom,
+                EffectiveUntil = p.EffectiveUntil,
+                StartTime = p.StartTime,
+                EndTime = p.EndTime,
+                DayType = p.DayType
+            })
+            .ToList();
+
+        if (newEntities.Count > 0)
+        {
+            _context.Availabilities.AddRange(newEntities);
+            foreach (var newEntity in newEntities)
+            {
+                spot.ParkingAvailabilities.Add(newEntity);
+            }
+        }
     }
 
     /// <summary>
