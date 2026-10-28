@@ -107,6 +107,11 @@ public class ParkingSpotDetailDTO
     public int PropertyId { get; set; }
     public string? PropertyName { get; set; }
     public string? Address { get; set; }
+    public decimal? Latitude { get; set; }
+    public decimal? Longitude { get; set; }
+    public string? StationName { get; set; }
+    public decimal? DistanceToStation { get; set; }
+    public decimal? TimeToStation { get; set; }
     public int OwnerId { get; set; }
     public string? OwnerName { get; set; }
     public string? ParkingLabel { get; set; }

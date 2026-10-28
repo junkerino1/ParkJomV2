@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
@@ -44,14 +44,18 @@ public class ParkingController : ControllerBase
         {
             var spot = await _context.ParkingSpots
                 .Include(ps => ps.Property)
+                    .ThenInclude(p => p.Station)
                 .Include(ps => ps.Owner)
                 .Include(ps => ps.VerificationRequests.Where(vr => vr.IsCurrent))
                 .Include(ps => ps.ParkingSpotImages.OrderBy(psi => psi.DisplayOrder))
                     .ThenInclude(psi => psi.MediaFile)
                 .FirstOrDefaultAsync(ps =>
                     ps.ParkingSpotId == id &&
-                    ps.AvailabilityStatus != AvailabilityStatus.Suspended &&
-                    ps.Owner.AccountStatus != "Suspended");
+                    ps.IsPublished &&
+                    ps.AvailabilityStatus == AvailabilityStatus.Available &&
+                    ps.Owner.AccountStatus != "Suspended" &&
+                    ps.Owner.AccountStatus != "Deactivated" &&
+                    ps.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved));
 
             if (spot == null)
             {
@@ -70,6 +74,11 @@ public class ParkingController : ControllerBase
                 PropertyId = spot.PropertyId,
                 PropertyName = spot.Property?.PropertyName,
                 Address = spot.Property?.Address,
+                Latitude = spot.Property?.Latitude,
+                Longitude = spot.Property?.Longitude,
+                StationName = spot.Property?.Station?.StationName,
+                DistanceToStation = spot.Property?.DistanceToStation,
+                TimeToStation = spot.Property?.TimeToStation,
                 OwnerId = spot.OwnerId,
                 OwnerName = $"{spot.Owner?.FirstName} {spot.Owner?.LastName}".Trim(),
                 ParkingLabel = spot.ParkingLabel,
@@ -87,6 +96,7 @@ public class ParkingController : ControllerBase
                     ResourceType = psi.MediaFile?.ResourceType,
                     Format = psi.MediaFile?.Format,
                     OriginalFileName = psi.MediaFile?.OriginalFileName,
+                    SecureUrl = psi.MediaFile?.SecureUrl,
                     UploadedAt = psi.CreatedAt
                 }).ToList()
             };
@@ -113,4 +123,4 @@ public class ParkingController : ControllerBase
             });
         }
     }
-}   
+}

@@ -270,6 +270,159 @@ namespace ParkJomV2.Migrations
                     b.ToTable("BookingQuotes");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.DisputeEvidence", b =>
+                {
+                    b.Property<int>("DisputeEvidenceId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("DisputeEvidenceId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("DisputeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EvidenceType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsVerified")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("MediaFileId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UploadedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UploadedRole")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("DisputeEvidenceId");
+
+                    b.HasIndex("DisputeId");
+
+                    b.HasIndex("MediaFileId");
+
+                    b.HasIndex("UploadedByUserId");
+
+                    b.ToTable("DisputeEvidences");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.DisputeInvestigation", b =>
+                {
+                    b.Property<int>("DisputeId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("DisputeId"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("AssignedTeam")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("AssignedUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("BookingId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<int>("CustomerUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DecidedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Decision")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("DecisionReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DisputeReference")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("DisputeType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("PaymentId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("TicketId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TransactionId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("DisputeId");
+
+                    b.HasIndex("AssignedUserId");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("CustomerUserId");
+
+                    b.HasIndex("DecidedByUserId");
+
+                    b.HasIndex("DisputeReference")
+                        .IsUnique();
+
+                    b.HasIndex("PaymentId");
+
+                    b.HasIndex("TicketId");
+
+                    b.HasIndex("TransactionId");
+
+                    b.ToTable("DisputeInvestigations");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.Favorite", b =>
                 {
                     b.Property<int>("FavoriteId")
@@ -298,6 +451,24 @@ namespace ParkJomV2.Migrations
                         .IsUnique();
 
                     b.ToTable("Favorites");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.IncidentTicket", b =>
+                {
+                    b.Property<int>("IncidentId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TicketId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("LinkedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("IncidentId", "TicketId");
+
+                    b.HasIndex("TicketId");
+
+                    b.ToTable("IncidentTickets");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.IoTDevice", b =>
@@ -430,6 +601,150 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("UploadedBy");
 
                     b.ToTable("MediaFiles");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.OperationalIncident", b =>
+                {
+                    b.Property<int>("IncidentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("IncidentId"));
+
+                    b.Property<DateTime?>("AcknowledgedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("AffectedCustomerCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AssignedTeam")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("AssignedUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CorrelationKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("EscalationLevel")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IncidentReference")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("IncidentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("IoTDeviceId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("NextEscalationAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ParkingSpotId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("PropertyId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("IncidentId");
+
+                    b.HasIndex("AssignedUserId");
+
+                    b.HasIndex("IncidentReference")
+                        .IsUnique();
+
+                    b.HasIndex("IoTDeviceId");
+
+                    b.HasIndex("ParkingSpotId");
+
+                    b.HasIndex("PropertyId");
+
+                    b.ToTable("OperationalIncidents");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.OwnerPayoutAccount", b =>
+                {
+                    b.Property<int>("OwnerPayoutAccountId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("OwnerPayoutAccountId"));
+
+                    b.Property<string>("AccountHolderName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("AutoWithdraw")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("BankName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("OwnerPayoutAccountId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("OwnerPayoutAccounts");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.ParkingSpot", b =>
@@ -779,6 +1094,486 @@ namespace ParkJomV2.Migrations
                     b.ToTable("Stations");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.SupportAttachment", b =>
+                {
+                    b.Property<int>("AttachmentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("AttachmentId"));
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<long>("FileSize")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FileUrl")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsPrivate")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("MediaFileId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TicketId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TicketMessageId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UploadedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("AttachmentId");
+
+                    b.HasIndex("MediaFileId");
+
+                    b.HasIndex("TicketId");
+
+                    b.HasIndex("TicketMessageId");
+
+                    b.HasIndex("UploadedByUserId");
+
+                    b.ToTable("SupportAttachments");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportAuditEvent", b =>
+                {
+                    b.Property<int>("AuditEventId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("AuditEventId"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ActorRole")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("ActorUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NewState")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("ObjectId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ObjectReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ObjectType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PreviousState")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("AuditEventId");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("ObjectType", "ObjectId");
+
+                    b.ToTable("SupportAuditEvents");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportNotificationAttempt", b =>
+                {
+                    b.Property<int>("NotificationAttemptId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("NotificationAttemptId"));
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("IncidentId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProviderResponse")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Recipient")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("RecipientUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("TicketId")
+                        .HasColumnType("int");
+
+                    b.HasKey("NotificationAttemptId");
+
+                    b.HasIndex("IncidentId");
+
+                    b.HasIndex("RecipientUserId");
+
+                    b.HasIndex("TicketId");
+
+                    b.ToTable("SupportNotificationAttempts");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportOnCallPolicy", b =>
+                {
+                    b.Property<int>("PolicyId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PolicyId"));
+
+                    b.Property<bool>("AutoEscalateEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("NotificationChannels")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("P0BackupDelayMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("P0ManagerDelayMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("P0SupervisorDelayMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("P1BackupDelayMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("P1ManagerDelayMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("P1SupervisorDelayMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PolicyId");
+
+                    b.ToTable("SupportOnCallPolicies");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportOnCallSchedule", b =>
+                {
+                    b.Property<int>("ScheduleId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ScheduleId"));
+
+                    b.Property<string>("ActiveChannels")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("BackupResponderId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("OperationsManagerId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PrimaryResponderId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ShiftEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ShiftName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("ShiftStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("SupervisorId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("ScheduleId");
+
+                    b.HasIndex("BackupResponderId");
+
+                    b.HasIndex("OperationsManagerId");
+
+                    b.HasIndex("PrimaryResponderId");
+
+                    b.HasIndex("SupervisorId");
+
+                    b.ToTable("SupportOnCallSchedules");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportTicket", b =>
+                {
+                    b.Property<int>("TicketId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("TicketId"));
+
+                    b.Property<DateTime?>("AcceptedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("AssignedAdminUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AssignedTeam")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("BookingId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CustomerUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("DisputeInvestigationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("FirstResponseAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("FirstResponseDueAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InternalSummary")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("IssueCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("OperationalIncidentId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ParkingSpotId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResolutionCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ResolutionDueAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("TicketReference")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("TicketType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("VehicleId")
+                        .HasColumnType("int");
+
+                    b.HasKey("TicketId");
+
+                    b.HasIndex("AssignedAdminUserId");
+
+                    b.HasIndex("BookingId");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("CustomerUserId");
+
+                    b.HasIndex("DisputeInvestigationId");
+
+                    b.HasIndex("OperationalIncidentId");
+
+                    b.HasIndex("ParkingSpotId");
+
+                    b.HasIndex("TicketReference")
+                        .IsUnique();
+
+                    b.HasIndex("VehicleId");
+
+                    b.ToTable("SupportTickets");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportTicketMessage", b =>
+                {
+                    b.Property<int>("MessageId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("MessageId"));
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsInternal")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SenderRole")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("SenderUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TicketId")
+                        .HasColumnType("int");
+
+                    b.HasKey("MessageId");
+
+                    b.HasIndex("SenderUserId");
+
+                    b.HasIndex("TicketId");
+
+                    b.ToTable("SupportTicketMessages");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SystemConfiguration", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("CommissionRate")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<int>("GracePeriodMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.ToTable("SystemConfigurations");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CommissionRate = 10.00m,
+                            GracePeriodMinutes = 15,
+                            UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.Transaction", b =>
                 {
                     b.Property<int>("TransactionId")
@@ -1098,6 +1893,85 @@ namespace ParkJomV2.Migrations
                     b.Navigation("Renter");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.DisputeEvidence", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.DisputeInvestigation", "Dispute")
+                        .WithMany("Evidences")
+                        .HasForeignKey("DisputeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ParkJomV2.Models.MediaFile", "MediaFile")
+                        .WithMany()
+                        .HasForeignKey("MediaFileId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.User", "UploadedByUser")
+                        .WithMany()
+                        .HasForeignKey("UploadedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Dispute");
+
+                    b.Navigation("MediaFile");
+
+                    b.Navigation("UploadedByUser");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.DisputeInvestigation", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "AssignedUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.Booking", "Booking")
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.User", "CustomerUser")
+                        .WithMany()
+                        .HasForeignKey("CustomerUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("ParkJomV2.Models.User", "DecidedByUser")
+                        .WithMany()
+                        .HasForeignKey("DecidedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.Payment", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.SupportTicket", "Ticket")
+                        .WithMany()
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.Transaction", "Transaction")
+                        .WithMany()
+                        .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("AssignedUser");
+
+                    b.Navigation("Booking");
+
+                    b.Navigation("CustomerUser");
+
+                    b.Navigation("DecidedByUser");
+
+                    b.Navigation("Payment");
+
+                    b.Navigation("Ticket");
+
+                    b.Navigation("Transaction");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.Favorite", b =>
                 {
                     b.HasOne("ParkJomV2.Models.ParkingSpot", "ParkingSpot")
@@ -1115,6 +1989,25 @@ namespace ParkJomV2.Migrations
                     b.Navigation("ParkingSpot");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.IncidentTicket", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.OperationalIncident", "Incident")
+                        .WithMany("IncidentTickets")
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ParkJomV2.Models.SupportTicket", "Ticket")
+                        .WithMany("IncidentTickets")
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Incident");
+
+                    b.Navigation("Ticket");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.IoTDevice", b =>
@@ -1148,6 +2041,48 @@ namespace ParkJomV2.Migrations
                         .IsRequired();
 
                     b.Navigation("UploadedByUser");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.OperationalIncident", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "AssignedUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.IoTDevice", "IoTDevice")
+                        .WithMany()
+                        .HasForeignKey("IoTDeviceId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.ParkingSpot", "ParkingSpot")
+                        .WithMany()
+                        .HasForeignKey("ParkingSpotId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.Property", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("AssignedUser");
+
+                    b.Navigation("IoTDevice");
+
+                    b.Navigation("ParkingSpot");
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.OwnerPayoutAccount", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.ParkingSpot", b =>
@@ -1264,6 +2199,192 @@ namespace ParkJomV2.Migrations
                     b.Navigation("Reviewer");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.SupportAttachment", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.MediaFile", "MediaFile")
+                        .WithMany()
+                        .HasForeignKey("MediaFileId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.SupportTicket", "Ticket")
+                        .WithMany("Attachments")
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.SupportTicketMessage", "TicketMessage")
+                        .WithMany("Attachments")
+                        .HasForeignKey("TicketMessageId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.User", "UploadedByUser")
+                        .WithMany()
+                        .HasForeignKey("UploadedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("MediaFile");
+
+                    b.Navigation("Ticket");
+
+                    b.Navigation("TicketMessage");
+
+                    b.Navigation("UploadedByUser");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportAuditEvent", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "ActorUser")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("ActorUser");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportNotificationAttempt", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.OperationalIncident", "Incident")
+                        .WithMany("NotificationAttempts")
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.User", "RecipientUser")
+                        .WithMany()
+                        .HasForeignKey("RecipientUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.SupportTicket", "Ticket")
+                        .WithMany()
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Incident");
+
+                    b.Navigation("RecipientUser");
+
+                    b.Navigation("Ticket");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportOnCallSchedule", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "BackupResponder")
+                        .WithMany()
+                        .HasForeignKey("BackupResponderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.User", "OperationsManager")
+                        .WithMany()
+                        .HasForeignKey("OperationsManagerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.User", "PrimaryResponder")
+                        .WithMany()
+                        .HasForeignKey("PrimaryResponderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.User", "Supervisor")
+                        .WithMany()
+                        .HasForeignKey("SupervisorId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("BackupResponder");
+
+                    b.Navigation("OperationsManager");
+
+                    b.Navigation("PrimaryResponder");
+
+                    b.Navigation("Supervisor");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportTicket", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "AssignedAdminUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedAdminUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.Booking", "Booking")
+                        .WithMany()
+                        .HasForeignKey("BookingId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.User", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("ParkJomV2.Models.User", "CustomerUser")
+                        .WithMany()
+                        .HasForeignKey("CustomerUserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("ParkJomV2.Models.DisputeInvestigation", "DisputeInvestigation")
+                        .WithMany()
+                        .HasForeignKey("DisputeInvestigationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.OperationalIncident", "OperationalIncident")
+                        .WithMany()
+                        .HasForeignKey("OperationalIncidentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.ParkingSpot", "ParkingSpot")
+                        .WithMany()
+                        .HasForeignKey("ParkingSpotId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.Vehicle", "Vehicle")
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("AssignedAdminUser");
+
+                    b.Navigation("Booking");
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("CustomerUser");
+
+                    b.Navigation("DisputeInvestigation");
+
+                    b.Navigation("OperationalIncident");
+
+                    b.Navigation("ParkingSpot");
+
+                    b.Navigation("Vehicle");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportTicketMessage", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "SenderUser")
+                        .WithMany()
+                        .HasForeignKey("SenderUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.SupportTicket", "Ticket")
+                        .WithMany("Messages")
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("SenderUser");
+
+                    b.Navigation("Ticket");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SystemConfiguration", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("UpdatedByUser");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.Transaction", b =>
                 {
                     b.HasOne("ParkJomV2.Models.Booking", "Booking")
@@ -1342,11 +2463,23 @@ namespace ParkJomV2.Migrations
                     b.Navigation("Booking");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.DisputeInvestigation", b =>
+                {
+                    b.Navigation("Evidences");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.MediaFile", b =>
                 {
                     b.Navigation("ParkingSpotImages");
 
                     b.Navigation("VerificationDocuments");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.OperationalIncident", b =>
+                {
+                    b.Navigation("IncidentTickets");
+
+                    b.Navigation("NotificationAttempts");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.ParkingSpot", b =>
@@ -1386,6 +2519,20 @@ namespace ParkJomV2.Migrations
             modelBuilder.Entity("ParkJomV2.Models.Station", b =>
                 {
                     b.Navigation("Properties");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportTicket", b =>
+                {
+                    b.Navigation("Attachments");
+
+                    b.Navigation("IncidentTickets");
+
+                    b.Navigation("Messages");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.SupportTicketMessage", b =>
+                {
+                    b.Navigation("Attachments");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.User", b =>

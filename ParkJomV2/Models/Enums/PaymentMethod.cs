@@ -1,8 +1,9 @@
-﻿namespace ParkJomV2.Models.Enums
+namespace ParkJomV2.Models.Enums
 {
     public enum PaymentMethod
     {
         Wallet = 1,
-        Stripe = 2
+        Stripe = 2,
+        CreditCard = 3
     }
 }

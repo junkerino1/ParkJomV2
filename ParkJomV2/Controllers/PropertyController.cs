@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
@@ -17,14 +18,16 @@ namespace ParkJomV2.Controllers
     {
 
         private readonly ApplicationDbContext _context;
+        private readonly CurrentUserService _currentUser;
         private readonly AccessLogService _accessLogService;
         private readonly ILogger<PropertyController> _logger;
         private readonly OsrmService _osrmService;
         private readonly NominatimService _nominatimService;
 
-        public PropertyController(ApplicationDbContext context, AccessLogService accessLogService, ILogger<PropertyController> logger, OsrmService osrmService, NominatimService nominatimService)
+        public PropertyController(ApplicationDbContext context, CurrentUserService currentUser, AccessLogService accessLogService, ILogger<PropertyController> logger, OsrmService osrmService, NominatimService nominatimService)
         {
             _context = context;
+            _currentUser = currentUser;
             _accessLogService = accessLogService;
             _logger = logger;
             _osrmService = osrmService;
@@ -34,12 +37,26 @@ namespace ParkJomV2.Controllers
         /// <summary>
         /// Create a new property
         /// </summary>
+        [Authorize]
         [HttpPost("create-property")]
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PropertyDTO>> CreateProperty([FromBody] CreatePropertyRequest request)
         {
+            var user = await _currentUser.GetCurrentUserAsync();
+            if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
+            {
+                await _accessLogService.LogAsync(User, "CreateProperty", false, "Forbidden");
+                return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+                {
+                    Code = StatusCodes.Status403Forbidden,
+                    Success = false,
+                    Message = "Only property owners or administrators can create properties."
+                });
+            }
+
             if (!ModelState.IsValid)
             {
                 await _accessLogService.LogAsync(User, "CreateProperty", false, "Invalid request");
@@ -152,7 +169,6 @@ namespace ParkJomV2.Controllers
             return Ok(property);
         }
 
-        
         /// <summary>
         /// Get all properties
         /// </summary>
@@ -168,6 +184,7 @@ namespace ParkJomV2.Controllers
         /// <summary>
         /// Delete a property
         /// </summary>
+        [Authorize(Policy = "AdminOnly")]
         [HttpDelete("{id}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -228,4 +245,4 @@ namespace ParkJomV2.Controllers
         }
 
     }
-}      
+}

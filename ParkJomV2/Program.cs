@@ -3,8 +3,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using ParkJomV2.Data;
+using ParkJomV2.Hubs;
+using ParkJomV2.Middleware;
 using ParkJomV2.Models;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Support;
+using ParkJomV2.Services.Support.Workers;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -17,11 +21,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
 
 builder.Services.AddScoped<GoogleAuthService>();
-
 builder.Services.AddScoped<JwtTokenService>();
-
 builder.Services.AddScoped<CloudinaryService>();
-
 builder.Services.AddScoped<StripeService>();
 
 builder.Services.AddHttpClient<OsrmService>(client =>
@@ -37,6 +38,13 @@ builder.Services.AddHttpClient<NominatimService>(client =>
 });
 
 builder.Services.AddScoped<IPropertyService, PropertyService>();
+builder.Services.AddSingleton<GtfsService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<GtfsRealtimeService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.Add("User-Agent", "ParkJomV2/1.0 (Smart Transit Parking Platform)");
+});
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -59,6 +67,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
         options.Events = new JwtBearerEvents
         {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"].FirstOrDefault()
+                                  ?? context.Request.Query["token"].FirstOrDefault();
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && (path.StartsWithSegments("/hubs/support") || path.StartsWithSegments("/api/support/ws")))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            },
             OnTokenValidated = async context =>
             {
                 var userIdText = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -90,6 +109,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     context.HttpContext.Items["SuspendedAccount"] = true;
                     context.Fail("The account is suspended.");
                 }
+                else if (string.Equals(
+                    accountStatus,
+                    "Deactivated",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    // Allow deactivated users to reach support endpoints to request reactivation.
+                    var requestPath = context.HttpContext.Request.Path;
+                    var isSupportEndpoint = requestPath.StartsWithSegments("/api/support")
+                        || requestPath.StartsWithSegments("/hubs/support");
+                    if (!isSupportEndpoint)
+                    {
+                        context.HttpContext.Items["DeactivatedAccount"] = true;
+                        context.Fail("The account is deactivated.");
+                    }
+                }
             },
             OnChallenge = context =>
             {
@@ -97,10 +131,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
                 var isSuspendedAccount = context.HttpContext.Items.ContainsKey("SuspendedAccount");
+                var isDeactivatedAccount = context.HttpContext.Items.ContainsKey("DeactivatedAccount");
 
                 var (statusCode, message) = isSuspendedAccount
                     ? (StatusCodes.Status403Forbidden, "Your account is suspended. Please contact support.")
-                    : context.AuthenticateFailure switch
+                    : isDeactivatedAccount
+                        ? (StatusCodes.Status403Forbidden, "Your account is deactivated. Please contact support to reactivate.")
+                        : context.AuthenticateFailure switch
                 {
                     SecurityTokenExpiredException => (StatusCodes.Status401Unauthorized, "Your session has expired. Please log in again."),
                     SecurityTokenException => (StatusCodes.Status401Unauthorized, "Invalid token. Please provide a valid authentication token."),
@@ -145,6 +182,21 @@ builder.Services.AddScoped<WalletService>();
 // Resolves the authenticated user from the current HTTP context.
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserService>();
+
+// Support Module Services
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<SupportWebSocketConnectionManager>();
+builder.Services.AddScoped<ISupportRealtimeNotifier, SupportRealtimeNotifier>();
+builder.Services.AddScoped<SupportAuditService>();
+builder.Services.AddScoped<SupportContextService>();
+builder.Services.AddScoped<SupportTicketService>();
+builder.Services.AddScoped<IncidentService>();
+builder.Services.AddScoped<DisputeService>();
+builder.Services.AddScoped<SupportOnCallService>();
+
+// Background Hosted Services
+builder.Services.AddHostedService<IncidentEscalationWorker>();
+builder.Services.AddHostedService<SupportSlaWorker>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -191,16 +243,20 @@ builder.Services.AddCors(options =>
         });
 });
 
-
-
 var app = builder.Build();
 
 app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+app.UseWebSockets();
+app.UseMiddleware<SupportWebSocketMiddleware>();
+
 app.UseAuthentication();   
 app.UseAuthorization();
+
 app.MapControllers();
+app.MapHub<SupportHub>("/hubs/support");
 
 app.Run();
