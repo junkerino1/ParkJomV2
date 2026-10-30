@@ -9,8 +9,8 @@ public class IoTDevice
     [Key]
     public int IoTDeviceId { get; set; }
 
-    [Required]
-    public int ParkingSpotId { get; set; }
+    // Unassigned devices have no parking spot until an owner completes OTP binding.
+    public int? ParkingSpotId { get; set; }
 
     [Required]
     [StringLength(100)]
@@ -34,6 +34,9 @@ public class IoTDevice
     // Navigation Properties
 
     [ForeignKey(nameof(ParkingSpotId))]
-    public ParkingSpot ParkingSpot { get; set; } = null!;
+    public ParkingSpot? ParkingSpot { get; set; }
+
+    // At most one current binding OTP is retained for a device.
+    public IoTDeviceBindingOtp? BindingOtp { get; set; }
 
 }

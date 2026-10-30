@@ -24,6 +24,13 @@ builder.Services.AddScoped<GoogleAuthService>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<StripeService>();
+// Registration, OTP lifecycle, and spot binding share one scoped business service.
+builder.Services.AddScoped<IoTDeviceService>();
+
+// One backend-owned MQTT connection handles device commands and inbound messages.
+builder.Services.AddSingleton<MqttService>();
+builder.Services.AddSingleton<IMqttService>(services => services.GetRequiredService<MqttService>());
+builder.Services.AddHostedService(services => services.GetRequiredService<MqttService>());
 
 builder.Services.AddHttpClient<OsrmService>(client =>
 {
