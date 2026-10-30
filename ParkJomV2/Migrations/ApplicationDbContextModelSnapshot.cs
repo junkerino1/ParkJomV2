@@ -502,7 +502,7 @@ namespace ParkJomV2.Migrations
                     b.Property<DateTime?>("LastHeartbeatAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("ParkingSpotId")
+                    b.Property<int?>("ParkingSpotId")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -510,10 +510,35 @@ namespace ParkJomV2.Migrations
 
                     b.HasKey("IoTDeviceId");
 
-                    b.HasIndex("ParkingSpotId")
+                    b.HasIndex("Esp32Serial")
                         .IsUnique();
 
+                    b.HasIndex("ParkingSpotId")
+                        .IsUnique()
+                        .HasFilter("[ParkingSpotId] IS NOT NULL");
+
                     b.ToTable("IoTDevices");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.IoTDeviceBindingOtp", b =>
+                {
+                    b.Property<int>("IoTDeviceId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("GeneratedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("OtpHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("IoTDeviceId");
+
+                    b.ToTable("IoTDeviceBindingOtps");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.IoTStatusLog", b =>
@@ -538,8 +563,11 @@ namespace ParkJomV2.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Message")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Topic")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -2015,10 +2043,20 @@ namespace ParkJomV2.Migrations
                     b.HasOne("ParkJomV2.Models.ParkingSpot", "ParkingSpot")
                         .WithOne("IoTDevice")
                         .HasForeignKey("ParkJomV2.Models.IoTDevice", "ParkingSpotId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("ParkingSpot");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.IoTDeviceBindingOtp", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.IoTDevice", "IoTDevice")
+                        .WithOne("BindingOtp")
+                        .HasForeignKey("ParkJomV2.Models.IoTDeviceBindingOtp", "IoTDeviceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("ParkingSpot");
+                    b.Navigation("IoTDevice");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.IoTStatusLog", b =>
@@ -2466,6 +2504,11 @@ namespace ParkJomV2.Migrations
             modelBuilder.Entity("ParkJomV2.Models.DisputeInvestigation", b =>
                 {
                     b.Navigation("Evidences");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.IoTDevice", b =>
+                {
+                    b.Navigation("BindingOtp");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.MediaFile", b =>
