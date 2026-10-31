@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -8,10 +9,11 @@ namespace ParkJomV2.Services.Copilot;
 public class GeminiOptions
 {
     public string ApiKey { get; set; } = string.Empty;
-    public string Model { get; set; } = "gemini-3-flash-preview";
-    public string FallbackModel { get; set; } = "gemini-3.5-flash-lite";
-    public int MaxToolRounds { get; set; } = 5;
-    public double Temperature { get; set; } = 0.3;
+    /// <summary>Primary model: gemini-3.5-flash-lite has 500 RPD & 15 RPM on the free tier (vs 20 RPD on 3-flash).</summary>
+    public string Model { get; set; } = "gemini-3.5-flash-lite";
+    public string FallbackModel { get; set; } = "gemini-3.1-flash-lite";
+    public int MaxToolRounds { get; set; } = 3;
+    public double Temperature { get; set; } = 0.2;
 }
 
 public class GeminiException : Exception
@@ -21,13 +23,22 @@ public class GeminiException : Exception
 }
 
 /// <summary>
-/// Thin REST wrapper over the Gemini <c>generateContent</c> endpoint.
-/// Uses <see cref="JsonNode"/> so model turns (including opaque <c>thoughtSignature</c>
-/// fields required by function calling) can be echoed back verbatim.
+/// Thin REST wrapper over the Gemini <c>generateContent</c> endpoint with
+/// automatic multi-model quota rotation (500 RPD + 500 RPD Flash-Lite pool)
+/// and per-model 429 cooldown tracking.
 /// </summary>
 public class GeminiClient
 {
-    private static readonly TimeSpan PerAttemptTimeout = TimeSpan.FromSeconds(18);
+    private static readonly TimeSpan PerAttemptTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan RateLimitCooldown = TimeSpan.FromSeconds(65);
+    private static readonly ConcurrentDictionary<string, DateTime> CooldownUntilUtc = new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly string[] HighQuotaPool =
+    {
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-3-flash-preview",
+    };
 
     private readonly HttpClient _http;
     private readonly GeminiOptions _options;
@@ -62,17 +73,12 @@ public class GeminiClient
             ["generationConfig"] = new JsonObject
             {
                 ["temperature"] = _options.Temperature,
-                ["maxOutputTokens"] = 1024
+                ["maxOutputTokens"] = 350
             }
         };
 
         var payload = body.ToJsonString();
-        var modelsToTry = new List<string> { PrimaryModel(_options.Model) };
-        if (!string.IsNullOrWhiteSpace(_options.FallbackModel) &&
-            !string.Equals(modelsToTry[0], _options.FallbackModel, StringComparison.OrdinalIgnoreCase))
-        {
-            modelsToTry.Add(_options.FallbackModel.Trim());
-        }
+        var modelsToTry = BuildModelRotationList();
 
         GeminiException? lastError = null;
         foreach (var model in modelsToTry)
@@ -84,11 +90,34 @@ public class GeminiClient
             catch (GeminiException ex)
             {
                 lastError = ex;
+                if (ex.StatusCode == StatusCodes.Status429TooManyRequests)
+                {
+                    CooldownUntilUtc[model] = DateTime.UtcNow.Add(RateLimitCooldown);
+                }
                 _logger.LogWarning("Gemini model {Model} failed ({Status}): {Message}", model, ex.StatusCode, ex.Message);
             }
         }
 
         throw lastError ?? new GeminiException("The AI assistant failed to respond.");
+    }
+
+    private List<string> BuildModelRotationList()
+    {
+        var candidates = new List<string> { NormalizeModel(_options.Model) };
+        if (!string.IsNullOrWhiteSpace(_options.FallbackModel))
+            candidates.Add(NormalizeModel(_options.FallbackModel));
+        candidates.AddRange(HighQuotaPool);
+
+        var distinct = candidates
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var now = DateTime.UtcNow;
+        // Put models that are NOT in 429 cooldown first; keep cooled-down models as last resort.
+        return distinct
+            .OrderBy(m => CooldownUntilUtc.TryGetValue(m, out var until) && until > now ? 1 : 0)
+            .ToList();
     }
 
     private async Task<JsonObject> SendOnceAsync(string model, string payload, CancellationToken ct)
@@ -124,12 +153,12 @@ public class GeminiClient
         {
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Gemini {Model} returned {Status}: {Body}", model, (int)response.StatusCode, Truncate(text, 800));
+                _logger.LogWarning("Gemini {Model} returned {Status}: {Body}", model, (int)response.StatusCode, Truncate(text, 600));
                 var status = (int)response.StatusCode == 429
                     ? StatusCodes.Status429TooManyRequests
                     : StatusCodes.Status502BadGateway;
                 throw new GeminiException(
-                    status == 429 ? "The AI assistant is busy. Please try again shortly." : "The AI assistant failed to respond.",
+                    status == 429 ? "Rate limit reached. Please wait a moment and try again." : "The AI assistant failed to respond.",
                     status);
             }
 
@@ -138,16 +167,17 @@ public class GeminiClient
         }
     }
 
-    /// <summary>Map legacy/slow aliases to the fast Flash model that supports function calling.</summary>
-    private static string PrimaryModel(string configured)
+    /// <summary>Map low-quota/legacy aliases to the 500-RPD Flash-Lite model by default.</summary>
+    private static string NormalizeModel(string configured)
     {
         var trimmed = configured?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(trimmed) ||
             trimmed.Equals("gemini-flash-latest", StringComparison.OrdinalIgnoreCase) ||
             trimmed.Equals("gemini-2.5-flash", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("gemini-3.8-flash", StringComparison.OrdinalIgnoreCase))
+            trimmed.Equals("gemini-3.8-flash", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("gemini-3-flash-preview", StringComparison.OrdinalIgnoreCase))
         {
-            return "gemini-3-flash-preview";
+            return "gemini-3.5-flash-lite";
         }
         return trimmed;
     }

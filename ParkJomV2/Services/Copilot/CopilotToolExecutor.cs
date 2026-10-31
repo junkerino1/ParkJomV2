@@ -10,12 +10,15 @@ namespace ParkJomV2.Services.Copilot;
 
 /// <summary>
 /// Declares the tools exposed to Gemini and executes them against existing ParkJom services.
-/// Every tool is read-only: <c>proposeBooking</c> only validates and returns a UI card —
-/// the commuter must confirm through the normal quote/confirm booking flow.
+/// Token &amp; RPD optimizations:
+/// - <c>findStationsNear</c> and <c>searchStations</c> automatically attach available ParkJom bays
+///   so the model resolves station + parking in 1 tool round instead of 3.
+/// - Tool results returned to Gemini are compact (only fields needed for text generation),
+///   while full details (addresses, images) go directly into <see cref="Cards"/> for the React UI.
 /// </summary>
 public class CopilotToolExecutor
 {
-    private const int MaxParkingResults = 5;
+    private const int MaxParkingResults = 4;
     private static readonly TimeZoneInfo KlTimeZone = ResolveKlTimeZone();
 
     private readonly GtfsService _gtfs;
@@ -50,39 +53,39 @@ public class CopilotToolExecutor
     public static JsonArray Declarations() => new()
     {
         Fn("geocodePlace",
-            "Convert a Malaysian place name, landmark, or address (e.g. 'KLCC', 'USJ Subang', 'Sunway Pyramid') into coordinates.",
-            Props(("query", Str("Place name or address in Malaysia."))),
+            "Geocode a Malaysian place/landmark (e.g. 'KLCC', 'USJ Subang') to lat/lng.",
+            Props(("query", Str("Place name in Malaysia."))),
             "query"),
         Fn("findStationsNear",
-            "Find Klang Valley rail stations (LRT, MRT, Monorail, KTM, BRT) near a coordinate. Interchange stations appear once per line.",
+            "Find rail stations near lat/lng AND automatically list available ParkJom parking bays near them.",
             Props(
                 ("lat", Num("Latitude.")),
                 ("lng", Num("Longitude.")),
-                ("radiusMeters", Num("Search radius in meters, default 3000, max 10000.")),
-                ("limit", Num("Max stations, default 5, max 10."))),
+                ("radiusMeters", Num("Radius in meters, default 3000.")),
+                ("limit", Num("Max stations, default 4."))),
             "lat", "lng"),
         Fn("searchStations",
-            "Search rail stations by name and/or line. Line examples: 'KJ' (LRT Kelana Jaya), 'AG' (LRT Ampang), 'SP' (LRT Sri Petaling), 'KG' (MRT Kajang), 'PY' (MRT Putrajaya), 'MR' (Monorail).",
+            "Search rail stations by name or line ('KJ','AG','SP','KG','PY','MR','BRT') AND list available ParkJom bays near them.",
             Props(
-                ("name", Str("Full or partial station name.")),
-                ("line", Str("Optional line code or name."))),
+                ("name", Str("Station name.")),
+                ("line", Str("Line code or name."))),
             Array.Empty<string>()),
         Fn("getParkingNearStation",
-            "List currently available, verified ParkJom parking bays near a station. Returns daily/monthly rates and walking time to the station.",
+            "Get available ParkJom bays near a specific station stopId.",
             Props(
-                ("stopId", Str("Station stopId from findStationsNear or searchStations.")),
-                ("radiusMeters", Num("Search radius in meters, default 1500, max 3000."))),
+                ("stopId", Str("Station stopId.")),
+                ("radiusMeters", Num("Radius in meters, default 1500."))),
             "stopId"),
         Fn("getStationDepartures",
-            "Get the estimated next train departures for a station, by direction, plus peak/off-peak frequency.",
+            "Get next estimated train departures and frequency at a station stopId.",
             Props(("stopId", Str("Station stopId."))),
             "stopId"),
         Fn("proposeBooking",
-            "Propose a booking for the commuter to review. This does NOT book or charge anything; it shows a card with a Reserve button. Bookings are whole days.",
+            "Show a booking proposal card (does not charge). Whole days only.",
             Props(
-                ("parkingSpotId", Num("Parking bay ID from getParkingNearStation.")),
-                ("startDate", Str("First day, yyyy-MM-dd (Malaysia time).")),
-                ("endDate", Str("Last day inclusive, yyyy-MM-dd. Same as startDate for a single day."))),
+                ("parkingSpotId", Num("Bay ID.")),
+                ("startDate", Str("yyyy-MM-dd.")),
+                ("endDate", Str("yyyy-MM-dd inclusive."))),
             "parkingSpotId", "startDate", "endDate"),
     };
 
@@ -94,8 +97,8 @@ public class CopilotToolExecutor
             return name switch
             {
                 "geocodePlace" => await GeocodeAsync(args),
-                "findStationsNear" => FindStationsNear(args),
-                "searchStations" => SearchStations(args),
+                "findStationsNear" => await FindStationsNearAsync(args),
+                "searchStations" => await SearchStationsAsync(args),
                 "getParkingNearStation" => await GetParkingNearStationAsync(args),
                 "getStationDepartures" => GetStationDepartures(args),
                 "proposeBooking" => await ProposeBookingAsync(args, ct),
@@ -109,7 +112,7 @@ public class CopilotToolExecutor
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Copilot tool {Tool} failed", name);
-            return Error("The tool failed. Tell the user this information is temporarily unavailable.");
+            return Error("Tool unavailable.");
         }
     }
 
@@ -118,7 +121,7 @@ public class CopilotToolExecutor
     private async Task<JsonNode> GeocodeAsync(JsonObject args)
     {
         var query = RequireString(args, "query", 200);
-        var results = await _nominatim.SearchAsync(query, 3);
+        var results = await _nominatim.SearchAsync(query, 2);
         var places = new JsonArray();
         foreach (var r in results)
         {
@@ -127,37 +130,38 @@ public class CopilotToolExecutor
             places.Add(new JsonObject
             {
                 ["name"] = string.IsNullOrWhiteSpace(r.PropertyName) ? query : r.PropertyName,
-                ["address"] = r.Address,
-                ["lat"] = Math.Round(lat, 6),
-                ["lng"] = Math.Round(lng, 6),
+                ["lat"] = Math.Round(lat, 5),
+                ["lng"] = Math.Round(lng, 5),
             });
         }
         return places.Count == 0
-            ? Error($"No place found for '{query}'. Ask the user to be more specific.")
+            ? Error($"No place found for '{query}'.")
             : new JsonObject { ["places"] = places };
     }
 
-    private JsonNode FindStationsNear(JsonObject args)
+    private async Task<JsonNode> FindStationsNearAsync(JsonObject args)
     {
         var lat = RequireNumber(args, "lat", -90, 90);
         var lng = RequireNumber(args, "lng", -180, 180);
-        var radius = OptionalNumber(args, "radiusMeters", 3000, 100, 10000);
-        var limit = (int)OptionalNumber(args, "limit", 5, 1, 10);
+        var radius = OptionalNumber(args, "radiusMeters", 3500, 100, 10000);
+        var limit = (int)OptionalNumber(args, "limit", 4, 1, 6);
         var stations = _gtfs.GetNearbyStations(lat, lng, radius, limit);
-        return stations.Count == 0
-            ? Error("No rail stations within that radius. Try a larger radius.")
-            : new JsonObject { ["stations"] = StationsToJson(stations) };
+        if (stations.Count == 0)
+            return Error("No stations within radius. Try radiusMeters=6000.");
+
+        return await BuildStationsWithParkingAsync(stations);
     }
 
-    private JsonNode SearchStations(JsonObject args)
+    private async Task<JsonNode> SearchStationsAsync(JsonObject args)
     {
         var name = OptionalString(args, "name", 100);
         var line = OptionalString(args, "line", 50);
         if (name == null && line == null) throw new ToolArgumentException("Provide 'name' or 'line'.");
-        var stations = _gtfs.GetAllStops(line, name).Take(10).ToList();
-        return stations.Count == 0
-            ? Error("No matching stations.")
-            : new JsonObject { ["stations"] = StationsToJson(stations) };
+        var stations = _gtfs.GetAllStops(line, name).Take(5).ToList();
+        if (stations.Count == 0)
+            return Error("No matching stations.");
+
+        return await BuildStationsWithParkingAsync(stations);
     }
 
     private async Task<JsonNode> GetParkingNearStationAsync(JsonObject args)
@@ -168,51 +172,13 @@ public class CopilotToolExecutor
         if (data == null) return Error($"Unknown stopId '{stopId}'.");
 
         var stop = _gtfs.GetStopById(stopId);
-        var top = data.ParkingSpots.Take(MaxParkingResults).ToList();
-        var bays = new JsonArray();
-
-        foreach (var spot in top)
-        {
-            var item = new JsonObject
-            {
-                ["parkingSpotId"] = spot.ParkingSpotId,
-                ["parkingLabel"] = spot.ParkingLabel,
-                ["propertyName"] = spot.PropertyName,
-                ["address"] = spot.Address,
-                ["distanceToStationMeters"] = spot.DistanceMeters,
-                ["walkingTimeMinutes"] = spot.WalkingTimeMinutes,
-                ["dailyRate"] = spot.DailyRate,
-                ["monthlyRate"] = spot.MonthlyRate,
-                ["availabilityStatus"] = spot.AvailabilityStatus,
-                ["hasSmartBollard"] = spot.HasIoTDevice,
-            };
-            bays.Add(item);
-
-            var card = item.DeepClone().AsObject();
-            card["stationName"] = data.StopName;
-            card["stopId"] = data.StopId;
-            card["lineName"] = stop?.RouteName;
-            card["primaryImageUrl"] = spot.PrimaryImageUrl;
-            AddCard("parking", $"parking:{spot.ParkingSpotId}", card);
-        }
-
-        if (top.Count > 0)
-        {
-            _context.Append($"Bays shown near {data.StopName} [{data.StopId}]: ");
-            _context.AppendJoin("; ", top.Select((s, i) =>
-                $"#{i + 1} id={s.ParkingSpotId} '{s.ParkingLabel}' at {s.PropertyName} RM{s.DailyRate?.ToString("0.00", CultureInfo.InvariantCulture) ?? "-"}/day"));
-            _context.Append(". ");
-        }
+        var bays = EmitParkingBays(data, stop?.RouteName);
 
         return new JsonObject
         {
-            ["stationName"] = data.StopName,
+            ["station"] = data.StopName,
             ["stopId"] = data.StopId,
-            ["totalAvailableBays"] = data.TotalAvailableSpots,
             ["bays"] = bays,
-            ["note"] = data.TotalAvailableSpots == 0
-                ? "No available ParkJom bays near this station. Suggest a neighbouring station on the same line."
-                : null,
         };
     }
 
@@ -222,19 +188,26 @@ public class CopilotToolExecutor
         var schedule = _gtfs.GetStopSchedule(stopId);
         if (schedule == null) return Error($"Unknown stopId '{stopId}'.");
 
-        var departures = new JsonArray();
+        var fullDepartures = new JsonArray();
+        var slimDepartures = new JsonArray();
         foreach (var d in schedule.Departures)
         {
-            departures.Add(new JsonObject
+            fullDepartures.Add(new JsonObject
             {
                 ["direction"] = d.Direction,
                 ["next"] = d.EstimatedDeparture,
                 ["minutesUntil"] = d.MinutesUntilArrival,
                 ["following"] = new JsonArray(d.SubsequentDepartures.Select(t => (JsonNode?)JsonValue.Create(t)).ToArray()),
             });
+            slimDepartures.Add(new JsonObject
+            {
+                ["dir"] = d.Direction,
+                ["next"] = d.EstimatedDeparture,
+                ["inMin"] = d.MinutesUntilArrival,
+            });
         }
 
-        var result = new JsonObject
+        AddCard("departures", $"departures:{schedule.StopId}", new JsonObject
         {
             ["stopId"] = schedule.StopId,
             ["stationName"] = schedule.StopName,
@@ -246,12 +219,18 @@ public class CopilotToolExecutor
             ["frequencyMinutes"] = schedule.FrequencyMinutes,
             ["firstTrain"] = schedule.FirstTrain,
             ["lastTrain"] = schedule.LastTrain,
-            ["departures"] = departures,
-            ["note"] = "Departures are estimates based on the line's frequency, not live tracking.",
-        };
+            ["departures"] = fullDepartures,
+        });
 
-        AddCard("departures", $"departures:{schedule.StopId}", result.DeepClone());
-        return result;
+        // Compact payload for the LLM to save tokens.
+        return new JsonObject
+        {
+            ["station"] = schedule.StopName,
+            ["line"] = schedule.RouteName,
+            ["open"] = schedule.IsOperating,
+            ["everyMin"] = schedule.FrequencyMinutes,
+            ["nextTrains"] = slimDepartures,
+        };
     }
 
     private async Task<JsonNode> ProposeBookingAsync(JsonObject args, CancellationToken ct)
@@ -262,9 +241,9 @@ public class CopilotToolExecutor
         var today = TodayInKl();
 
         if (start < today) return Error($"startDate is in the past. Today is {today:yyyy-MM-dd}.");
-        if (end < start) return Error("endDate must be on or after startDate.");
+        if (end < start) return Error("endDate must be >= startDate.");
         var days = end.DayNumber - start.DayNumber + 1;
-        if (days > 31) return Error("Bookings proposed by the assistant are limited to 31 days.");
+        if (days > 31) return Error("Max 31 days.");
 
         var spot = await _db.ParkingSpots
             .AsNoTracking()
@@ -281,9 +260,10 @@ public class CopilotToolExecutor
             })
             .FirstOrDefaultAsync(ct);
 
-        if (spot == null || !spot.IsPublished) return Error($"Parking bay {spotId} does not exist or is not bookable.");
-        if (spot.AvailabilityStatus != AvailabilityStatus.Available) return Error($"Parking bay {spotId} is not currently available.");
+        if (spot == null || !spot.IsPublished || spot.AvailabilityStatus != AvailabilityStatus.Available)
+            return Error($"Bay {spotId} is not available.");
 
+        var total = spot.DailyRate.HasValue ? spot.DailyRate.Value * days : (decimal?)null;
         var card = new JsonObject
         {
             ["parkingSpotId"] = spot.ParkingSpotId,
@@ -294,47 +274,118 @@ public class CopilotToolExecutor
             ["endDate"] = end.ToString("yyyy-MM-dd"),
             ["days"] = days,
             ["dailyRate"] = spot.DailyRate,
-            ["estimatedSubtotal"] = spot.DailyRate.HasValue ? spot.DailyRate.Value * days : null,
+            ["estimatedSubtotal"] = total,
         };
         AddCard("bookingProposal", $"proposal:{spotId}:{start}:{end}", card);
-        _context.Append($"Proposed booking: bay id={spotId} {start:yyyy-MM-dd} to {end:yyyy-MM-dd}. ");
+        _context.Append($"Proposed bay#{spotId} {start:yyyy-MM-dd}..{end:yyyy-MM-dd}. ");
 
         return new JsonObject
         {
-            ["status"] = "proposal_shown",
-            ["instruction"] = "Tell the user to review the card and tap Reserve. Final price including platform fee is shown on the quote. Do not claim it is booked.",
-            ["proposal"] = card.DeepClone(),
+            ["status"] = "proposal_card_shown",
+            ["bayId"] = spot.ParkingSpotId,
+            ["property"] = spot.PropertyName,
+            ["days"] = days,
+            ["estRm"] = total,
         };
     }
 
     // ───────────────────────── Helpers ─────────────────────────
 
-    private void AddCard(string type, string key, JsonNode data)
+    /// <summary>
+    /// Bundles stations + their nearby available ParkJom bays in a single tool round
+    /// so the LLM does not need to make 3 separate follow-up calls.
+    /// </summary>
+    private async Task<JsonObject> BuildStationsWithParkingAsync(List<GtfsStopDto> stations)
     {
-        if (_cardKeys.Add(key)) Cards.Add(new CopilotCardDto { Type = type, Data = data });
-    }
+        var stationArr = new JsonArray();
+        var allBays = new JsonArray();
+        var shownStations = new List<string>();
 
-    private JsonArray StationsToJson(IEnumerable<GtfsStopDto> stations)
-    {
-        var arr = new JsonArray();
-        var shown = new List<string>();
         foreach (var s in stations)
         {
-            arr.Add(new JsonObject
+            stationArr.Add(new JsonObject
             {
                 ["stopId"] = s.StopId,
                 ["name"] = s.StopName,
                 ["line"] = s.RouteName,
-                ["lineId"] = s.RouteId,
-                ["category"] = s.Category,
-                ["lat"] = s.Latitude,
-                ["lng"] = s.Longitude,
-                ["distanceMeters"] = s.DistanceMeters,
+                ["distM"] = s.DistanceMeters,
             });
-            shown.Add($"{s.StopName} [{s.StopId}, {s.RouteName}]");
+            shownStations.Add($"{s.StopName}[{s.StopId}]");
+
+            if (Cards.Count < MaxParkingResults)
+            {
+                var parking = await _gtfs.GetNearbyParkingAsync(s.StopId, 1500, _db);
+                if (parking != null && parking.ParkingSpots.Count > 0)
+                {
+                    foreach (var bayNode in EmitParkingBays(parking, s.RouteName))
+                        allBays.Add(bayNode?.DeepClone());
+                }
+            }
         }
-        if (shown.Count > 0) _context.Append($"Stations found: {string.Join("; ", shown)}. ");
-        return arr;
+
+        if (shownStations.Count > 0)
+            _context.Append($"Stations: {string.Join(", ", shownStations)}. ");
+
+        return new JsonObject
+        {
+            ["stations"] = stationArr,
+            ["availableBays"] = allBays,
+            ["hint"] = allBays.Count > 0
+                ? "Available bays are already included in availableBays above; no need to call getParkingNearStation again for these stations."
+                : "No ParkJom bays within 1.5km of these stations.",
+        };
+    }
+
+    private JsonArray EmitParkingBays(GtfsNearbyParkingDto data, string? lineName)
+    {
+        var top = data.ParkingSpots.Take(MaxParkingResults - Cards.Count).ToList();
+        var slimBays = new JsonArray();
+
+        foreach (var spot in top)
+        {
+            slimBays.Add(new JsonObject
+            {
+                ["bayId"] = spot.ParkingSpotId,
+                ["label"] = spot.ParkingLabel,
+                ["property"] = spot.PropertyName,
+                ["station"] = data.StopName,
+                ["stopId"] = data.StopId,
+                ["walkMin"] = spot.WalkingTimeMinutes,
+                ["rmDay"] = spot.DailyRate,
+            });
+
+            AddCard("parking", $"parking:{spot.ParkingSpotId}", new JsonObject
+            {
+                ["parkingSpotId"] = spot.ParkingSpotId,
+                ["parkingLabel"] = spot.ParkingLabel,
+                ["propertyName"] = spot.PropertyName,
+                ["address"] = spot.Address,
+                ["distanceToStationMeters"] = spot.DistanceMeters,
+                ["walkingTimeMinutes"] = spot.WalkingTimeMinutes,
+                ["dailyRate"] = spot.DailyRate,
+                ["monthlyRate"] = spot.MonthlyRate,
+                ["availabilityStatus"] = spot.AvailabilityStatus,
+                ["hasSmartBollard"] = spot.HasIoTDevice,
+                ["stationName"] = data.StopName,
+                ["stopId"] = data.StopId,
+                ["lineName"] = lineName,
+                ["primaryImageUrl"] = spot.PrimaryImageUrl,
+            });
+        }
+
+        if (top.Count > 0)
+        {
+            _context.Append($"Bays@{data.StopName}[{data.StopId}]: ");
+            _context.AppendJoin(", ", top.Select(s => $"id={s.ParkingSpotId} '{s.ParkingLabel}' ({s.PropertyName}, RM{s.DailyRate:0.##}/d)"));
+            _context.Append(". ");
+        }
+
+        return slimBays;
+    }
+
+    private void AddCard(string type, string key, JsonNode data)
+    {
+        if (_cardKeys.Add(key)) Cards.Add(new CopilotCardDto { Type = type, Data = data });
     }
 
     private static JsonObject Error(string message) => new() { ["error"] = message };
@@ -353,7 +404,7 @@ public class CopilotToolExecutor
     private static double RequireNumber(JsonObject args, string key, double min, double max) =>
         TryNumber(args, key, out var value)
             ? (value < min || value > max ? throw new ToolArgumentException($"'{key}' is out of range.") : value)
-            : throw new ToolArgumentException($"'{key}' is required and must be a number.");
+            : throw new ToolArgumentException($"'{key}' is required.");
 
     private static double OptionalNumber(JsonObject args, string key, double fallback, double min, double max) =>
         TryNumber(args, key, out var value) ? Math.Clamp(value, min, max) : fallback;
