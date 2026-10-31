@@ -89,7 +89,7 @@ public partial class GeminiClient
             ["generationConfig"] = new JsonObject
             {
                 ["temperature"] = _options.Temperature,
-                ["maxOutputTokens"] = 350
+                ["maxOutputTokens"] = 800
             }
         };
 
@@ -113,6 +113,68 @@ public partial class GeminiClient
         }
 
         throw lastError ?? new GeminiException("All AI models are currently busy. Please try again in a moment.");
+    }
+
+    /// <summary>
+    /// Multimodal vision inference using the same Quality-First Priority Waterfall.
+    /// Sends a single compressed image (<c>inlineData</c>) + prompt and requests structured JSON output.
+    /// </summary>
+    public async Task<(JsonObject Payload, string ModelUsed)> GenerateVisionJsonAsync(
+        string prompt,
+        string base64Data,
+        string mimeType,
+        CancellationToken ct)
+    {
+        if (!IsConfigured)
+            throw new GeminiException("The AI Vision service is not configured on the server.", StatusCodes.Status503ServiceUnavailable);
+
+        var body = new JsonObject
+        {
+            ["contents"] = new JsonArray(new JsonObject
+            {
+                ["role"] = "user",
+                ["parts"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["inlineData"] = new JsonObject
+                        {
+                            ["mimeType"] = string.IsNullOrWhiteSpace(mimeType) ? "image/jpeg" : mimeType,
+                            ["data"] = base64Data
+                        }
+                    },
+                    new JsonObject
+                    {
+                        ["text"] = prompt
+                    })
+            }),
+            ["generationConfig"] = new JsonObject
+            {
+                ["temperature"] = 0.1,
+                ["maxOutputTokens"] = 1024,
+                ["responseMimeType"] = "application/json"
+            }
+        };
+
+        var payload = body.ToJsonString();
+        var modelsToTry = BuildModelWaterfall();
+
+        GeminiException? lastError = null;
+        foreach (var model in modelsToTry)
+        {
+            try
+            {
+                var result = await SendOnceAsync(model, payload, ct);
+                CooldownUntilUtc.TryRemove(model, out _);
+                return (result, model);
+            }
+            catch (GeminiException ex)
+            {
+                lastError = ex;
+                _logger.LogWarning("Vision model {Model} unavailable ({Status}), cascading to next model...", model, ex.StatusCode);
+            }
+        }
+
+        throw lastError ?? new GeminiException("All AI Vision models are currently busy. Please try again in a moment.");
     }
 
     private List<string> BuildModelWaterfall()

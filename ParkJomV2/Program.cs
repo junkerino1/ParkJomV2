@@ -235,6 +235,7 @@ builder.Services.AddHttpClient<GeminiClient>(client =>
 });
 builder.Services.AddScoped<CopilotToolExecutor>();
 builder.Services.AddScoped<CopilotService>();
+builder.Services.AddScoped<ParkJomV2.Services.Vision.VehicleVisionService>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
