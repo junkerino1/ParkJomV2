@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
 namespace ParkJomV2.Services.Copilot;
@@ -9,9 +11,14 @@ namespace ParkJomV2.Services.Copilot;
 public class GeminiOptions
 {
     public string ApiKey { get; set; } = string.Empty;
-    /// <summary>Primary model: gemini-3.5-flash-lite has 500 RPD & 15 RPM on the free tier (vs 20 RPD on 3-flash).</summary>
-    public string Model { get; set; } = "gemini-3.5-flash-lite";
-    public string FallbackModel { get; set; } = "gemini-3.1-flash-lite";
+    /// <summary>
+    /// Priority waterfall from best reasoning models (Tier 1: 20 RPD / 5 RPM each)
+    /// down to high-quota Flash-Lite models (Tier 2: 500 RPD / 15 RPM each).
+    /// Total combined free-tier capacity: 1,060 RPD &amp; 45 RPM.
+    /// </summary>
+    public List<string> Models { get; set; } = new();
+    public string Model { get; set; } = string.Empty;
+    public string FallbackModel { get; set; } = string.Empty;
     public int MaxToolRounds { get; set; } = 3;
     public double Temperature { get; set; } = 0.2;
 }
@@ -23,22 +30,31 @@ public class GeminiException : Exception
 }
 
 /// <summary>
-/// Thin REST wrapper over the Gemini <c>generateContent</c> endpoint with
-/// automatic multi-model quota rotation (500 RPD + 500 RPD Flash-Lite pool)
-/// and per-model 429 cooldown tracking.
+/// REST wrapper over Gemini <c>generateContent</c> with a Quality-First Priority Waterfall:
+/// always tries the best available Flash model first, and when a model hits its RPM/RPD quota (429)
+/// or high-demand spike (503/timeout), records its exact cooldown and cascades to the next model.
 /// </summary>
-public class GeminiClient
+public partial class GeminiClient
 {
-    private static readonly TimeSpan PerAttemptTimeout = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan RateLimitCooldown = TimeSpan.FromSeconds(65);
+    private static readonly TimeSpan PerAttemptTimeout = TimeSpan.FromSeconds(12);
+    private static readonly TimeSpan DefaultRpmCooldown = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan DefaultRpdCooldown = TimeSpan.FromHours(1);
+    private static readonly TimeSpan DefaultOverloadCooldown = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan MaxCooldown = TimeSpan.FromHours(6);
+
     private static readonly ConcurrentDictionary<string, DateTime> CooldownUntilUtc = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly string[] HighQuotaPool =
+    private static readonly string[] DefaultWaterfall =
     {
+        "gemini-3-flash-preview",
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
         "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
-        "gemini-3-flash-preview",
     };
+
+    [GeneratedRegex(@"""retryDelay""\s*:\s*""(\d+(?:\.\d+)?)s""", RegexOptions.IgnoreCase)]
+    private static partial Regex RetryDelayRegex();
 
     private readonly HttpClient _http;
     private readonly GeminiOptions _options;
@@ -78,46 +94,56 @@ public class GeminiClient
         };
 
         var payload = body.ToJsonString();
-        var modelsToTry = BuildModelRotationList();
+        var modelsToTry = BuildModelWaterfall();
 
         GeminiException? lastError = null;
         foreach (var model in modelsToTry)
         {
             try
             {
-                return await SendOnceAsync(model, payload, ct);
+                var result = await SendOnceAsync(model, payload, ct);
+                CooldownUntilUtc.TryRemove(model, out _);
+                return result;
             }
             catch (GeminiException ex)
             {
                 lastError = ex;
-                if (ex.StatusCode == StatusCodes.Status429TooManyRequests)
-                {
-                    CooldownUntilUtc[model] = DateTime.UtcNow.Add(RateLimitCooldown);
-                }
-                _logger.LogWarning("Gemini model {Model} failed ({Status}): {Message}", model, ex.StatusCode, ex.Message);
+                _logger.LogWarning("Model {Model} unavailable ({Status}), cascading to next model...", model, ex.StatusCode);
             }
         }
 
-        throw lastError ?? new GeminiException("The AI assistant failed to respond.");
+        throw lastError ?? new GeminiException("All AI models are currently busy. Please try again in a moment.");
     }
 
-    private List<string> BuildModelRotationList()
+    private List<string> BuildModelWaterfall()
     {
-        var candidates = new List<string> { NormalizeModel(_options.Model) };
+        var configured = new List<string>();
+        if (_options.Models is { Count: > 0 })
+            configured.AddRange(_options.Models);
+        if (!string.IsNullOrWhiteSpace(_options.Model))
+            configured.Add(_options.Model);
         if (!string.IsNullOrWhiteSpace(_options.FallbackModel))
-            candidates.Add(NormalizeModel(_options.FallbackModel));
-        candidates.AddRange(HighQuotaPool);
+            configured.Add(_options.FallbackModel);
+        configured.AddRange(DefaultWaterfall);
 
-        var distinct = candidates
-            .Where(m => !string.IsNullOrWhiteSpace(m))
+        var distinct = configured
+            .Select(m => m?.Trim() ?? string.Empty)
+            .Where(m => !string.IsNullOrWhiteSpace(m) &&
+                        !m.Equals("gemini-flash-latest", StringComparison.OrdinalIgnoreCase) &&
+                        !m.Equals("gemini-2.5-flash", StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var now = DateTime.UtcNow;
-        // Put models that are NOT in 429 cooldown first; keep cooled-down models as last resort.
-        return distinct
-            .OrderBy(m => CooldownUntilUtc.TryGetValue(m, out var until) && until > now ? 1 : 0)
+        // Ready models first (in quality priority order), followed by cooled-down models ordered by soonest recovery.
+        var ready = distinct.Where(m => !CooldownUntilUtc.TryGetValue(m, out var until) || until <= now).ToList();
+        var cooling = distinct
+            .Where(m => CooldownUntilUtc.TryGetValue(m, out var until) && until > now)
+            .OrderBy(m => CooldownUntilUtc[m])
             .ToList();
+
+        ready.AddRange(cooling);
+        return ready;
     }
 
     private async Task<JsonObject> SendOnceAsync(string model, string payload, CancellationToken ct)
@@ -141,7 +167,8 @@ public class GeminiClient
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new GeminiException("The AI assistant timed out. Please try again.", StatusCodes.Status504GatewayTimeout);
+            CooldownUntilUtc[model] = DateTime.UtcNow.Add(DefaultOverloadCooldown);
+            throw new GeminiException($"Model {model} timed out.", StatusCodes.Status504GatewayTimeout);
         }
         catch (HttpRequestException ex)
         {
@@ -153,13 +180,18 @@ public class GeminiClient
         {
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Gemini {Model} returned {Status}: {Body}", model, (int)response.StatusCode, Truncate(text, 600));
-                var status = (int)response.StatusCode == 429
+                var statusCode = (int)response.StatusCode;
+                ApplyCooldownFromError(model, statusCode, text);
+                _logger.LogWarning("Gemini {Model} returned {Status}: {Body}", model, statusCode, Truncate(text, 400));
+
+                var mappedStatus = statusCode == 429
                     ? StatusCodes.Status429TooManyRequests
                     : StatusCodes.Status502BadGateway;
                 throw new GeminiException(
-                    status == 429 ? "Rate limit reached. Please wait a moment and try again." : "The AI assistant failed to respond.",
-                    status);
+                    mappedStatus == 429
+                        ? "All AI model quotas are temporarily busy. Please wait a moment and try again."
+                        : "The AI assistant failed to respond.",
+                    mappedStatus);
             }
 
             return JsonNode.Parse(text) as JsonObject
@@ -167,19 +199,36 @@ public class GeminiClient
         }
     }
 
-    /// <summary>Map low-quota/legacy aliases to the 500-RPD Flash-Lite model by default.</summary>
-    private static string NormalizeModel(string configured)
+    private void ApplyCooldownFromError(string model, int statusCode, string responseBody)
     {
-        var trimmed = configured?.Trim() ?? string.Empty;
-        if (string.IsNullOrEmpty(trimmed) ||
-            trimmed.Equals("gemini-flash-latest", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("gemini-2.5-flash", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("gemini-3.8-flash", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.Equals("gemini-3-flash-preview", StringComparison.OrdinalIgnoreCase))
+        TimeSpan cooldown;
+        if (statusCode == 429)
         {
-            return "gemini-3.5-flash-lite";
+            var isDailyQuota = responseBody.Contains("PerDay", StringComparison.OrdinalIgnoreCase)
+                               || responseBody.Contains("requests per day", StringComparison.OrdinalIgnoreCase);
+            cooldown = isDailyQuota ? DefaultRpdCooldown : DefaultRpmCooldown;
+
+            var match = RetryDelayRegex().Match(responseBody);
+            if (match.Success &&
+                double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) &&
+                seconds > 0)
+            {
+                var parsed = TimeSpan.FromSeconds(seconds);
+                cooldown = parsed <= MaxCooldown ? parsed : MaxCooldown;
+            }
         }
-        return trimmed;
+        else if (statusCode is 503 or 500 or 502 or 504 or 404)
+        {
+            cooldown = statusCode == 404 ? MaxCooldown : DefaultOverloadCooldown;
+        }
+        else
+        {
+            return;
+        }
+
+        CooldownUntilUtc[model] = DateTime.UtcNow.Add(cooldown);
+        _logger.LogInformation("Model {Model} placed on cooldown for {CooldownSeconds:0}s (HTTP {Status})",
+            model, cooldown.TotalSeconds, statusCode);
     }
 
     private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
