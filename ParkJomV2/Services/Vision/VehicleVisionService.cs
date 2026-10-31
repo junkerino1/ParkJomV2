@@ -73,36 +73,18 @@ public class VehicleVisionService
                     request.MimeType,
                     ct);
 
-                var parsed = ParseVisionResponse(payload, modelUsed, request);
+                var parsed = ParseVisionResponse(payload, modelUsed);
                 if (!string.IsNullOrWhiteSpace(parsed.NumberPlate))
                     return parsed;
             }
         }
+        catch (GeminiException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Cloud Vision ALPR failed or timed out; checking edge fallback.");
-        }
-
-        // Edge / Client-Hint Fallback (ensures 100% reliability during live demos or offline environments)
-        if (!string.IsNullOrWhiteSpace(request.ClientHintPlate))
-        {
-            var (isValid, compact, formatted, region) = MalaysianPlateValidator.NormalizeAndValidate(request.ClientHintPlate);
-            var (brand, model) = MatchCatalog(request.ClientHintBrand, request.ClientHintModel);
-            return new VehicleVisionScanDataDto
-            {
-                NumberPlate = compact,
-                FormattedPlate = formatted,
-                RawDetectedText = request.ClientHintPlate,
-                IsValidJpjFormat = isValid,
-                JpjRegion = region,
-                Brand = brand,
-                Model = model,
-                Color = string.IsNullOrWhiteSpace(request.ClientHintColor) ? "Silver" : request.ClientHintColor.Trim(),
-                VehicleType = "Sedan / Hatchback",
-                Confidence = 0.94,
-                BoundingBox = new PlateBoundingBoxDto { YMin = 590, XMin = 300, YMax = 710, XMax = 700 },
-                EngineUsed = "Edge-ALPR + JPJ Normalizer"
-            };
+            _logger.LogError(ex, "Cloud Vision ALPR processing error.");
         }
 
         throw new GeminiException("Could not detect a readable license plate in this image. Please move closer or ensure the number plate is clearly visible.", StatusCodes.Status422UnprocessableEntity);
@@ -116,11 +98,7 @@ public class VehicleVisionService
         var scan = await ScanVehicleAsync(new VehicleVisionScanRequest
         {
             ImageBase64 = request.ImageBase64,
-            MimeType = request.MimeType,
-            ClientHintPlate = request.ClientHintPlate,
-            ClientHintBrand = request.ClientHintBrand,
-            ClientHintModel = request.ClientHintModel,
-            ClientHintColor = request.ClientHintColor
+            MimeType = request.MimeType
         }, ct);
 
         var (_, normalizedExpected, _, _) = MalaysianPlateValidator.NormalizeAndValidate(expectedPlate);
@@ -165,8 +143,7 @@ public class VehicleVisionService
 
     private VehicleVisionScanDataDto ParseVisionResponse(
         JsonObject payload,
-        string modelUsed,
-        VehicleVisionScanRequest request)
+        string modelUsed)
     {
         var parts = payload["candidates"]?[0]?["content"]?["parts"] as JsonArray;
         string text = "";
@@ -188,12 +165,10 @@ public class VehicleVisionService
         if (node is null)
             throw new InvalidOperationException("Vision response was not valid JSON.");
 
-        var rawPlate = node["numberPlate"]?.GetValue<string>()
-                       ?? request.ClientHintPlate
-                       ?? "";
-        var rawBrand = node["brand"]?.GetValue<string>() ?? request.ClientHintBrand ?? "";
-        var rawModel = node["model"]?.GetValue<string>() ?? request.ClientHintModel ?? "";
-        var rawColor = node["color"]?.GetValue<string>() ?? request.ClientHintColor ?? "Silver";
+        var rawPlate = node["numberPlate"]?.GetValue<string>() ?? "";
+        var rawBrand = node["brand"]?.GetValue<string>() ?? "";
+        var rawModel = node["model"]?.GetValue<string>() ?? "";
+        var rawColor = node["color"]?.GetValue<string>() ?? "Silver";
         var vehicleType = node["vehicleType"]?.GetValue<string>() ?? "Sedan";
         var confidence = node["confidence"]?.GetValue<double>() ?? 0.95;
 

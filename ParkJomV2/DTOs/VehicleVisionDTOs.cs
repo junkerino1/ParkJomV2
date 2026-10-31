@@ -8,15 +8,6 @@ public class VehicleVisionScanRequest
     public string ImageBase64 { get; set; } = string.Empty;
 
     public string MimeType { get; set; } = "image/jpeg";
-
-    /// <summary>
-    /// Optional client-side hint (e.g. from on-device OCR or demo preset metadata)
-    /// used as a fallback if cloud vision is offline.
-    /// </summary>
-    public string? ClientHintPlate { get; set; }
-    public string? ClientHintBrand { get; set; }
-    public string? ClientHintModel { get; set; }
-    public string? ClientHintColor { get; set; }
 }
 
 public class PlateBoundingBoxDto
@@ -61,11 +52,6 @@ public class BarrierPlateVerifyRequest
     public string ImageBase64 { get; set; } = string.Empty;
 
     public string MimeType { get; set; } = "image/jpeg";
-
-    public string? ClientHintPlate { get; set; }
-    public string? ClientHintBrand { get; set; }
-    public string? ClientHintModel { get; set; }
-    public string? ClientHintColor { get; set; }
 }
 
 public class BarrierPlateVerifyDataDto
