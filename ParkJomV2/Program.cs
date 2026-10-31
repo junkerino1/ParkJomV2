@@ -9,6 +9,10 @@ using ParkJomV2.Models;
 using ParkJomV2.Services;
 using ParkJomV2.Services.Support;
 using ParkJomV2.Services.Support.Workers;
+using ParkJomV2.Controllers;
+using ParkJomV2.Services.Copilot;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -194,6 +198,60 @@ builder.Services.AddScoped<IncidentService>();
 builder.Services.AddScoped<DisputeService>();
 builder.Services.AddScoped<SupportOnCallService>();
 
+// AI Transit Copilot (Gemini function calling). The API key comes from configuration
+// ("Gemini:ApiKey") — use dotnet user-secrets locally and App Settings in Azure.
+builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Gemini"));
+builder.Services.AddHttpClient<GeminiClient>(client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    ConnectTimeout = TimeSpan.FromSeconds(8),
+    ConnectCallback = async (context, cancellationToken) =>
+    {
+        var addresses = await System.Net.Dns.GetHostAddressesAsync(
+            context.DnsEndPoint.Host,
+            System.Net.Sockets.AddressFamily.InterNetwork,
+            cancellationToken);
+        var socket = new System.Net.Sockets.Socket(
+            System.Net.Sockets.SocketType.Stream,
+            System.Net.Sockets.ProtocolType.Tcp)
+        {
+            NoDelay = true
+        };
+        try
+        {
+            await socket.ConnectAsync(addresses, context.DnsEndPoint.Port, cancellationToken);
+            return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+});
+builder.Services.AddScoped<CopilotToolExecutor>();
+builder.Services.AddScoped<CopilotService>();
+builder.Services.AddScoped<ParkJomV2.Services.Vision.VehicleVisionService>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(CopilotController.RateLimitPolicy, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
+
 // Background Hosted Services
 builder.Services.AddHostedService<IncidentEscalationWorker>();
 builder.Services.AddHostedService<SupportSlaWorker>();
@@ -255,6 +313,8 @@ app.UseMiddleware<SupportWebSocketMiddleware>();
 
 app.UseAuthentication();   
 app.UseAuthorization();
+
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapHub<SupportHub>("/hubs/support");
