@@ -26,14 +26,16 @@ public class PropertyService : IPropertyService
 
     public async Task<Property?> ResolvePropertyAsync(ParkingRegistrationRequest request)
     {
-        // Check DB for existing property by OsmId
-        var existing = await _context.Properties
-            .FirstOrDefaultAsync(p => p.OsmId == request.osmId);
-
-        if (existing != null)
+        // Check DB for existing property by OsmId (only if OsmId > 0)
+        if (request.osmId > 0)
         {
-            // property exist, return the existing property
-            return existing;
+            var existing = await _context.Properties
+                .FirstOrDefaultAsync(p => p.OsmId == request.osmId);
+
+            if (existing != null)
+            {
+                return existing;
+            }
         }
 
         // 2) Not in DB — search Nominatim for the property
@@ -46,7 +48,7 @@ public class PropertyService : IPropertyService
             return null;
         }
 
-        // validate cordinates to ensure they are valid decimal values
+        // validate coordinates to ensure they are valid decimal values
         if (!decimal.TryParse(best.Lat, System.Globalization.NumberStyles.Any,
                 System.Globalization.CultureInfo.InvariantCulture, out var latitude) ||
             !decimal.TryParse(best.Lon, System.Globalization.NumberStyles.Any,
@@ -69,12 +71,19 @@ public class PropertyService : IPropertyService
             (double)station.Latitude, (double)station.Longitude,
             (double)latitude, (double)longitude);
 
+        var resolvedName = !string.IsNullOrWhiteSpace(best.PropertyName)
+            ? best.PropertyName
+            : request.PropertyName.Trim();
+        var resolvedAddress = !string.IsNullOrWhiteSpace(best.Address)
+            ? best.Address
+            : request.Address.Trim();
+
         // 6) Create the property
         var property = new Property
         {
-            PropertyName = best.PropertyName,
+            PropertyName = resolvedName,
             PropertyType = request.PropertyType,
-            Address = best.Address,
+            Address = resolvedAddress,
             Latitude = latitude,
             Longitude = longitude,
             NearestStationId = station.StationId,

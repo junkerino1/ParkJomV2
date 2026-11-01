@@ -237,6 +237,8 @@ builder.Services.AddScoped<CopilotToolExecutor>();
 builder.Services.AddScoped<CopilotService>();
 builder.Services.AddScoped<ParkJomV2.Services.Vision.VehicleVisionService>();
 builder.Services.AddScoped<ParkJomV2.Services.Pricing.DynamicPricingService>();
+builder.Services.AddScoped<ParkJomV2.Services.Prediction.WeatherForecastService>();
+builder.Services.AddScoped<ParkJomV2.Services.Prediction.ParkingPredictorService>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -303,6 +305,58 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Ensure property names and addresses in DB are consistent (fixes PV18 Residences having PV9 Residences address)
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var pv18 = await db.Properties.FirstOrDefaultAsync(p => p.PropertyId == 31);
+        if (pv18 != null && pv18.PropertyName.Contains("PV18", StringComparison.OrdinalIgnoreCase) &&
+            pv18.Address != null && pv18.Address.Contains("PV9", StringComparison.OrdinalIgnoreCase))
+        {
+            pv18.Address = "PV18 Residences, Jalan Langkawi, Setapak, Kuala Lumpur, Malaysia";
+            pv18.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var pv18Test = await db.Properties.FirstOrDefaultAsync(p => p.PropertyId == 26);
+        if (pv18Test != null && pv18Test.Address == "testing")
+        {
+            pv18Test.PropertyName = "PV18 Residences";
+            pv18Test.Address = "PV18 Residences, Jalan Langkawi, Setapak, Kuala Lumpur, Malaysia";
+            pv18Test.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var pv128 = await db.Properties.FirstOrDefaultAsync(p => p.PropertyId == 33);
+        if (pv128 != null && pv128.Address == "Jalan Langkawi")
+        {
+            pv128.Address = "PV128, Jalan Genting Kelang, Setapak, Kuala Lumpur, Malaysia";
+            pv128.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Recalculate realistic pedestrian walking times (12.5 min/km = 80 m/min)
+        var allProps = await db.Properties.ToListAsync();
+        foreach (var p in allProps)
+        {
+            var distKm = (double)p.DistanceToStation;
+            if (distKm > 0)
+            {
+                var walkMin = (decimal)Math.Round(distKm * 12.5, 1);
+                if (p.TimeToStation != walkMin)
+                {
+                    p.TimeToStation = walkMin;
+                }
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Property address normalization check skipped.");
+    }
+}
 
 app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");

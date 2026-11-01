@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ParkJomV2.Data;
 using ParkJomV2.DTOs;
 using ParkJomV2.Models.Enums;
+using ParkJomV2.Services.Prediction;
 
 namespace ParkJomV2.Services.Copilot;
 
@@ -24,17 +25,20 @@ public class CopilotToolExecutor
     private readonly GtfsService _gtfs;
     private readonly NominatimService _nominatim;
     private readonly ApplicationDbContext _db;
+    private readonly ParkingPredictorService _predictor;
     private readonly ILogger<CopilotToolExecutor> _logger;
 
     public CopilotToolExecutor(
         GtfsService gtfs,
         NominatimService nominatim,
         ApplicationDbContext db,
+        ParkingPredictorService predictor,
         ILogger<CopilotToolExecutor> logger)
     {
         _gtfs = gtfs;
         _nominatim = nominatim;
         _db = db;
+        _predictor = predictor;
         _logger = logger;
     }
 
@@ -87,6 +91,12 @@ public class CopilotToolExecutor
                 ("startDate", Str("yyyy-MM-dd.")),
                 ("endDate", Str("yyyy-MM-dd inclusive."))),
             "parkingSpotId", "startDate", "endDate"),
+        Fn("predictParkingCongestion",
+            "Predict parking bay congestion, occupancy %, probability of filling, weather impact, and recommended arrival time at a station stopId or parkingSpotId.",
+            Props(
+                ("stopId", Str("Station stopId (e.g. 'KJ10', 'KG9').")),
+                ("parkingSpotId", Num("Optional specific parking bay ID."))),
+            Array.Empty<string>()),
     };
 
     public async Task<JsonNode> ExecuteAsync(string name, JsonObject? args, CancellationToken ct)
@@ -102,6 +112,7 @@ public class CopilotToolExecutor
                 "getParkingNearStation" => await GetParkingNearStationAsync(args),
                 "getStationDepartures" => GetStationDepartures(args),
                 "proposeBooking" => await ProposeBookingAsync(args, ct),
+                "predictParkingCongestion" => await PredictParkingCongestionAsync(args, ct),
                 _ => Error($"Unknown tool '{name}'.")
             };
         }
@@ -172,7 +183,7 @@ public class CopilotToolExecutor
         if (data == null) return Error($"Unknown stopId '{stopId}'.");
 
         var stop = _gtfs.GetStopById(stopId);
-        var bays = EmitParkingBays(data, stop?.RouteName);
+        var bays = await EmitParkingBaysAsync(data, stop?.RouteName);
 
         return new JsonObject
         {
@@ -289,6 +300,43 @@ public class CopilotToolExecutor
         };
     }
 
+    private async Task<JsonNode> PredictParkingCongestionAsync(JsonObject args, CancellationToken ct)
+    {
+        var stopId = OptionalString(args, "stopId", 50);
+        int? spotId = TryNumber(args, "parkingSpotId", out var n) && n >= 1 ? (int)n : null;
+
+        if (spotId == null && string.IsNullOrWhiteSpace(stopId))
+            throw new ToolArgumentException("Provide 'stopId' or 'parkingSpotId'.");
+
+        var forecast = spotId.HasValue
+            ? await _predictor.PredictSpotCongestionAsync(spotId.Value, null, ct)
+            : await _predictor.PredictStationCongestionAsync(stopId!, null, ct);
+
+        if (forecast == null)
+            return Error("Could not generate congestion forecast for the requested location.");
+
+        var factorsArr = new JsonArray(forecast.RiskFactors.Select(f => (JsonNode?)new JsonObject
+        {
+            ["label"] = f.Label,
+            ["impact"] = f.Impact,
+            ["direction"] = f.Direction,
+        }).ToArray());
+
+        return new JsonObject
+        {
+            ["target"] = forecast.TargetName,
+            ["stopId"] = forecast.StopId,
+            ["predictedOccupancyPct"] = forecast.PredictedOccupancyPercent,
+            ["probabilityFull"] = forecast.ProbabilityFull,
+            ["riskLevel"] = forecast.RiskLevel,
+            ["estimatedFullBy"] = forecast.EstimatedFullBy,
+            ["recommendedArriveBefore"] = forecast.RecommendedArriveBefore,
+            ["recommendation"] = forecast.Recommendation,
+            ["weather"] = $"{forecast.Weather.Condition} ({forecast.Weather.RainProbability:0}% rain)",
+            ["factors"] = factorsArr,
+        };
+    }
+
     // ───────────────────────── Helpers ─────────────────────────
 
     /// <summary>
@@ -317,7 +365,7 @@ public class CopilotToolExecutor
                 var parking = await _gtfs.GetNearbyParkingAsync(s.StopId, 1500, _db);
                 if (parking != null && parking.ParkingSpots.Count > 0)
                 {
-                    foreach (var bayNode in EmitParkingBays(parking, s.RouteName))
+                    foreach (var bayNode in await EmitParkingBaysAsync(parking, s.RouteName))
                         allBays.Add(bayNode?.DeepClone());
                 }
             }
@@ -336,13 +384,15 @@ public class CopilotToolExecutor
         };
     }
 
-    private JsonArray EmitParkingBays(GtfsNearbyParkingDto data, string? lineName)
+    private async Task<JsonArray> EmitParkingBaysAsync(GtfsNearbyParkingDto data, string? lineName)
     {
         var top = data.ParkingSpots.Take(MaxParkingResults - Cards.Count).ToList();
         var slimBays = new JsonArray();
 
         foreach (var spot in top)
         {
+            var forecast = await _predictor.PredictSpotCongestionAsync(spot.ParkingSpotId);
+
             slimBays.Add(new JsonObject
             {
                 ["bayId"] = spot.ParkingSpotId,
@@ -352,6 +402,8 @@ public class CopilotToolExecutor
                 ["stopId"] = data.StopId,
                 ["walkMin"] = spot.WalkingTimeMinutes,
                 ["rmDay"] = spot.DailyRate,
+                ["predictedOccupancyPct"] = forecast?.PredictedOccupancyPercent,
+                ["riskLevel"] = forecast?.RiskLevel,
             });
 
             AddCard("parking", $"parking:{spot.ParkingSpotId}", new JsonObject
@@ -370,6 +422,10 @@ public class CopilotToolExecutor
                 ["stopId"] = data.StopId,
                 ["lineName"] = lineName,
                 ["primaryImageUrl"] = spot.PrimaryImageUrl,
+                ["predictedOccupancyPercent"] = forecast?.PredictedOccupancyPercent,
+                ["probabilityFull"] = forecast?.ProbabilityFull,
+                ["riskLevel"] = forecast?.RiskLevel,
+                ["recommendedArriveBefore"] = forecast?.RecommendedArriveBefore,
             });
         }
 
