@@ -92,7 +92,9 @@ public class ParkingVerificationController : ControllerBase
                 page = 1;
             }
 
-            var query = _context.ParkingVerificationRequests.AsNoTracking();
+            var query = _context.ParkingVerificationRequests
+                .AsNoTracking()
+                .Where(vr => vr.ParkingSpot.AvailabilityStatus != AvailabilityStatus.Deleted);
 
             // pending = Pending only; completed = Approved + Rejected
             query = normalizedStatus switch
@@ -361,6 +363,76 @@ public class ParkingVerificationController : ControllerBase
                 Message = "An error occurred while processing the verification request"
             });
         }
+    }
+
+    /// <summary>
+    /// Remove a parking spot (Admin only), validating that no active or upcoming bookings exist.
+    /// </summary>
+    [Authorize]
+    [HttpDelete("admin/spots/{spotId:int}")]
+    [ProducesResponseType(typeof(DeleteParkingSpotResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DeleteParkingSpotResponse>> AdminDeleteParkingSpot(int spotId)
+    {
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null || user.UserType != UserType.Admin)
+        {
+            await _accessLogService.LogAsync(User, "AdminDeleteParkingSpot", false, $"Forbidden (spotId={spotId})");
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "Only administrators can remove parking spots from governance."
+            });
+        }
+
+        var spot = await _context.ParkingSpots
+            .Include(p => p.Bookings)
+            .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
+
+        if (spot == null || spot.AvailabilityStatus == AvailabilityStatus.Deleted)
+        {
+            await _accessLogService.LogAsync(User, "AdminDeleteParkingSpot", false, $"Not found or already deleted (spotId={spotId})");
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "Parking spot not found or has already been removed."
+            });
+        }
+
+        var activeBookingCount = spot.Bookings.Count(b =>
+            b.BookingStatus is BookingStatus.Pending or BookingStatus.Confirmed or BookingStatus.Active);
+
+        if (activeBookingCount > 0)
+        {
+            var countLabel = activeBookingCount > 0
+                ? $"{activeBookingCount} active or upcoming booking{(activeBookingCount == 1 ? "" : "s")}"
+                : "an active reservation";
+            await _accessLogService.LogAsync(User, "AdminDeleteParkingSpot", false, $"Blocked due to active booking (spotId={spotId})");
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = $"Cannot remove Parking Spot #{spotId} because it currently has {countLabel}. Please wait until all bookings are completed or cancelled before removing this parking spot."
+            });
+        }
+
+        spot.AvailabilityStatus = AvailabilityStatus.Deleted;
+        spot.IsPublished = false;
+        spot.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        await _accessLogService.LogAsync(User, "AdminDeleteParkingSpot", true, $"ParkingSpotId={spotId}");
+
+        return Ok(new DeleteParkingSpotResponse
+        {
+            Code = StatusCodes.Status200OK,
+            Success = true,
+            Message = $"Parking spot #{spotId} has been removed."
+        });
     }
 
     private static VerificationRequestListDTO MapToVerificationRequestListDTO(ParkingVerificationRequest request)
