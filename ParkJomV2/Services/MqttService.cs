@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,8 @@ public sealed class MqttService : BackgroundService, IMqttService
     private readonly string _topicRoot;
     private readonly string? _username;
     private readonly string? _password;
+    private readonly bool _useTls;
+    private readonly string? _caCertificatePath;
     private readonly ConcurrentDictionary<int, int> _pendingAutoLocks = new();
 
     public MqttService(
@@ -38,6 +41,13 @@ public sealed class MqttService : BackgroundService, IMqttService
         _topicRoot = (configuration["Mqtt:TopicRoot"] ?? "parkjom/devices").TrimEnd('/');
         _username = configuration["Mqtt:Broker:Username"];
         _password = configuration["Mqtt:Broker:Password"];
+        _useTls = bool.TryParse(configuration["Mqtt:Broker:UseTls"], out var useTls) && useTls;
+        _caCertificatePath = configuration["Mqtt:Broker:CaCertificatePath"];
+
+        if (string.IsNullOrWhiteSpace(_username) != string.IsNullOrWhiteSpace(_password))
+        {
+            throw new InvalidOperationException("Configure both Mqtt:Broker:Username and Mqtt:Broker:Password, or leave both empty.");
+        }
 
         _client = new MqttFactory().CreateMqttClient();
         _client.ApplicationMessageReceivedAsync += HandleMessageAsync;
@@ -52,6 +62,33 @@ public sealed class MqttService : BackgroundService, IMqttService
         if (!string.IsNullOrWhiteSpace(_username))
         {
             optionsBuilder.WithCredentials(_username, _password);
+        }
+
+        if (_useTls)
+        {
+            var tlsOptionsBuilder = new MqttClientTlsOptionsBuilder()
+                .UseTls()
+                .WithTargetHost(_host);
+
+            if (!string.IsNullOrWhiteSpace(_caCertificatePath))
+            {
+                if (!File.Exists(_caCertificatePath))
+                {
+                    throw new InvalidOperationException(
+                        $"The configured MQTT CA certificate file was not found at '{_caCertificatePath}'.");
+                }
+
+                var trustChain = new X509Certificate2Collection();
+                trustChain.ImportFromPem(File.ReadAllText(_caCertificatePath));
+                if (trustChain.Count == 0)
+                {
+                    throw new InvalidOperationException("The configured MQTT CA certificate file contains no PEM certificates.");
+                }
+
+                tlsOptionsBuilder.WithTrustChain(trustChain);
+            }
+
+            optionsBuilder.WithTlsOptions(tlsOptionsBuilder.Build());
         }
 
         var options = optionsBuilder.Build();
@@ -73,7 +110,7 @@ public sealed class MqttService : BackgroundService, IMqttService
                 {
                     await _client.ConnectAsync(options, stoppingToken);
                     await _client.SubscribeAsync(subscription, stoppingToken);
-                    _logger.LogInformation("Connected to MQTT broker {Host}:{Port} and subscribed to device ACK and telemetry topics", _host, _port);
+                    _logger.LogInformation("Connected to MQTT broker {Host}:{Port} (TLS: {TlsEnabled}) and subscribed to device ACK and telemetry topics", _host, _port, _useTls);
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
