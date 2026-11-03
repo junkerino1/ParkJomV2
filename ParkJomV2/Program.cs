@@ -26,6 +26,8 @@ builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<StripeService>();
 // Registration, OTP lifecycle, and spot binding share one scoped business service.
 builder.Services.AddScoped<IoTDeviceService>();
+// Unlock verification challenges intentionally stay in process memory: no database schema change.
+builder.Services.AddSingleton<UnlockChallengeService>();
 
 // One backend-owned MQTT connection handles device commands and inbound messages.
 builder.Services.AddSingleton<MqttService>();

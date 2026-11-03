@@ -45,6 +45,8 @@ public sealed class IoTDeviceService
             // A successful boot registration proves the device is currently reachable.
             existing.DeviceStatus = DeviceStatus.Online;
             existing.UpdatedAt = DateTime.UtcNow;
+            IoTDeviceLogWriter.Add(_db, existing, "device_registration", "already_registered", existing.UpdatedAt,
+                details: "Boot registration confirmed the existing device is online.");
             await _db.SaveChangesAsync(cancellationToken);
             return (ToResponse(existing), false);
         }
@@ -65,6 +67,9 @@ public sealed class IoTDeviceService
         try
         {
             await _db.SaveChangesAsync(cancellationToken);
+            IoTDeviceLogWriter.Add(_db, device, "device_registration", "registered", now,
+                details: "Device UUID registered and marked online.");
+            await _db.SaveChangesAsync(cancellationToken);
             return (ToResponse(device), true);
         }
         catch (DbUpdateException)
@@ -77,6 +82,11 @@ public sealed class IoTDeviceService
                 throw;
             }
 
+            winner.DeviceStatus = DeviceStatus.Online;
+            winner.UpdatedAt = DateTime.UtcNow;
+            IoTDeviceLogWriter.Add(_db, winner, "device_registration", "already_registered", winner.UpdatedAt,
+                details: "Concurrent boot registration confirmed the existing device is online.");
+            await _db.SaveChangesAsync(cancellationToken);
             return (ToResponse(winner), false);
         }
     }
@@ -102,6 +112,10 @@ public sealed class IoTDeviceService
         if (storedOtp is not null && now - storedOtp.GeneratedAt < OtpCooldown)
         {
             var remainingSeconds = Math.Max(1, (int)Math.Ceiling((OtpCooldown - (now - storedOtp.GeneratedAt)).TotalSeconds));
+            IoTDeviceLogWriter.Add(_db, device, "binding_otp_request", "rate_limited", now,
+                details: $"RetryAfterSeconds={remainingSeconds}.");
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             throw new IoTDeviceOperationException(StatusCodes.Status429TooManyRequests,
                 $"Please wait {remainingSeconds} seconds before requesting another OTP.");
         }
@@ -116,6 +130,9 @@ public sealed class IoTDeviceService
         {
             _db.IoTDeviceBindingOtps.Add(otpRecord);
         }
+
+        IoTDeviceLogWriter.Add(_db, device, "binding_otp_generated", "success", now,
+            details: $"ExpiresAt={otpRecord.ExpiresAt:O}. OTP value excluded.");
 
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -137,6 +154,15 @@ public sealed class IoTDeviceService
             cancellationToken);
         if (!userIsOwner)
         {
+            var attemptedDevice = await _db.IoTDevices.SingleOrDefaultAsync(
+                d => d.Esp32Serial == normalizedUuid, cancellationToken);
+            if (attemptedDevice is not null)
+            {
+                IoTDeviceLogWriter.Add(_db, attemptedDevice, "device_binding", "rejected_owner_role", DateTime.UtcNow,
+                    details: $"userId={userId}");
+                await _db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
             throw new IoTDeviceOperationException(StatusCodes.Status403Forbidden, "Only property owners can bind devices.");
         }
 
@@ -150,6 +176,10 @@ public sealed class IoTDeviceService
 
         if (device.IsAssigned || device.ParkingSpotId.HasValue)
         {
+            IoTDeviceLogWriter.Add(_db, device, "device_binding", "rejected_already_assigned", DateTime.UtcNow,
+                details: $"userId={userId}");
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             throw new IoTDeviceOperationException(StatusCodes.Status409Conflict, "Device is already assigned.");
         }
 
@@ -158,6 +188,10 @@ public sealed class IoTDeviceService
             cancellationToken);
         if (parkingSpot is null)
         {
+            IoTDeviceLogWriter.Add(_db, device, "device_binding", "rejected_parking_spot", DateTime.UtcNow,
+                details: $"userId={userId}; parkingSpotId={request.ParkingSpotId}");
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             throw new IoTDeviceOperationException(StatusCodes.Status404NotFound, "Parking spot was not found for this owner.");
         }
 
@@ -165,6 +199,10 @@ public sealed class IoTDeviceService
         var now = DateTime.UtcNow;
         if (otpRecord is null || otpRecord.ExpiresAt <= now || !MatchesOtp(normalizedUuid, request.Otp, otpRecord.OtpHash))
         {
+            IoTDeviceLogWriter.Add(_db, device, "device_binding", "rejected_otp", now,
+                details: $"userId={userId}; parkingSpotId={request.ParkingSpotId}; OTP value excluded.");
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             throw new IoTDeviceOperationException(StatusCodes.Status400BadRequest, "OTP is invalid or expired.");
         }
 
@@ -173,6 +211,8 @@ public sealed class IoTDeviceService
         device.IsAssigned = true;
         device.UpdatedAt = now;
         _db.IoTDeviceBindingOtps.Remove(otpRecord);
+        IoTDeviceLogWriter.Add(_db, device, "device_binding", "success", now,
+            details: $"userId={userId}; parkingSpotId={parkingSpot.ParkingSpotId}");
 
         try
         {
