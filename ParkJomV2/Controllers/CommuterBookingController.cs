@@ -7,6 +7,7 @@ using ParkJomV2.Models;
 using ParkJomV2.Models.Constants;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Notifications;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 
@@ -23,6 +24,7 @@ public class CommuterBookingsController : ControllerBase
     private readonly AccessLogService _accessLogService;
     private readonly TransactionService _transactionService;
     private readonly WalletService _walletService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<CommuterBookingsController> _logger;
 
     public CommuterBookingsController(
@@ -31,6 +33,7 @@ public class CommuterBookingsController : ControllerBase
         AccessLogService accessLogService,
         TransactionService transactionService,
         WalletService walletService,
+        INotificationService notificationService,
         ILogger<CommuterBookingsController> logger)
     {
         _context = context;
@@ -38,6 +41,7 @@ public class CommuterBookingsController : ControllerBase
         _accessLogService = accessLogService;
         _transactionService = transactionService;
         _walletService = walletService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -505,6 +509,45 @@ public class CommuterBookingsController : ControllerBase
             // increment platform wallet balance and total revenue (atomic server-side increment)
             await _walletService.IncrementPlatformWalletAsync(platformWallet, quote.PlatformCommissionAmount, now, cancellationToken);
 
+            try
+            {
+                var spotName = lockedSpot.ParkingLabel ?? $"Bay #{lockedSpot.ParkingSpotId}";
+
+                await _notificationService.PublishAsync(new NotificationPublishRequest(
+                    userId,
+                    "booking.confirmed",
+                    new Dictionary<string, object?>
+                    {
+                        ["bookingId"] = booking.BookingId,
+                        ["bookingReference"] = booking.BookingReference,
+                        ["spotName"] = spotName,
+                        ["startDate"] = booking.StartDate.ToString("yyyy-MM-dd")
+                    },
+                    entityType: "Booking",
+                    entityId: booking.BookingId.ToString(),
+                    dedupeKey: $"booking.confirmed:{booking.BookingId}"
+                ), cancellationToken);
+
+                await _notificationService.PublishAsync(new NotificationPublishRequest(
+                    lockedSpot.OwnerId,
+                    "booking.received",
+                    new Dictionary<string, object?>
+                    {
+                        ["bookingId"] = booking.BookingId,
+                        ["bookingReference"] = booking.BookingReference,
+                        ["spotName"] = spotName,
+                        ["dateRange"] = $"{booking.StartDate:yyyy-MM-dd} to {booking.EndDate:yyyy-MM-dd}"
+                    },
+                    entityType: "Booking",
+                    entityId: booking.BookingId.ToString(),
+                    dedupeKey: $"booking.received:{booking.BookingId}"
+                ), cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish booking confirmation notification for BookingId {BookingId}", booking.BookingId);
+            }
+
             await transaction.CommitAsync(cancellationToken);
             await _accessLogService.LogAsync(User, "ConfirmBooking", true, $"BookingId={booking.BookingId}", booking.BookingId);
 
@@ -724,6 +767,47 @@ public class CommuterBookingsController : ControllerBase
             _logger.LogInformation(
                 "Booking cancelled. BookingId={BookingId}, UserId={UserId}, Reason={Reason}, RefundAmount={RefundAmount}",
                 booking.BookingId, user.UserId, request.CancellationReason, refundAmount);
+
+            try
+            {
+                var refundText = refundAmount > 0 ? $"RM {refundAmount:0.00}" : null;
+
+                // Notify commuter
+                await _notificationService.PublishAsync(new NotificationPublishRequest(
+                    user.UserId,
+                    "booking.cancelled",
+                    new Dictionary<string, object?>
+                    {
+                        ["bookingReference"] = booking.BookingReference,
+                        ["refundAmount"] = refundText,
+                        ["reason"] = request.CancellationReason ?? "Cancelled by user"
+                    },
+                    entityType: "Booking",
+                    entityId: booking.BookingId.ToString(),
+                    dedupeKey: $"booking.cancelled:{booking.BookingId}:renter"
+                ));
+
+                // Notify spot owner
+                if (booking.ParkingSpot != null)
+                {
+                    await _notificationService.PublishAsync(new NotificationPublishRequest(
+                        booking.ParkingSpot.OwnerId,
+                        "booking.cancelled",
+                        new Dictionary<string, object?>
+                        {
+                            ["bookingReference"] = booking.BookingReference,
+                            ["reason"] = request.CancellationReason ?? "Cancelled by user"
+                        },
+                        entityType: "Booking",
+                        entityId: booking.BookingId.ToString(),
+                        dedupeKey: $"booking.cancelled:{booking.BookingId}:owner"
+                    ));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish cancellation notification for BookingId {BookingId}", booking.BookingId);
+            }
 
             await _accessLogService.LogAsync(User, "CancelBooking", true, $"BookingId={booking.BookingId}; RefundAmount={refundAmount}", booking.BookingId);
 

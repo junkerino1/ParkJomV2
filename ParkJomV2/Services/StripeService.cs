@@ -3,6 +3,7 @@ using ParkJomV2.Data;
 using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
+using ParkJomV2.Services.Notifications;
 using Stripe;
 using Stripe.Checkout;
 
@@ -16,13 +17,15 @@ public class StripeService
     private readonly IConfiguration _configuration;
     private readonly ApplicationDbContext _context;
     private readonly TransactionService _transactionService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<StripeService> _logger;
 
-    public StripeService(IConfiguration configuration, ApplicationDbContext context, TransactionService transactionService, ILogger<StripeService> logger)
+    public StripeService(IConfiguration configuration, ApplicationDbContext context, TransactionService transactionService, INotificationService notificationService, ILogger<StripeService> logger)
     {
         _configuration = configuration;
         _context = context;
         _transactionService = transactionService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -374,6 +377,26 @@ public class StripeService
             DateTime.UtcNow);
 
         await _context.SaveChangesAsync();
+        try
+        {
+            await _notificationService.PublishAsync(new NotificationPublishRequest(
+                payment.Wallet.UserId,
+                "wallet.topup_succeeded",
+                new Dictionary<string, object?>
+                {
+                    ["amount"] = $"RM {payment.Amount:0.00}",
+                    ["newBalance"] = $"RM {payment.Wallet.Balance:0.00}"
+                },
+                entityType: "Payment",
+                entityId: payment.PaymentId.ToString(),
+                dedupeKey: $"wallet.topup:{payment.PaymentId}"
+            ));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to publish wallet top-up notification for PaymentId {PaymentId}", payment.PaymentId);
+        }
+
         await dbTransaction.CommitAsync();
     }
 }

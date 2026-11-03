@@ -8,6 +8,7 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Notifications;
 
 namespace ParkJomV2.Controllers;
 
@@ -31,6 +32,7 @@ public class UserController : ControllerBase
     private readonly CloudinaryService _cloudinaryService;
     private readonly AccessLogService _accessLogService;
     private readonly ILogger<UserController> _logger;
+    private readonly INotificationService _notificationService;
 
     public UserController(
         ApplicationDbContext context,
@@ -38,7 +40,8 @@ public class UserController : ControllerBase
         JwtTokenService jwtService,
         CloudinaryService cloudinaryService,
         AccessLogService accessLogService,
-        ILogger<UserController> logger)
+        ILogger<UserController> logger,
+        INotificationService notificationService)
     {
         _context = context;
         _currentUser = currentUser;
@@ -46,6 +49,7 @@ public class UserController : ControllerBase
         _cloudinaryService = cloudinaryService;
         _accessLogService = accessLogService;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
     // =========================================================================
@@ -717,6 +721,7 @@ public class UserController : ControllerBase
             targetUser.IsProfileComplete = request.IsProfileComplete.Value;
         }
 
+        string? previousStatus = null;
         if (!string.IsNullOrWhiteSpace(request.AccountStatus))
         {
             var trimmedStatus = request.AccountStatus.Trim();
@@ -744,7 +749,7 @@ public class UserController : ControllerBase
             var normalizedStatus = AllowedAccountStatuses.First(s =>
                 string.Equals(s, trimmedStatus, StringComparison.OrdinalIgnoreCase));
 
-            var previousStatus = targetUser.AccountStatus;
+            previousStatus = targetUser.AccountStatus;
             targetUser.AccountStatus = normalizedStatus;
 
             // Sync parking spot suspension state when owner status changes
@@ -794,6 +799,29 @@ public class UserController : ControllerBase
 
         targetUser.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (previousStatus != null && !string.Equals(previousStatus, targetUser.AccountStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                await _notificationService.PublishAsync(new NotificationPublishRequest(
+                    targetUser.UserId,
+                    "account.status_changed",
+                    new Dictionary<string, object?>
+                    {
+                        ["status"] = targetUser.AccountStatus,
+                        ["reason"] = "Administrative review by platform team"
+                    },
+                    entityType: "User",
+                    entityId: targetUser.UserId.ToString(),
+                    actionUrl: "/profile"
+                ));
+            }
+            catch (Exception notifEx)
+            {
+                _logger.LogWarning(notifEx, "Failed to publish account.status_changed notification for UserId={UserId}", targetUser.UserId);
+            }
+        }
 
         var updatedDetail = await BuildAdminUserDetailDtoAsync(targetUser.UserId, cancellationToken);
         await _accessLogService.LogAsync(

@@ -6,6 +6,7 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Notifications;
 
 namespace ParkJomV2.Controllers;
 
@@ -18,13 +19,15 @@ public class ParkingVerificationController : ControllerBase
     private readonly ApplicationDbContext _context;
     private readonly CurrentUserService _currentUser;
     private readonly AccessLogService _accessLogService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<ParkingVerificationController> _logger;
 
-    public ParkingVerificationController(ApplicationDbContext context, CurrentUserService currentUser, AccessLogService accessLogService, ILogger<ParkingVerificationController> logger)
+    public ParkingVerificationController(ApplicationDbContext context, CurrentUserService currentUser, AccessLogService accessLogService, INotificationService notificationService, ILogger<ParkingVerificationController> logger)
     {
         _context = context;
         _currentUser = currentUser;
         _accessLogService = accessLogService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -338,6 +341,46 @@ public class ParkingVerificationController : ControllerBase
             _logger.LogInformation(
                 "Verification request {VerificationRequestId} status updated from {PreviousStatus} to {NewStatus} by admin {UserId}",
                 id, previousStatus, verificationRequest.VerificationStatus, user.FirstName + user.LastName);
+
+            try
+            {
+                var propertyName = verificationRequest.ParkingSpot?.Property?.PropertyName ?? "Your property";
+                if (verificationRequest.VerificationStatus == VerificationStatus.Approved)
+                {
+                    await _notificationService.PublishAsync(new NotificationPublishRequest(
+                        verificationRequest.SubmittedByUserId,
+                        "verification.approved",
+                        new Dictionary<string, object?>
+                        {
+                            ["propertyName"] = propertyName,
+                            ["spotId"] = verificationRequest.ParkingSpotId
+                        },
+                        entityType: "ParkingSpot",
+                        entityId: verificationRequest.ParkingSpotId.ToString(),
+                        dedupeKey: $"verification.approved:{verificationRequest.VerificationRequestId}"
+                    ));
+                }
+                else if (verificationRequest.VerificationStatus == VerificationStatus.Rejected)
+                {
+                    await _notificationService.PublishAsync(new NotificationPublishRequest(
+                        verificationRequest.SubmittedByUserId,
+                        "verification.rejected",
+                        new Dictionary<string, object?>
+                        {
+                            ["propertyName"] = propertyName,
+                            ["reviewNotes"] = request.ReviewNotes ?? "Document verification rejected",
+                            ["requestId"] = id
+                        },
+                        entityType: "ParkingVerificationRequest",
+                        entityId: id.ToString(),
+                        dedupeKey: $"verification.rejected:{verificationRequest.VerificationRequestId}"
+                    ));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish verification decision notification for RequestId {RequestId}", id);
+            }
 
             await _accessLogService.LogAsync(User, "DecideVerificationRequest", true, $"VerificationRequestId={id} {normalizedDecision}");
 

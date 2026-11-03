@@ -603,6 +603,161 @@ namespace ParkJomV2.Migrations
                     b.ToTable("MediaFiles");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.Notification", b =>
+                {
+                    b.Property<long>("NotificationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("NotificationId"));
+
+                    b.Property<string>("ActionUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("ArchivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DataJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DedupeKey")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("EntityId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("EntityType")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("NotificationId");
+
+                    b.HasIndex("UserId", "DedupeKey")
+                        .IsUnique()
+                        .HasFilter("[DedupeKey] IS NOT NULL");
+
+                    b.HasIndex("UserId", "ReadAt", "CreatedAt");
+
+                    b.ToTable("Notifications");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.NotificationDelivery", b =>
+                {
+                    b.Property<long>("DeliveryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("DeliveryId"));
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("NextAttemptAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long>("NotificationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("DeliveryId");
+
+                    b.HasIndex("NotificationId");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("NotificationDeliveries");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.NotificationPreference", b =>
+                {
+                    b.Property<int>("PreferenceId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PreferenceId"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("PreferenceId");
+
+                    b.HasIndex("UserId", "Category", "Channel")
+                        .IsUnique();
+
+                    b.ToTable("NotificationPreferences");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.OperationalIncident", b =>
                 {
                     b.Property<int>("IncidentId")
@@ -1019,6 +1174,52 @@ namespace ParkJomV2.Migrations
                         .HasFilter("[OsmId] IS NOT NULL");
 
                     b.ToTable("Properties");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.PushSubscription", b =>
+                {
+                    b.Property<int>("PushSubscriptionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PushSubscriptionId"));
+
+                    b.Property<string>("Auth")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<DateTime?>("LastUsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("P256dh")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("PushSubscriptionId");
+
+                    b.HasIndex("Endpoint")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PushSubscriptions");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Review", b =>
@@ -2043,6 +2244,39 @@ namespace ParkJomV2.Migrations
                     b.Navigation("UploadedByUser");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.Notification", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "User")
+                        .WithMany("Notifications")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.NotificationDelivery", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.Notification", "Notification")
+                        .WithMany("Deliveries")
+                        .HasForeignKey("NotificationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Notification");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.NotificationPreference", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "User")
+                        .WithMany("NotificationPreferences")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.OperationalIncident", b =>
                 {
                     b.HasOne("ParkJomV2.Models.User", "AssignedUser")
@@ -2170,6 +2404,17 @@ namespace ParkJomV2.Migrations
                         .IsRequired();
 
                     b.Navigation("Station");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.PushSubscription", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "User")
+                        .WithMany("PushSubscriptions")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Review", b =>
@@ -2475,6 +2720,11 @@ namespace ParkJomV2.Migrations
                     b.Navigation("VerificationDocuments");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.Notification", b =>
+                {
+                    b.Navigation("Deliveries");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.OperationalIncident", b =>
                 {
                     b.Navigation("IncidentTickets");
@@ -2543,7 +2793,13 @@ namespace ParkJomV2.Migrations
 
                     b.Navigation("Favorites");
 
+                    b.Navigation("NotificationPreferences");
+
+                    b.Navigation("Notifications");
+
                     b.Navigation("OwnedParkingSpots");
+
+                    b.Navigation("PushSubscriptions");
 
                     b.Navigation("Reviews");
 

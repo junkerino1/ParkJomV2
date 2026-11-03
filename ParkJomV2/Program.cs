@@ -11,6 +11,9 @@ using ParkJomV2.Services.Support;
 using ParkJomV2.Services.Support.Workers;
 using ParkJomV2.Controllers;
 using ParkJomV2.Services.Copilot;
+using ParkJomV2.Services.Notifications;
+using ParkJomV2.Services.Notifications.Channels;
+using ParkJomV2.Services.Notifications.Workers;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using System.Security.Claims;
@@ -76,7 +79,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 var accessToken = context.Request.Query["access_token"].FirstOrDefault()
                                   ?? context.Request.Query["token"].FirstOrDefault();
                 var path = context.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && (path.StartsWithSegments("/hubs/support") || path.StartsWithSegments("/api/support/ws")))
+                if (!string.IsNullOrEmpty(accessToken) && (path.StartsWithSegments("/hubs/support") || path.StartsWithSegments("/hubs/notifications") || path.StartsWithSegments("/api/support/ws")))
                 {
                     context.Token = accessToken;
                 }
@@ -259,6 +262,15 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddHostedService<IncidentEscalationWorker>();
 builder.Services.AddHostedService<SupportSlaWorker>();
 
+// Notification Module Services
+builder.Services.AddSingleton<INotificationQueue, NotificationQueue>();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<IWebPushSender, WebPushSender>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddHostedService<NotificationDispatchWorker>();
+builder.Services.AddHostedService<BookingReminderWorker>();
+builder.Services.AddHostedService<NotificationCleanupWorker>();
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -373,5 +385,6 @@ app.UseRateLimiter();
 
 app.MapControllers();
 app.MapHub<SupportHub>("/hubs/support");
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();
