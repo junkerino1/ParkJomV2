@@ -1,0 +1,105 @@
+{
+  "info": {
+    "_postman_id": "80eb1dbf-90d5-4aef-aee7-7a4365e609cb",
+    "name": "ParkJom IoT Bollard API",
+    "description": "Renter and admin API calls for the ESP32 bollard. Renter unlock flow: create location-verified challenge, obtain BLE HMAC response from the ESP32 using the PWA, then submit the proof. The device secret must never be placed in Postman or the client. Both renter and admin LOCK endpoints retain the HC-SR04 obstacle safety check. Admin endpoints bypass renter eligibility, GPS, and BLE checks.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5276", "type": "string" },
+    { "key": "bookingId", "value": "13", "type": "string" },
+    { "key": "renterToken", "value": "", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "challengeId", "value": "", "type": "string" },
+    { "key": "nonce", "value": "", "type": "string" },
+    { "key": "deviceUuid", "value": "", "type": "string" },
+    { "key": "bleChallengeResponse", "value": "", "type": "string" },
+    { "key": "latitude", "value": "3.0738", "type": "string" },
+    { "key": "longitude", "value": "101.5183", "type": "string" },
+    { "key": "accuracyMeters", "value": "8.5", "type": "string" },
+    { "key": "locationTimestamp", "value": "2026-11-03T16:30:10+08:00", "type": "string" },
+    { "key": "rssi", "value": "-58", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Renter",
+      "item": [
+        {
+          "name": "1. Create unlock challenge (GPS check)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{renterToken}}", "type": "string" } ] },
+            "description": "Requires the renter JWT, an owned eligible booking, and a current GPS location. On success, the backend creates a short-lived challenge and activates BLE advertising on the assigned ESP32. Use the PWA to connect to BLE and calculate the proof; do not put the device secret in Postman.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"location\": {\n    \"latitude\": {{latitude}},\n    \"longitude\": {{longitude}},\n    \"accuracyMeters\": {{accuracyMeters}},\n    \"timestamp\": \"{{locationTimestamp}}\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/iot/{{bookingId}}/unlock/challenge"
+          },
+          "event": [ {
+            "listen": "test",
+            "script": { "type": "text/javascript", "exec": [
+              "if (pm.response.code >= 200 && pm.response.code < 300) {",
+              "  const body = pm.response.json();",
+              "  if (body.data) {",
+              "    pm.collectionVariables.set('challengeId', body.data.challengeId || '');",
+              "    pm.collectionVariables.set('nonce', body.data.nonce || '');",
+              "    pm.collectionVariables.set('deviceUuid', body.data.deviceUuid || '');",
+              "  }",
+              "}"
+            ] }
+          } ]
+        },
+        {
+          "name": "2. Unlock bollard (GPS + BLE proof)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{renterToken}}", "type": "string" } ] },
+            "description": "After the challenge request, use the PWA BLE flow to get the ESP32 HMAC proof. Put that returned base64 value into the bleChallengeResponse collection variable, then send this request before the 30-second challenge expiry. The example proof value is intentionally blank.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challengeId\": \"{{challengeId}}\",\n  \"location\": {\n    \"latitude\": {{latitude}},\n    \"longitude\": {{longitude}},\n    \"accuracyMeters\": {{accuracyMeters}},\n    \"timestamp\": \"{{locationTimestamp}}\"\n  },\n  \"bleVerification\": {\n    \"deviceUuid\": \"{{deviceUuid}}\",\n    \"challengeResponse\": \"{{bleChallengeResponse}}\",\n    \"rssi\": {{rssi}}\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/iot/{{bookingId}}/unlock"
+          }
+        },
+        {
+          "name": "3. Lock bollard (HC-SR04 obstacle check)",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{renterToken}}", "type": "string" } ] },
+            "description": "No request body. Requires an owned eligible booking and a fresh telemetry reading. Lock is rejected when distanceCm is 50 cm or less. The ESP32 also checks the sensor when it receives LOCK.",
+            "url": "{{baseUrl}}/api/iot/{{bookingId}}/lock"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin override",
+      "item": [
+        {
+          "name": "Admin lock bollard (obstacle safety remains enabled)",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{adminToken}}", "type": "string" } ] },
+            "description": "AdminOnly JWT required. No request body. Bypasses renter ownership, booking eligibility, GPS, and BLE checks, but still rejects an obstacle at 50 cm or less and rejects missing/stale telemetry.",
+            "url": "{{baseUrl}}/api/admin/iot/{{bookingId}}/lock"
+          }
+        },
+        {
+          "name": "Admin unlock bollard (validation override)",
+          "request": {
+            "method": "POST",
+            "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{adminToken}}", "type": "string" } ] },
+            "description": "AdminOnly JWT required. No request body. Bypasses renter ownership, booking eligibility, GPS, and BLE checks. The booking must still point to an assigned device.",
+            "url": "{{baseUrl}}/api/admin/iot/{{bookingId}}/unlock"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -29,6 +29,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<VerificationDocument> VerificationDocuments => Set<VerificationDocument>();
 
     public DbSet<IoTDevice> IoTDevices => Set<IoTDevice>();
+    public DbSet<IoTDeviceBindingOtp> IoTDeviceBindingOtps => Set<IoTDeviceBindingOtp>();
     public DbSet<IoTStatusLog> IoTStatusLogs => Set<IoTStatusLog>();
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
     public DbSet<SystemConfiguration> SystemConfigurations => Set<SystemConfiguration>();
@@ -298,6 +299,30 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<IoTDevice>()
             .Property(i => i.DeviceStatus)
             .HasConversion<string>();
+
+        // UUIDs identify devices uniquely; the filtered spot index permits many unbound devices.
+        modelBuilder.Entity<IoTDevice>()
+            .HasIndex(i => i.Esp32Serial)
+            .IsUnique();
+
+        modelBuilder.Entity<IoTDevice>()
+            .HasIndex(i => i.ParkingSpotId)
+            .IsUnique()
+            .HasFilter("[ParkingSpotId] IS NOT NULL");
+
+        // Keep one current OTP per device and cascade it away if its device is deleted.
+        modelBuilder.Entity<IoTDeviceBindingOtp>()
+            .HasOne(o => o.IoTDevice)
+            .WithOne(d => d.BindingOtp)
+            .HasForeignKey<IoTDeviceBindingOtp>(o => o.IoTDeviceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // The existing relationship is retained as one device per optional parking spot.
+        modelBuilder.Entity<IoTDevice>()
+            .HasOne(d => d.ParkingSpot)
+            .WithOne(p => p.IoTDevice)
+            .HasForeignKey<IoTDevice>(d => d.ParkingSpotId)
+            .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<IoTStatusLog>()
             .Property(i => i.DeviceStatus)
