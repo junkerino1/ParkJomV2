@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using ParkJomV2.Models.Enums;
 
@@ -65,4 +65,9 @@ public class User
 
     public ICollection<ParkingVerificationRequest> SubmittedVerificationRequests { get; set; } = new List<ParkingVerificationRequest>();
 
+    public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+
+    public ICollection<NotificationPreference> NotificationPreferences { get; set; } = new List<NotificationPreference>();
+
+    public ICollection<PushSubscription> PushSubscriptions { get; set; } = new List<PushSubscription>();
 }

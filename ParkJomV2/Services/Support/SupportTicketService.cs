@@ -4,6 +4,7 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Notifications;
 
 namespace ParkJomV2.Services.Support;
 
@@ -14,6 +15,7 @@ public class SupportTicketService
     private readonly AccessLogService _accessLogService;
     private readonly ISupportRealtimeNotifier _realtimeNotifier;
     private readonly CloudinaryService _cloudinaryService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<SupportTicketService> _logger;
 
     public SupportTicketService(
@@ -22,6 +24,7 @@ public class SupportTicketService
         AccessLogService accessLogService,
         ISupportRealtimeNotifier realtimeNotifier,
         CloudinaryService cloudinaryService,
+        INotificationService notificationService,
         ILogger<SupportTicketService> logger)
     {
         _context = context;
@@ -29,6 +32,7 @@ public class SupportTicketService
         _accessLogService = accessLogService;
         _realtimeNotifier = realtimeNotifier;
         _cloudinaryService = cloudinaryService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -354,7 +358,6 @@ public class SupportTicketService
 
         var (displayStatus, statusLabel) = MapUserDisplayStatus(ticket.Status);
         var now = DateTime.UtcNow;
-        var canSelfUnlock = ticket.Booking != null && SupportContextService.CanBookingSelfUnlock(ticket.Booking, now);
 
         return new SupportTicketDto
         {
@@ -383,7 +386,6 @@ public class SupportTicketService
             ParkingSpotName = ticket.ParkingSpot?.ParkingLabel ?? ticket.Booking?.ParkingSpot?.ParkingLabel,
             VehicleId = ticket.VehicleId,
             VehiclePlate = ticket.Vehicle?.NumberPlate,
-            CanSelfUnlockGate = canSelfUnlock,
             OperationalIncidentId = ticket.OperationalIncidentId,
             IncidentReference = ticket.OperationalIncident?.IncidentReference,
             DisputeInvestigationId = ticket.DisputeInvestigationId,
@@ -745,6 +747,29 @@ public class SupportTicketService
         await _auditService.LogAsync("Ticket", ticketId, ticket.TicketReference, "MessageAdded", senderUserId, role, null, ticket.Status.ToString(), $"Message added by {role}");
         await _realtimeNotifier.BroadcastEventAsync("message.created", new { ticketId = ticketId, messageId = message.MessageId, isInternal = message.IsInternal }, ticket.CustomerUserId, ticketId);
 
+        if (!message.IsInternal && senderUserId != ticket.CustomerUserId)
+        {
+            try
+            {
+                await _notificationService.PublishAsync(new NotificationPublishRequest(
+                    ticket.CustomerUserId,
+                    "support.message_received",
+                    new Dictionary<string, object?>
+                    {
+                        ["ticketId"] = ticketId,
+                        ["ticketReference"] = ticket.TicketReference,
+                        ["senderName"] = role == "Admin" ? "Support Agent" : "Host"
+                    },
+                    entityType: "SupportTicket",
+                    entityId: ticketId.ToString()
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish support message notification for Ticket {TicketId}", ticketId);
+            }
+        }
+
         var sender = await _context.Users.FindAsync(senderUserId);
         var savedAttachments = await _context.SupportAttachments
             .AsNoTracking()
@@ -903,6 +928,29 @@ public class SupportTicketService
 
         await _auditService.LogAsync("Ticket", ticketId, ticket.TicketReference, "StatusChanged", actorUserId, role, oldState, newStatus.ToString(), request.Reason);
         await _realtimeNotifier.BroadcastEventAsync("ticket.updated", new { ticketId = ticketId, status = newStatus.ToString() }, ticket.CustomerUserId, ticketId);
+
+        if (ticket.CustomerUserId > 0)
+        {
+            try
+            {
+                await _notificationService.PublishAsync(new NotificationPublishRequest(
+                    ticket.CustomerUserId,
+                    "support.ticket_updated",
+                    new Dictionary<string, object?>
+                    {
+                        ["ticketId"] = ticketId,
+                        ["ticketReference"] = ticket.TicketReference,
+                        ["status"] = newStatus.ToString()
+                    },
+                    entityType: "SupportTicket",
+                    entityId: ticketId.ToString()
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish support ticket status notification for Ticket {TicketId}", ticketId);
+            }
+        }
 
         return (await GetTicketDetailAsync(ticketId, actorUserId, role == "Admin"))!;
     }

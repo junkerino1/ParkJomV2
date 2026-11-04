@@ -250,7 +250,7 @@ public class OwnerParkingController : ControllerBase
         }
 
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -262,6 +262,7 @@ public class OwnerParkingController : ControllerBase
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.Bookings)
             .Include(p => p.ParkingSpotImages)
                 .ThenInclude(i => i.MediaFile)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
@@ -383,7 +384,7 @@ public class OwnerParkingController : ControllerBase
         [FromBody] UpdateParkingImagesRequest request)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -522,7 +523,7 @@ public class OwnerParkingController : ControllerBase
     public async Task<ActionResult<OwnerParkingImagesResponse>> DeleteImage(int spotId, int imageId)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -618,7 +619,7 @@ public class OwnerParkingController : ControllerBase
     {
         var user = await _currentUser.GetCurrentUserAsync();
 
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -640,6 +641,7 @@ public class OwnerParkingController : ControllerBase
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.Bookings)
             .Include(p => p.ParkingAvailabilities)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
 
@@ -839,7 +841,7 @@ public class OwnerParkingController : ControllerBase
         [FromBody] UpdateOwnerAvailabilityRuleRequest request)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -852,6 +854,7 @@ public class OwnerParkingController : ControllerBase
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.Bookings)
             .Include(p => p.ParkingAvailabilities)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
 
@@ -865,7 +868,7 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        if (spot.OwnerId != userId)
+        if (user.UserType != UserType.Admin && spot.OwnerId != userId)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1033,7 +1036,7 @@ public class OwnerParkingController : ControllerBase
         [FromBody] CloseOwnerAvailabilityDatesRequest request)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1045,6 +1048,7 @@ public class OwnerParkingController : ControllerBase
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.Bookings)
             .Include(p => p.ParkingAvailabilities)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
 
@@ -1206,7 +1210,7 @@ public class OwnerParkingController : ControllerBase
         int ruleId)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1219,6 +1223,7 @@ public class OwnerParkingController : ControllerBase
 
         var spot = await _context.ParkingSpots
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.Bookings)
             .Include(p => p.ParkingAvailabilities)
             .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
 
@@ -1232,7 +1237,7 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        if (spot.OwnerId != userId)
+        if (user.UserType != UserType.Admin && spot.OwnerId != userId)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1355,7 +1360,7 @@ public class OwnerParkingController : ControllerBase
     public async Task<ActionResult<OwnerAvailabilityRulesResponse>> GetAvailabilityRules(int spotId)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1383,7 +1388,7 @@ public class OwnerParkingController : ControllerBase
                 });
             }
 
-            if (spot.OwnerId != userId)
+            if (user.UserType != UserType.Admin && spot.OwnerId != userId)
             {
                 await _accessLogService.LogAsync(User, "GetOwnerAvailabilityRules", false, $"Not owner (spotId={spotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -1452,7 +1457,7 @@ public class OwnerParkingController : ControllerBase
         }
 
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1480,7 +1485,7 @@ public class OwnerParkingController : ControllerBase
                 });
             }
 
-            if (spot.OwnerId != userId)
+            if (user.UserType != UserType.Admin && spot.OwnerId != userId)
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
                 {
@@ -1591,7 +1596,7 @@ public class OwnerParkingController : ControllerBase
         [FromQuery] string? status = null)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1647,7 +1652,7 @@ public class OwnerParkingController : ControllerBase
                 });
             }
 
-            if (spot.OwnerId != userId)
+            if (user.UserType != UserType.Admin && spot.OwnerId != userId)
             {
                 await _accessLogService.LogAsync(User, "GetOwnerParkingSpotBookings", false, $"Not owner (spotId={spotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -1732,7 +1737,7 @@ public class OwnerParkingController : ControllerBase
     public async Task<ActionResult<OwnerBookingDetailResponse>> GetParkingSpotBooking(int spotId, int bookingId)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1806,7 +1811,7 @@ public class OwnerParkingController : ControllerBase
     public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking()
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1819,7 +1824,11 @@ public class OwnerParkingController : ControllerBase
         var spots = await _context.ParkingSpots
             .AsNoTracking()
             .Where(p => p.OwnerId == userId)
+            .Include(p => p.Property)
+                .ThenInclude(prop => prop.Station)
+            .Where(p => p.AvailabilityStatus != AvailabilityStatus.Deleted)
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.Bookings)
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync();
 
@@ -1837,7 +1846,7 @@ public class OwnerParkingController : ControllerBase
     public async Task<ActionResult<DeleteParkingSpotResponse>> DeleteParking(int spotId)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1856,7 +1865,7 @@ public class OwnerParkingController : ControllerBase
             return NotFound(new ErrorResponse { Code = 404, Success = false, Message = "Parking spot not found." });
         }
 
-        if (spot.OwnerId != userId)
+        if (user.UserType != UserType.Admin && spot.OwnerId != userId)
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1866,13 +1875,15 @@ public class OwnerParkingController : ControllerBase
             });
         }
 
-        if (spot.Bookings.Any(b => b.BookingStatus is BookingStatus.Pending or BookingStatus.Confirmed or BookingStatus.Active))
+        var activeBookingCount = spot.Bookings.Count(b =>
+            b.BookingStatus is BookingStatus.Pending or BookingStatus.Confirmed or BookingStatus.Active);
+        if (activeBookingCount > 0)
         {
             return BadRequest(new ErrorResponse
             {
                 Code = 400,
                 Success = false,
-                Message = "Cannot delete a parking spot with active bookings."
+                Message = $"Cannot remove this parking spot because it currently has {(activeBookingCount > 0 ? $"{activeBookingCount} active or upcoming booking(s)" : "an active reservation")}. Please ensure no commuter booking is active or upcoming before removing the spot."
             });
         }
 
@@ -1904,7 +1915,7 @@ public class OwnerParkingController : ControllerBase
         [FromBody] UpdateOwnerParkingConfigurationRequest request)
     {
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -1919,6 +1930,7 @@ public class OwnerParkingController : ControllerBase
         {
             var spot = await _context.ParkingSpots
                 .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
+            .Include(p => p.Bookings)
                 .Include(p => p.ParkingSpotImages)
                 .FirstOrDefaultAsync(p => p.ParkingSpotId == spotId);
 
@@ -1933,7 +1945,7 @@ public class OwnerParkingController : ControllerBase
                 });
             }
 
-            if (spot.OwnerId != userId)
+            if (user.UserType != UserType.Admin && spot.OwnerId != userId)
             {
                 await _accessLogService.LogAsync(User, "UpdateOwnerParkingConfiguration", false, $"Not owner (id={spotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -2028,7 +2040,7 @@ public class OwnerParkingController : ControllerBase
         }
 
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -2059,7 +2071,7 @@ public class OwnerParkingController : ControllerBase
                 });
             }
 
-            if (spot.OwnerId != userId)
+            if (user.UserType != UserType.Admin && spot.OwnerId != userId)
             {
                 await _accessLogService.LogAsync(User, "PublishOwnerParking", false, $"Not owner (id={spotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -2164,7 +2176,7 @@ public class OwnerParkingController : ControllerBase
         }
 
         var user = await _currentUser.GetCurrentUserAsync();
-        if (user == null || user.UserType != UserType.PropertyOwner)
+        if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
             {
@@ -2191,7 +2203,7 @@ public class OwnerParkingController : ControllerBase
                 });
             }
 
-            if (spot.OwnerId != userId)
+            if (user.UserType != UserType.Admin && spot.OwnerId != userId)
             {
                 await _accessLogService.LogAsync(User, "UnpublishOwnerParking", false, $"Not owner (id={spotId})");
                 return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -2906,6 +2918,15 @@ public class OwnerParkingController : ControllerBase
         {
             ParkingSpotId = parkingSpot.ParkingSpotId,
             PropertyId = parkingSpot.PropertyId,
+            PropertyName = !string.IsNullOrWhiteSpace(parkingSpot.Property?.PropertyName)
+                ? parkingSpot.Property.PropertyName
+                : (!string.IsNullOrWhiteSpace(parkingSpot.Property?.Address)
+                    ? parkingSpot.Property.Address
+                    : $"Property #{parkingSpot.PropertyId}"),
+            StationName = parkingSpot.Property?.Station?.StationName ?? "—",
+            Address = parkingSpot.Property?.Address,
+            DistanceToStation = parkingSpot.Property?.DistanceToStation,
+            TimeToStation = parkingSpot.Property?.TimeToStation,
             OwnerId = parkingSpot.OwnerId,
             ParkingLabel = parkingSpot.ParkingLabel,
             AvailabilityStatus = parkingSpot.AvailabilityStatus.ToString(),
@@ -2915,7 +2936,9 @@ public class OwnerParkingController : ControllerBase
             DailyRate = parkingSpot.DailyRate,
             IsPublished = parkingSpot.IsPublished,
             CreatedAt = parkingSpot.CreatedAt,
-            UpdatedAt = parkingSpot.UpdatedAt
+            UpdatedAt = parkingSpot.UpdatedAt,
+            ActiveBookingCount = parkingSpot.Bookings?.Count(b => b.BookingStatus is BookingStatus.Pending or BookingStatus.Confirmed or BookingStatus.Active) ?? 0,
+            HasActiveBookings = (parkingSpot.Bookings?.Count(b => b.BookingStatus is BookingStatus.Pending or BookingStatus.Confirmed or BookingStatus.Active) ?? 0) > 0
         };
     }
 

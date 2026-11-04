@@ -80,9 +80,12 @@ public class OsrmService
         var results = new List<(double? DistanceKm, double? TimeMinutes)>();
         for (int i = 0; i < distances.Count && i < durations.Count; i++)
         {
+            var distKm = distances[i] / 1000.0;
+            // Pedestrian pace: 4.8 km/h = 80 m/min (12.5 min/km) + 45s transit concourse buffer
+            var walkMinutes = Math.Round((distances[i] / 80.0) + 0.75, 1);
             results.Add((
-                DistanceKm: distances[i] / 1000.0,
-                TimeMinutes: durations[i] / 60.0
+                DistanceKm: distKm,
+                TimeMinutes: walkMinutes
             ));
         }
 
@@ -137,7 +140,10 @@ public class OsrmService
             return (null, null);
 
         var route = response.Routes[0];
-        return (route.Distance / 1000.0, route.Duration / 60.0);
+        var distanceKm = route.Distance / 1000.0;
+        // Pedestrian pace: 4.8 km/h = 80 m/min (12.5 min/km) + 45s transit concourse buffer
+        var walkingMinutes = Math.Round((route.Distance / 80.0) + 0.75, 1);
+        return (distanceKm, walkingMinutes);
     }
 }
 

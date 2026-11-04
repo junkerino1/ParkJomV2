@@ -48,39 +48,6 @@ public class SupportTicketController : ControllerBase
     }
 
     /// <summary>
-    /// Self-service emergency gate unlock for active bookings with online IoT barrier.
-    /// </summary>
-    [HttpPost("gate-unlock")]
-    [ProducesResponseType(typeof(SupportApiResponse<SelfUnlockGateResultDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(SupportApiResponse<object>), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<SupportApiResponse<SelfUnlockGateResultDto>>> SelfUnlockGate([FromBody] SelfUnlockGateRequestDto? request = null)
-    {
-        var userId = _currentUserService.UserId;
-        if (!userId.HasValue) return Unauthorized();
-
-        try
-        {
-            var result = await _ticketService.SelfUnlockGateAsync(userId.Value, request ?? new SelfUnlockGateRequestDto());
-            return Ok(new SupportApiResponse<SelfUnlockGateResultDto>
-            {
-                Code = StatusCodes.Status200OK,
-                Success = result.Success,
-                Message = result.Message,
-                Data = result
-            });
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new SupportApiResponse<object>
-            {
-                Code = StatusCodes.Status400BadRequest,
-                Success = false,
-                Message = ex.Message
-            });
-        }
-    }
-
-    /// <summary>
     /// List my unified support tickets (supports filtering by UserDisplayStatus: Processing, ActionRequired, Resolved, Closed).
     /// </summary>
     [HttpGet("tickets/mine")]
