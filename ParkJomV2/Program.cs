@@ -368,6 +368,10 @@ builder.Services.AddSwaggerGen(options =>
             var c when c.Contains("Parking") || c is "Property" or "Station" or "Favorites" or "Reviews"
                 => "03. Parking & Search",
 
+            // 10. IoT & Smart Bollard
+            var c when c.StartsWith("IoT", StringComparison.OrdinalIgnoreCase)
+                => "10. IoT & Smart Bollard",
+
             _ => $"99. Other Endpoints ({controller})"
         };
 

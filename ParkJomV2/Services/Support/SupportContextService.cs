@@ -263,8 +263,7 @@ public class SupportContextService
             TotalAmount = b.TotalAmount,
             HasIoTDevice = iot != null,
             IoTDeviceStatus = iot?.DeviceStatus.ToString(),
-            LastHeartbeatAt = iot?.LastHeartbeatAt,
-            CanSelfUnlockGate = CanBookingSelfUnlock(b, now)
+            LastHeartbeatAt = iot?.LastHeartbeatAt
         };
     }
 }

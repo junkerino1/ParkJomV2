@@ -1013,6 +1013,43 @@ public class CommuterBookingsController : ControllerBase
         };
     }
 
+    private static BookingHistoryItemDTO MapToBookingHistoryItemDTO(Booking booking)
+    {
+        var review = booking.Reviews.SingleOrDefault();
+
+        return new BookingHistoryItemDTO
+        {
+            Booking = MapToBookingResponseDTO(booking),
+            CanReview = booking.BookingStatus == BookingStatus.Completed && review == null,
+            Review = review == null ? null : MapToReviewDTO(review, booking)
+        };
+    }
+
+    private static ReviewDTO MapToReviewDTO(Review review, Booking booking)
+    {
+        var firstName = review.Reviewer.FirstName?.Trim();
+        var lastInitial = string.IsNullOrWhiteSpace(review.Reviewer.LastName)
+            ? string.Empty
+            : $" {char.ToUpperInvariant(review.Reviewer.LastName.Trim()[0])}.";
+
+        return new ReviewDTO
+        {
+            ReviewId = review.ReviewId,
+            ParkingSpotId = review.ParkingSpotId,
+            Rating = review.Rating,
+            Comment = review.Comment,
+            ReviewerDisplayName = string.IsNullOrWhiteSpace(firstName)
+                ? "ParkJom commuter"
+                : firstName + lastInitial,
+            IsVerifiedBooking = booking.RenterId == review.ReviewerId &&
+                                booking.BookingStatus == BookingStatus.Completed,
+            OwnerReply = review.OwnerReply,
+            OwnerReplyAt = review.OwnerReplyAt,
+            CreatedAt = review.CreatedAt,
+            UpdatedAt = review.UpdatedAt
+        };
+    }
+
     private static ActiveBookingDTO MapToActiveBookingDTO(Booking booking)
     {
         var primaryImg = booking.ParkingSpot.ParkingSpotImages.FirstOrDefault()?.MediaFile?.SecureUrl;
