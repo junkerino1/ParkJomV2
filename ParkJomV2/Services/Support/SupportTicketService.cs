@@ -36,6 +36,139 @@ public class SupportTicketService
         _logger = logger;
     }
 
+    public async Task<SelfUnlockGateResultDto> SelfUnlockGateAsync(int userId, SelfUnlockGateRequestDto request)
+    {
+        var now = DateTime.UtcNow;
+        var bookingsQuery = _context.Bookings
+            .Include(b => b.ParkingSpot)
+                .ThenInclude(p => p.IoTDevice)
+            .Where(b => b.RenterId == userId);
+
+        var booking = request.BookingId.HasValue
+            ? await bookingsQuery.FirstOrDefaultAsync(b => b.BookingId == request.BookingId.Value)
+            : await bookingsQuery
+                .OrderByDescending(b => b.StartDate)
+                .FirstOrDefaultAsync(b => b.BookingStatus == BookingStatus.Confirmed
+                    || b.BookingStatus == BookingStatus.Active
+                    || (b.StartDate <= now.AddHours(2) && b.EndDate >= now.AddHours(-2)));
+
+        if (booking == null)
+        {
+            throw new ArgumentException("No eligible active booking found. Please select a booking or submit an urgent assistance request.");
+        }
+
+        var spotName = booking.ParkingSpot?.ParkingLabel ?? $"Spot #{booking.ParkingSpotId}";
+        var iot = booking.ParkingSpot?.IoTDevice;
+        var isEligibleStatus = booking.BookingStatus == BookingStatus.Confirmed || booking.BookingStatus == BookingStatus.Active;
+        var isWithinWindow = booking.StartDate <= now.AddHours(1) && booking.EndDate >= now.AddHours(-2);
+
+        if (!isEligibleStatus || !isWithinWindow)
+        {
+            return new SelfUnlockGateResultDto
+            {
+                Success = false,
+                Message = $"Booking #{booking.BookingReference} is not currently within the valid access window. Please submit a support ticket for assistance.",
+                BookingId = booking.BookingId,
+                BookingReference = booking.BookingReference,
+                ParkingSpotName = spotName,
+                IoTDeviceId = iot?.IoTDeviceId,
+                IoTDeviceStatus = iot?.DeviceStatus.ToString(),
+                SuggestUrgentTicket = true,
+                ExecutedAt = now
+            };
+        }
+
+        if (iot == null || iot.DeviceStatus != DeviceStatus.Online)
+        {
+            return new SelfUnlockGateResultDto
+            {
+                Success = false,
+                Message = "The parking barrier device is currently offline and remote self-unlock is unavailable. Please click below to contact 24/7 on-call support.",
+                BookingId = booking.BookingId,
+                BookingReference = booking.BookingReference,
+                ParkingSpotName = spotName,
+                IoTDeviceId = iot?.IoTDeviceId,
+                IoTDeviceStatus = iot?.DeviceStatus.ToString() ?? "NoDevice",
+                SuggestUrgentTicket = true,
+                ExecutedAt = now
+            };
+        }
+
+        // Rate limit: max 1 self-unlock per 2 minutes per booking
+        var recentSelfUnlock = await _context.AccessLogs
+            .AsNoTracking()
+            .AnyAsync(a => a.UserId == userId
+                && a.BookingId == booking.BookingId
+                && a.AccessedAt >= now.AddMinutes(-2)
+                && a.Actions.Contains("Self-Service Gate Unlock"));
+
+        if (recentSelfUnlock)
+        {
+            return new SelfUnlockGateResultDto
+            {
+                Success = false,
+                Message = "A gate unlock command was recently dispatched. If the barrier has not opened, please submit an urgent assistance request for immediate intervention.",
+                BookingId = booking.BookingId,
+                BookingReference = booking.BookingReference,
+                ParkingSpotName = spotName,
+                IoTDeviceId = iot.IoTDeviceId,
+                IoTDeviceStatus = iot.DeviceStatus.ToString(),
+                SuggestUrgentTicket = true,
+                ExecutedAt = now
+            };
+        }
+
+        var actionType = string.Equals(request.Action, "Exit", StringComparison.OrdinalIgnoreCase) ? "Exit" : "Enter";
+        var commandId = $"CMD-SELF-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
+
+        if (actionType == "Enter" && !booking.CheckedInAt.HasValue)
+        {
+            booking.CheckedInAt = now;
+            booking.BookingStatus = BookingStatus.Active;
+            booking.UpdatedAt = now;
+        }
+        else if (actionType == "Exit")
+        {
+            booking.ActualExitAt = now;
+            booking.UpdatedAt = now;
+        }
+
+        await _context.SaveChangesAsync();
+
+        await _accessLogService.LogAsync(
+            userId,
+            $"Self-Service Gate Unlock ({actionType} - {commandId})",
+            true,
+            $"Customer triggered emergency self-unlock for Booking #{booking.BookingReference} at {spotName}",
+            booking.BookingId,
+            iot.IoTDeviceId);
+
+        await _auditService.LogAsync(
+            "GateUnlock",
+            booking.BookingId,
+            booking.BookingReference,
+            "SelfUnlockExecuted",
+            userId,
+            "Customer",
+            null,
+            actionType,
+            $"Self-service gate unlock ({actionType}) dispatched to IoT device {iot.Esp32Serial}");
+
+        return new SelfUnlockGateResultDto
+        {
+            Success = true,
+            CommandId = commandId,
+            Message = $"Remote gate unlock command ({commandId}) sent to spot {spotName}. Please proceed safely. If the barrier does not open, request urgent assistance.",
+            BookingId = booking.BookingId,
+            BookingReference = booking.BookingReference,
+            ParkingSpotName = spotName,
+            IoTDeviceId = iot.IoTDeviceId,
+            IoTDeviceStatus = iot.DeviceStatus.ToString(),
+            SuggestUrgentTicket = false,
+            ExecutedAt = now
+        };
+    }
+
     public async Task<List<SupportTicketSummaryDto>> GetMyTicketsAsync(int userId, string? status = null, string? search = null)
     {
         var query = _context.SupportTickets

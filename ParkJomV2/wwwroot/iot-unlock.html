@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102a24">
+  <title>ParkJom Bollard Test</title>
+  <style>
+    :root { color-scheme: light; --ink:#18332b; --muted:#62766e; --line:#d9e4df; --green:#147a56; --pale:#eff7f2; --red:#a12e2e; }
+    * { box-sizing:border-box }
+    body { margin:0; background:#f4f7f5; color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif }
+    main { width:min(760px,100%); margin:0 auto; padding:28px 18px 56px }
+    h1 { margin:0 0 6px; font-size:1.8rem }
+    h2 { margin:0 0 12px; font-size:1.2rem }
+    p { margin:8px 0; color:var(--muted) }
+    .card { margin-top:18px; padding:20px; background:white; border:1px solid var(--line); border-radius:16px; box-shadow:0 4px 18px #17352b0a }
+    .step { display:inline-grid; place-items:center; width:27px; height:27px; margin-right:7px; border-radius:50%; background:var(--pale); color:var(--green); font-weight:700 }
+    label { display:block; margin:13px 0 5px; font-weight:650 }
+    input { width:100%; padding:11px 12px; border:1px solid #bdccc5; border-radius:9px; font:inherit; color:var(--ink); background:#fff }
+    input:focus { outline:3px solid #147a5627; border-color:var(--green) }
+    button { border:0; border-radius:9px; padding:11px 15px; margin:10px 7px 0 0; background:var(--green); color:white; font:inherit; font-weight:650; cursor:pointer }
+    button.secondary { background:#e8f0ec; color:var(--ink) }
+    button:disabled { opacity:.55; cursor:wait }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap }
+    .row input { flex:1 1 280px }
+    .hint { padding:11px 13px; background:var(--pale); border-radius:9px; color:#365a4c; font-size:.94rem }
+    .warning { padding:11px 13px; background:#fff8e8; border-radius:9px; color:#735b24; font-size:.94rem }
+    #status { margin-top:16px; padding:13px; border-radius:10px; background:#edf2ef; color:var(--ink); white-space:pre-wrap; overflow-wrap:anywhere }
+    #status.error { background:#fff0f0; color:var(--red) }
+    #events { margin:9px 0 0; padding-left:22px; color:var(--muted); font-size:.9rem }
+    code { overflow-wrap:anywhere }
+    @media (max-width:520px) { main { padding:19px 12px 38px }.card { padding:16px } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ParkJom Bollard Test</h1>
+  <p>A simple page to register a device and try the renter unlock checks.</p>
+
+  <section class="card">
+    <h2><span class="step">1</span>Optional: prepare a device ID</h2>
+    <p>For your current ESP32, use the UUID shown in Serial Monitor. Generate a new ID only for a new unit. A new ID must be copied into <code>configuredDeviceUuid</code> in the sketch before its first boot; an ID already saved in ESP32 memory takes priority.</p>
+    <div class="row"><input id="deviceUuid" aria-label="Device UUID" placeholder="Click Generate device ID"><button id="generateId" class="secondary">Generate device ID</button></div>
+    <button id="registerDevice">Register this ID with backend</button>
+    <div class="hint">Registering an ID does not assign it to a parking spot. The owner must still bind the real ESP32 to the spot using the existing OTP process before a booking can unlock it.</div>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">2</span>Connect as the renter</h2>
+    <label for="apiBase">Backend address</label>
+    <input id="apiBase" autocomplete="url">
+    <label for="token">Renter access token</label>
+    <input id="token" type="password" autocomplete="off" placeholder="Paste the JWT access token">
+    <label for="bookingId">Booking ID</label>
+    <input id="bookingId" inputmode="numeric" placeholder="For example: 125">
+    <p class="hint">The token stays in this page only and is not saved. Use the token of the renter who owns an eligible booking.</p>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">3</span>Unlock bollard</h2>
+    <p>Press once to run the complete renter flow: GPS check, short-lived challenge, BLE proof, fresh GPS check, then unlock. The browser asks you to choose and approve the ESP32 the first time; later attempts can reconnect automatically when the browser remembers that device.</p>
+    <button id="unlockNow">Unlock bollard</button>
+    <p class="hint"><strong>You do not type the BLE challenge text.</strong> The page sends it to the ESP32 and submits its proof to the backend automatically. Use HTTPS or localhost and a browser that supports Web Bluetooth.</p>
+  </section>
+
+  <section class="card">
+    <h2>Lock the bollard</h2>
+    <p>This action does not ask for GPS or BLE. The backend checks the latest sensor reading, and the ESP32 checks its live HC-SR04 reading again before moving the servo. A reading at or below 50 cm blocks locking.</p>
+    <button id="lockNow" class="secondary">Lock bollard (no location check)</button>
+  </section>
+
+  <div id="status" role="status" aria-live="polite">Ready. Start by entering your renter token and booking ID.</div>
+  <ul id="events" aria-label="Troubleshooting steps"></ul>
+</main>
+
+<script>
+(() => {
+  const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const CHALLENGE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+  const PROOF_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+  const $ = (id) => document.getElementById(id);
+  const status = $("status");
+  const events = $("events");
+  let connectedDevice = null;
+  let pendingUnlockChallenge = null;
+  let pendingUnlockBookingId = null;
+
+  $("apiBase").value = window.location.origin;
+
+  function note(message, isError = false) {
+    status.textContent = message;
+    status.classList.toggle("error", isError);
+    const item = document.createElement("li");
+    item.textContent = `${new Date().toLocaleTimeString()} — ${message}`;
+    events.prepend(item);
+    while (events.children.length > 12) events.lastElementChild.remove();
+  }
+
+  function apiUrl(path) {
+    const base = $("apiBase").value.trim().replace(/\/+$/, "");
+    return `${base}${path}`;
+  }
+
+  function renterHeaders() {
+    const token = $("token").value.trim();
+    if (!token) throw new Error("Paste the renter access token first.");
+    return { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" };
+  }
+
+  async function apiRequest(path, options = {}) {
+    let response;
+    try {
+      response = await fetch(apiUrl(path), options);
+    } catch (error) {
+      throw new Error(`Could not reach the backend. Check the address and browser network/CORS settings. ${error.message}`);
+    }
+    const text = await response.text();
+    let body;
+    try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text }; }
+    if (!response.ok) {
+      const code = body.errorCode ? `${body.errorCode}: ` : "";
+      throw new Error(`${code}${body.message || body.title || `HTTP ${response.status}`}`);
+    }
+    return body;
+  }
+
+  $("generateId").addEventListener("click", () => {
+    if (!crypto.randomUUID) return note("This browser cannot generate a secure UUID. Use a current browser.", true);
+    $("deviceUuid").value = crypto.randomUUID();
+    note("New device ID generated. Make sure the ESP32 is provisioned with this same ID before using it.");
+  });
+
+  $("registerDevice").addEventListener("click", async () => {
+    const deviceUuid = $("deviceUuid").value.trim();
+    if (!deviceUuid) return note("Generate or enter the ESP32's real device ID first.", true);
+    const button = $("registerDevice"); button.disabled = true;
+    try {
+      const result = await apiRequest("/api/iot/register", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceUuid })
+      });
+      note(result.message || "Device ID registered. It still needs to be bound to a parking spot.");
+    } catch (error) { note(error.message, true); }
+    finally { button.disabled = false; }
+  });
+
+  function waitForProof(characteristic, timeoutMs = 7000) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        characteristic.removeEventListener("characteristicvaluechanged", onValue);
+        reject(new Error("No BLE proof arrived. Check that the ESP32 secret is provisioned and try a new challenge."));
+      }, timeoutMs);
+      function onValue(event) {
+        clearTimeout(timer);
+        characteristic.removeEventListener("characteristicvaluechanged", onValue);
+        resolve(new TextDecoder().decode(event.target.value).trim());
+      }
+      characteristic.addEventListener("characteristicvaluechanged", onValue);
+    });
+  }
+
+  async function getBluetoothDevice(deviceUuid, serviceUuid) {
+    // Chromium can reconnect to a previously approved Web Bluetooth device without reopening
+    // the chooser. The short device name is only used to find the remembered entry; the backend
+    // still verifies the per-device HMAC, so a name never counts as authentication.
+    if (typeof navigator.bluetooth.getDevices === "function") {
+      try {
+        const rememberedDevices = await navigator.bluetooth.getDevices();
+        const expectedName = `ParkJom-${deviceUuid.slice(-6)}`;
+        const rememberedDevice = rememberedDevices.find(device => device.name === expectedName);
+        if (rememberedDevice) {
+          note(`Reconnecting to the previously approved bollard ${expectedName}.`);
+          return rememberedDevice;
+        }
+      } catch {
+        // Fall through to the browser chooser if the remembered-device query is unavailable.
+      }
+    }
+
+    note("First Bluetooth use: choose the bollard in the browser window and approve access.");
+    return navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [serviceUuid]
+    });
+  }
+
+  function getCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error("This browser does not provide location services."));
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true, maximumAge: 0, timeout: 15000
+      });
+    });
+  }
+
+  function toLocation(position) {
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracyMeters: position.coords.accuracy,
+      timestamp: new Date(position.timestamp).toISOString()
+    };
+  }
+
+  $("unlockNow").addEventListener("click", async () => {
+    const bookingId = $("bookingId").value.trim();
+    if (!/^\d+$/.test(bookingId)) return note("Enter a numeric booking ID first.", true);
+    if (!window.isSecureContext) return note("Bluetooth is blocked because this page is not secure. Open it through HTTPS or localhost.", true);
+    if (!navigator.bluetooth) return note("This browser does not provide Web Bluetooth. Try Chrome on Android or desktop Chrome with Bluetooth available.", true);
+    const button = $("unlockNow"); button.disabled = true;
+    let challenge = pendingUnlockBookingId === bookingId ? pendingUnlockChallenge : null;
+    if (challenge && challenge.expiresAt && Date.parse(challenge.expiresAt) <= Date.now()) {
+      pendingUnlockChallenge = null;
+      pendingUnlockBookingId = null;
+      challenge = null;
+    }
+
+    // If the first attempt created a challenge but the browser's BLE permission chooser
+    // needed another tap, open it synchronously from this tap before any more awaits.
+    let immediateDeviceChoice = null;
+    if (challenge) {
+      try {
+        immediateDeviceChoice = navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [challenge.bleServiceUuid || SERVICE_UUID]
+        });
+      } catch (error) {
+        immediateDeviceChoice = Promise.reject(error);
+      }
+    }
+    let proofReceived = false;
+    try {
+      connectedDevice = null;
+      if (!challenge) {
+        note("Step 1 of 4: getting your GPS location. Allow location access if asked.");
+        const challengePosition = await getCurrentPosition();
+        const challengeLocation = toLocation(challengePosition);
+
+        note("Step 2 of 4: checking location and requesting an unlock challenge.");
+        const challengeResult = await apiRequest(`/api/iot/${encodeURIComponent(bookingId)}/unlock/challenge`, {
+          method: "POST", headers: renterHeaders(), body: JSON.stringify({ location: challengeLocation })
+        });
+        challenge = challengeResult.data;
+        if (!challenge?.challengeId || !challenge?.nonce || !challenge?.deviceUuid)
+          throw new Error("The backend response did not contain the unlock challenge details.");
+        pendingUnlockChallenge = challenge;
+        pendingUnlockBookingId = bookingId;
+      }
+
+      note("Step 3 of 4: connecting to the approved bollard and exchanging the proof.");
+      const serviceUuid = challenge.bleServiceUuid || SERVICE_UUID;
+      // The device advertises only after the challenge API call. First-time users select it in
+      // the browser; later uses reconnect to the remembered device automatically where supported.
+      connectedDevice = immediateDeviceChoice
+        ? await immediateDeviceChoice
+        : await getBluetoothDevice(challenge.deviceUuid, serviceUuid);
+      const server = await connectedDevice.gatt.connect();
+      const service = await server.getPrimaryService(serviceUuid);
+      const challengeCharacteristic = await service.getCharacteristic(CHALLENGE_UUID);
+      const proofCharacteristic = await service.getCharacteristic(PROOF_UUID);
+      await proofCharacteristic.startNotifications();
+      const proofPromise = waitForProof(proofCharacteristic);
+      proofPromise.catch(() => {});
+
+      const challengeText = `${challenge.challengeId}|${challenge.nonce}|${challenge.deviceUuid}`;
+      const bytes = new TextEncoder().encode(challengeText);
+      if (challengeCharacteristic.writeValueWithResponse) {
+        await challengeCharacteristic.writeValueWithResponse(bytes);
+      } else if (challengeCharacteristic.writeValueWithoutResponse) {
+        await challengeCharacteristic.writeValueWithoutResponse(bytes);
+      } else {
+        await challengeCharacteristic.writeValue(bytes);
+      }
+      note("Challenge sent. Waiting for the ESP32's cryptographic proof…");
+      const bleProof = await proofPromise;
+      if (!bleProof) throw new Error("The bollard returned an empty proof. Try again with a new challenge.");
+      proofReceived = true;
+      pendingUnlockChallenge = null;
+      pendingUnlockBookingId = null;
+
+      note("Step 4 of 4: BLE proof received. getting a fresh GPS location and asking the backend to unlock.");
+      const unlockPosition = await getCurrentPosition();
+      const body = {
+        challengeId: challenge.challengeId,
+        location: toLocation(unlockPosition),
+        bleVerification: {
+          deviceUuid: challenge.deviceUuid,
+          challengeResponse: bleProof,
+          rssi: null
+        }
+      };
+      const result = await apiRequest(`/api/iot/${encodeURIComponent(bookingId)}/unlock`, {
+        method: "POST", headers: renterHeaders(), body: JSON.stringify(body)
+      });
+      const distance = result.data?.distanceMeters;
+      note(`${result.message || "Unlock request accepted."}${Number.isFinite(distance) ? ` Distance from property: ${distance} m.` : ""} The command is waiting for the ESP32 acknowledgement.`);
+    } catch (error) {
+      const message = error.name === "NotFoundError"
+        ? "No bollard was selected in the Bluetooth window. Press Unlock bollard to try again."
+        : error.name === "NotAllowedError"
+          ? "Bluetooth was blocked or cancelled. Allow Bluetooth and press Unlock bollard again."
+          : error.code === 1 ? "Location permission was denied. Allow location access and try again."
+            : error.code === 2 ? "Your location is unavailable. Turn on location services and try again."
+              : error.code === 3 ? "Getting your location took too long. Try again where GPS reception is better."
+                : error.message || "Could not complete unlock request.";
+      if (challenge && !proofReceived) {
+        pendingUnlockChallenge = challenge;
+        pendingUnlockBookingId = bookingId;
+        note(`${message} Press Unlock bollard again right away to continue with this challenge.`, true);
+      } else {
+        pendingUnlockChallenge = null;
+        pendingUnlockBookingId = null;
+        note(`${message}${proofReceived ? " Start again to create a fresh challenge." : ""}`, true);
+      }
+    } finally {
+      button.disabled = true;
+      if (connectedDevice?.gatt?.connected) connectedDevice.gatt.disconnect();
+      connectedDevice = null;
+      button.disabled = false;
+    }
+  });
+
+  $("lockNow").addEventListener("click", async () => {
+    const bookingId = $("bookingId").value.trim();
+    if (!/^\d+$/.test(bookingId)) return note("Enter a numeric booking ID first.", true);
+    const button = $("lockNow"); button.disabled = true;
+    try {
+      const result = await apiRequest(`/api/iot/${encodeURIComponent(bookingId)}/lock`, {
+        method: "POST",
+        headers: renterHeaders()
+      });
+      note(`${result.message || "Lock command sent."} Waiting for the ESP32 acknowledgement.`);
+    } catch (error) {
+      note(error.message || "Could not lock the bollard.", true);
+    } finally { button.disabled = false; }
+  });
+
+  if (!window.isSecureContext) note("This page is not a secure browser context. Bluetooth may be unavailable until you open it through HTTPS or localhost.", true);
+})();
+</script>
+</body>
+</html>

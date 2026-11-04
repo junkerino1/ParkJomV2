@@ -182,13 +182,15 @@ public class CommuterBookingsController : ControllerBase
             var bookings = await bookingsQuery
                 .Include(booking => booking.ParkingSpot)
                 .Include(booking => booking.Vehicle)
+                .Include(booking => booking.Reviews.Where(review => review.ReviewerId == user.UserId))
+                    .ThenInclude(review => review.Reviewer)
                 .OrderByDescending(booking => booking.StartDate)
                 .ThenByDescending(booking => booking.CreatedAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
 
-            var data = bookings.Select(MapToBookingResponseDTO).ToList();
+            var data = bookings.Select(MapToBookingHistoryItemDTO).ToList();
 
             await _accessLogService.LogAsync(
                 User,

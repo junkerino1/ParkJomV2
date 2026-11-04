@@ -15,7 +15,11 @@ public class IoTStatusLog
     [Required]
     public DeviceStatus DeviceStatus { get; set; }
 
-    [StringLength(1000)]
+    // Store topic metadata separately so Message remains the untouched MQTT payload.
+    [StringLength(255)]
+    public string? Topic { get; set; }
+
+    // Keep the MQTT payload intact; the database column is nvarchar(max).
     public string? Message { get; set; }
 
     public DateTime LoggedAt { get; set; }

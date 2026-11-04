@@ -29,6 +29,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<VerificationDocument> VerificationDocuments => Set<VerificationDocument>();
 
     public DbSet<IoTDevice> IoTDevices => Set<IoTDevice>();
+    public DbSet<IoTDeviceBindingOtp> IoTDeviceBindingOtps => Set<IoTDeviceBindingOtp>();
     public DbSet<IoTStatusLog> IoTStatusLogs => Set<IoTStatusLog>();
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
     public DbSet<SystemConfiguration> SystemConfigurations => Set<SystemConfiguration>();
