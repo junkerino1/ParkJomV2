@@ -109,6 +109,11 @@ public class ParkingSearchController : ControllerBase
                 AvailabilityStatus = ps.AvailabilityStatus.ToString(),
                 MonthlyRate = ps.MonthlyRate,
                 DailyRate = ps.DailyRate,
+                HasEvCharging = ps.HasEvCharging,
+                EvChargingSpeed = ps.EvChargingSpeed,
+                IsCovered = ps.IsCovered,
+                IsHandicapAccessible = ps.IsHandicapAccessible,
+                HasCctv = ps.HasCctv,
                 PrimaryImageUrl = ps.ParkingSpotImages
                     .Where(psi => psi.IsPrimary)
                     .Select(psi => psi.MediaFile?.SecureUrl)
@@ -240,6 +245,11 @@ public class ParkingSearchController : ControllerBase
                 AvailabilityStatus = item.Spot.AvailabilityStatus.ToString(),
                 MonthlyRate = item.Spot.MonthlyRate,
                 DailyRate = item.Spot.DailyRate,
+                HasEvCharging = item.Spot.HasEvCharging,
+                EvChargingSpeed = item.Spot.EvChargingSpeed,
+                IsCovered = item.Spot.IsCovered,
+                IsHandicapAccessible = item.Spot.IsHandicapAccessible,
+                HasCctv = item.Spot.HasCctv,
                 PrimaryImageUrl = item.Spot.ParkingSpotImages
                     .Where(psi => psi.IsPrimary)
                     .Select(psi => psi.MediaFile?.SecureUrl)
@@ -294,6 +304,10 @@ public class ParkingSearchController : ControllerBase
         [FromQuery] PropertyType? propertyType,
         [FromQuery] DayType? dayType,
         [FromQuery] bool? hasIotDevice,
+        [FromQuery] bool? hasEvCharging,
+        [FromQuery] bool? isCovered,
+        [FromQuery] bool? isHandicapAccessible,
+        [FromQuery] bool? hasCctv,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -342,6 +356,16 @@ public class ParkingSearchController : ControllerBase
                     queryable = queryable.Where(ps => ps.IoTDevice == null);
             }
 
+            // Filter by amenities
+            if (hasEvCharging.HasValue && hasEvCharging.Value)
+                queryable = queryable.Where(ps => ps.HasEvCharging);
+            if (isCovered.HasValue)
+                queryable = queryable.Where(ps => ps.IsCovered == isCovered.Value);
+            if (isHandicapAccessible.HasValue && isHandicapAccessible.Value)
+                queryable = queryable.Where(ps => ps.IsHandicapAccessible);
+            if (hasCctv.HasValue && hasCctv.Value)
+                queryable = queryable.Where(ps => ps.HasCctv);
+
             var totalCount = await queryable.CountAsync();
 
             var spots = await queryable
@@ -381,6 +405,11 @@ public class ParkingSearchController : ControllerBase
                 AvailabilityStatus = ps.AvailabilityStatus.ToString(),
                 MonthlyRate = ps.MonthlyRate,
                 DailyRate = ps.DailyRate,
+                HasEvCharging = ps.HasEvCharging,
+                EvChargingSpeed = ps.EvChargingSpeed,
+                IsCovered = ps.IsCovered,
+                IsHandicapAccessible = ps.IsHandicapAccessible,
+                HasCctv = ps.HasCctv,
                 PrimaryImageUrl = ps.ParkingSpotImages
                     .Where(psi => psi.IsPrimary)
                     .Select(psi => psi.MediaFile?.SecureUrl)

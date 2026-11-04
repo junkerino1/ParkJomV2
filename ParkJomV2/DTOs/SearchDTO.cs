@@ -40,6 +40,10 @@ public class FilterParkingQuery
     public PropertyType? PropertyType { get; set; }
     public DayType? DayType { get; set; }
     public bool? HasIotDevice { get; set; }
+    public bool? HasEvCharging { get; set; }
+    public bool? IsCovered { get; set; }
+    public bool? IsHandicapAccessible { get; set; }
+    public bool? HasCctv { get; set; }
     public int? Page { get; set; } = 1;
     public int? PageSize { get; set; } = 20;
 }
@@ -60,6 +64,11 @@ public class ParkingSearchResultDTO
     public decimal? MonthlyRate { get; set; }
     public decimal? DailyRate { get; set; }
     public string? PrimaryImageUrl { get; set; }
+    public bool HasEvCharging { get; set; }
+    public string? EvChargingSpeed { get; set; }
+    public bool IsCovered { get; set; }
+    public bool IsHandicapAccessible { get; set; }
+    public bool HasCctv { get; set; }
 }
 
 public class SearchParkingResponse
@@ -99,6 +108,16 @@ public class UpdateParkingSpotRequest
     public bool? IsPublished { get; set; }
 
     public AvailabilityStatus? AvailabilityStatus { get; set; }
+
+    public bool? HasEvCharging { get; set; }
+
+    public string? EvChargingSpeed { get; set; }
+
+    public bool? IsCovered { get; set; }
+
+    public bool? IsHandicapAccessible { get; set; }
+
+    public bool? HasCctv { get; set; }
 }
 
 public class ParkingSpotDetailDTO
@@ -122,6 +141,11 @@ public class ParkingSpotDetailDTO
     public decimal? MonthlyRate { get; set; }
     public decimal? DailyRate { get; set; }
     public bool IsPublished { get; set; }
+    public bool HasEvCharging { get; set; }
+    public string? EvChargingSpeed { get; set; }
+    public bool IsCovered { get; set; }
+    public bool IsHandicapAccessible { get; set; }
+    public bool HasCctv { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public List<ParkingSpotImageDTO> Images { get; set; } = new();

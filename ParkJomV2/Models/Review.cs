@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ParkJomV2.Models;
@@ -22,6 +22,8 @@ public class Review
 
     [StringLength(1000)]
     public string? Comment { get; set; }
+
+    public string? PhotosJson { get; set; }
 
     [StringLength(1000)]
     public string? OwnerReply { get; set; }

@@ -31,6 +31,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 builder.Services.AddScoped<GoogleAuthService>();
 builder.Services.AddScoped<JwtTokenService>();
+builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<StripeService>();
 // Registration, OTP lifecycle, and spot binding share one scoped business service.
@@ -98,6 +99,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             },
             OnTokenValidated = async context =>
             {
+                var rawToken = context.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase)?.Trim()
+                               ?? context.Request.Query["access_token"].FirstOrDefault()
+                               ?? context.Request.Query["token"].FirstOrDefault();
+
+                if (!string.IsNullOrEmpty(rawToken))
+                {
+                    var blacklistService = context.HttpContext.RequestServices.GetRequiredService<ITokenBlacklistService>();
+                    if (await blacklistService.IsTokenRevokedAsync(rawToken))
+                    {
+                        context.Fail("This authentication token has been revoked / logged out.");
+                        return;
+                    }
+                }
+
                 var userIdText = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (!int.TryParse(userIdText, out var userId))
                 {
