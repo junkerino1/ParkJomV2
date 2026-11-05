@@ -156,16 +156,6 @@ void loadMqttCredentials() {
     : "[MQTT][WARNING] Device credentials are not provisioned.");
 }
 
-void loadMqttCredentials() {
-  preferences.begin("parkjom", true);
-  mqttUsername = preferences.getString("mqttUser", "");
-  mqttPassword = preferences.getString("mqttPass", "");
-  preferences.end();
-  Serial.println(mqttUsername.length() > 0 && mqttPassword.length() > 0
-    ? "[MQTT] Device credentials loaded from NVS."
-    : "[MQTT][WARNING] Device credentials are not provisioned.");
-}
-
 // The phone writes: challengeId|base64Nonce|deviceUuid. The HMAC input matches
 // the backend exactly: base64Nonce + lowercaseDeviceUuid + challengeId.
 class BleChallengeCallbacks : public NimBLECharacteristicCallbacks {
@@ -519,29 +509,63 @@ void requestBindingOtp() {
 // =============================================
 
 float readDistance() {
+  // Take fresh readings for this operation. The HC-SR04 needs a short quiet interval
+  // between pings; a median of three helps reject a stray echo without reusing telemetry.
+  constexpr uint8_t sampleCount = 3;
+  constexpr unsigned long quietIntervalMs = 60;
+  float validDistances[sampleCount];
+  uint8_t validCount = 0;
 
-  // Generate trigger pulse
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
+  for (uint8_t sample = 0; sample < sampleCount; sample++) {
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(3);
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
 
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
+    const unsigned long duration = pulseIn(ECHO_PIN, HIGH, 30000UL);
+    if (duration > 0) {
+      validDistances[validCount] = duration * 0.0343f / 2.0f;
+      Serial.print("[HC-SR04] Fresh sample ");
+      Serial.print(sample + 1);
+      Serial.print("/");
+      Serial.print(sampleCount);
+      Serial.print(": ");
+      Serial.print(validDistances[validCount], 1);
+      Serial.println(" cm");
+      validCount++;
+    } else {
+      Serial.print("[HC-SR04] Fresh sample ");
+      Serial.print(sample + 1);
+      Serial.println("/3: no echo");
+    }
 
-  digitalWrite(TRIG_PIN, LOW);
-
-  // Read echo duration
-  unsigned long duration =
-    pulseIn(ECHO_PIN, HIGH, 30000);
-
-  // No echo received
-  if (duration == 0) {
-    return -1.0;
+    if (sample + 1 < sampleCount) {
+      delay(quietIntervalMs);
+    }
   }
 
-  // Convert duration into centimetres
-  float distance = duration * 0.0343 / 2.0;
+  // Fail closed for lock if the sensor did not produce enough fresh readings.
+  if (validCount < 2) {
+    Serial.println("[HC-SR04][ERROR] Fewer than two valid fresh readings; treating sensor as unavailable.");
+    return -1.0f;
+  }
 
-  return distance;
+  // Sort the valid samples, then return the middle value (or midpoint for two samples).
+  for (uint8_t i = 0; i < validCount; i++) {
+    for (uint8_t j = i + 1; j < validCount; j++) {
+      if (validDistances[j] < validDistances[i]) {
+        const float temporary = validDistances[i];
+        validDistances[i] = validDistances[j];
+        validDistances[j] = temporary;
+      }
+    }
+  }
+
+  if (validCount == 2) {
+    return (validDistances[0] + validDistances[1]) / 2.0f;
+  }
+  return validDistances[validCount / 2];
 }
 
 // =============================================
@@ -606,7 +630,8 @@ void publishTelemetry() {
 void publishAcknowledgement(
   String command,
   String result,
-  int bookingId = 0
+  int bookingId = 0,
+  String commandId = ""
 ) {
 
   String position =
@@ -626,6 +651,12 @@ void publishAcknowledgement(
     payload += "\"bookingId\":";
     payload += String(bookingId);
     payload += ",";
+  }
+
+  if (commandId.length() > 0) {
+    payload += "\"commandId\":\"";
+    payload += commandId;
+    payload += "\",";
   }
 
   payload += "\"result\":\"";
@@ -671,8 +702,15 @@ void callback(
   String commandName = commandSeparator >= 0 ? message.substring(0, commandSeparator) : message;
   String acknowledgementCommand = commandName;
   int bookingId = 0;
+  String commandId = "";
   if (commandSeparator >= 0 && !message.startsWith("BLE_START|")) {
-    bookingId = message.substring(commandSeparator + 1).toInt();
+    const int secondSeparator = message.indexOf('|', commandSeparator + 1);
+    if (secondSeparator >= 0) {
+      bookingId = message.substring(commandSeparator + 1, secondSeparator).toInt();
+      commandId = message.substring(secondSeparator + 1);
+    } else {
+      bookingId = message.substring(commandSeparator + 1).toInt();
+    }
   }
 
   // Start short-lived BLE advertising only after the authenticated backend creates a challenge.
@@ -731,7 +769,7 @@ void callback(
   }
 
   // Publish acknowledgement
-  publishAcknowledgement(acknowledgementCommand, result, bookingId);
+  publishAcknowledgement(acknowledgementCommand, result, bookingId, commandId);
 }
 
 // =============================================

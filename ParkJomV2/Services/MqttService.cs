@@ -7,8 +7,10 @@ using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Protocol;
 using ParkJomV2.Data;
+using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
+using ParkJomV2.Services.Notifications;
 
 namespace ParkJomV2.Services;
 
@@ -26,7 +28,9 @@ public sealed class MqttService : BackgroundService, IMqttService
     private readonly string? _password;
     private readonly bool _useTls;
     private readonly string? _caCertificatePath;
+    private readonly TimeSpan _commandAckTimeout;
     private readonly ConcurrentDictionary<int, int> _pendingAutoLocks = new();
+    private readonly ConcurrentDictionary<PendingCommandKey, PendingCommand> _pendingCommands = new();
 
     public MqttService(
         IConfiguration configuration,
@@ -43,6 +47,10 @@ public sealed class MqttService : BackgroundService, IMqttService
         _password = configuration["Mqtt:Broker:Password"];
         _useTls = bool.TryParse(configuration["Mqtt:Broker:UseTls"], out var useTls) && useTls;
         _caCertificatePath = configuration["Mqtt:Broker:CaCertificatePath"];
+        var ackTimeoutSeconds = int.TryParse(configuration["IoT:CommandAckTimeoutSeconds"], out var configuredTimeout)
+            ? Math.Clamp(configuredTimeout, 2, 60)
+            : 15;
+        _commandAckTimeout = TimeSpan.FromSeconds(ackTimeoutSeconds);
 
         if (string.IsNullOrWhiteSpace(_username) != string.IsNullOrWhiteSpace(_password))
         {
@@ -161,6 +169,41 @@ public sealed class MqttService : BackgroundService, IMqttService
         }
     }
 
+    public async Task<MqttCommandResult> PublishCommandAndWaitForAckAsync(
+        string deviceUuid,
+        int bookingId,
+        string command,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedCommand = command.Trim().ToUpperInvariant();
+        var key = new PendingCommandKey(deviceUuid.Trim().ToUpperInvariant(), bookingId, normalizedCommand);
+        var completion = new TaskCompletionSource<MqttCommandResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var commandId = Guid.NewGuid().ToString("N").ToUpperInvariant();
+        if (!_pendingCommands.TryAdd(key, new PendingCommand(commandId, completion)))
+        {
+            return new MqttCommandResult(MqttCommandWaitStatus.Busy, deviceUuid, bookingId, normalizedCommand,
+                Message: "A matching device command is already waiting for acknowledgement.");
+        }
+
+        try
+        {
+            await PublishCommandAsync(deviceUuid, $"{normalizedCommand}|{bookingId}|{commandId}", cancellationToken);
+            try
+            {
+                return await completion.Task.WaitAsync(_commandAckTimeout, cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                return new MqttCommandResult(MqttCommandWaitStatus.TimedOut, deviceUuid, bookingId, normalizedCommand, commandId,
+                    Message: $"No device acknowledgement arrived within {_commandAckTimeout.TotalSeconds:0} seconds.");
+            }
+        }
+        finally
+        {
+            _pendingCommands.TryRemove(key, out _);
+        }
+    }
+
     private async Task HandleMessageAsync(MqttApplicationMessageReceivedEventArgs args)
     {
         try
@@ -184,6 +227,8 @@ public sealed class MqttService : BackgroundService, IMqttService
             var payload = Encoding.UTF8.GetString(args.ApplicationMessage.PayloadSegment.ToArray());
             await using var scope = _scopeFactory.CreateAsyncScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
+            var walletService = scope.ServiceProvider.GetRequiredService<WalletService>();
             var device = await db.IoTDevices.FirstOrDefaultAsync(d => d.Esp32Serial == suffix[0]);
             if (device is null)
             {
@@ -208,7 +253,7 @@ public sealed class MqttService : BackgroundService, IMqttService
 
             if (suffix[1] == "ack")
             {
-                await ProcessDeviceAcknowledgementAsync(db, device, payload, receivedAt);
+                await ProcessDeviceAcknowledgementAsync(db, device, payload, receivedAt, notifications, walletService);
             }
             else
             {
@@ -216,6 +261,10 @@ public sealed class MqttService : BackgroundService, IMqttService
             }
 
             await db.SaveChangesAsync();
+            if (suffix[1] == "ack")
+            {
+                CompletePendingCommand(suffix[0], payload);
+            }
         }
         catch (Exception ex)
         {
@@ -223,11 +272,72 @@ public sealed class MqttService : BackgroundService, IMqttService
         }
     }
 
+    private void CompletePendingCommand(string deviceUuid, string payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("command", out var commandElement) || commandElement.ValueKind != JsonValueKind.String ||
+                !root.TryGetProperty("bookingId", out var bookingElement) || !bookingElement.TryGetInt32(out var bookingId))
+            {
+                return;
+            }
+
+            var command = commandElement.GetString()?.Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(command)) return;
+            var commandId = ReadJsonString(root, "commandId")?.Trim().ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(commandId)) return;
+
+            var result = ReadJsonString(root, "result") ?? ReadJsonString(root, "status");
+            var message = ReadJsonString(root, "message") ?? ReadJsonString(root, "reason") ??
+                          ReadJsonString(root, "error") ?? ReadJsonString(root, "details");
+            var errorCode = ReadJsonString(root, "errorCode") ?? ReadJsonString(root, "code");
+            var bollardPosition = ReadJsonString(root, "bollardPosition");
+            double? distanceCm = root.TryGetProperty("distanceCm", out var distanceElement) &&
+                                 distanceElement.ValueKind == JsonValueKind.Number && distanceElement.TryGetDouble(out var parsedDistance) &&
+                                 double.IsFinite(parsedDistance)
+                ? parsedDistance
+                : null;
+            var key = new PendingCommandKey(deviceUuid.Trim().ToUpperInvariant(), bookingId, command);
+            if (_pendingCommands.TryGetValue(key, out var pending) &&
+                string.Equals(pending.CommandId, commandId, StringComparison.Ordinal))
+            {
+                pending.Completion.TrySetResult(new MqttCommandResult(
+                    MqttCommandWaitStatus.Acknowledged,
+                    deviceUuid,
+                    bookingId,
+                    command,
+                    commandId,
+                    result,
+                    message,
+                    errorCode,
+                    distanceCm,
+                    payload,
+                    bollardPosition));
+            }
+        }
+        catch (JsonException)
+        {
+            // The existing ACK processor records malformed payloads; malformed ACKs cannot complete a request.
+        }
+    }
+
+    private static string? ReadJsonString(JsonElement root, string propertyName)
+        => root.TryGetProperty(propertyName, out var element) && element.ValueKind == JsonValueKind.String
+            ? element.GetString()
+            : null;
+
+    private readonly record struct PendingCommandKey(string DeviceUuid, int BookingId, string Command);
+    private sealed record PendingCommand(string CommandId, TaskCompletionSource<MqttCommandResult> Completion);
+
     private async Task ProcessDeviceAcknowledgementAsync(
         ApplicationDbContext db,
         IoTDevice device,
         string payload,
-        DateTime receivedAt)
+        DateTime receivedAt,
+        INotificationService notifications,
+        WalletService walletService)
     {
         string? command;
         string? result;
@@ -262,15 +372,20 @@ public sealed class MqttService : BackgroundService, IMqttService
         if (!string.Equals(result, "SUCCESS", StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (!device.ParkingSpotId.HasValue ||
-            !string.Equals(command, "UNLOCK", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(command, "AUTO_LOCK", StringComparison.OrdinalIgnoreCase))
+        var isUnlock = string.Equals(command, "UNLOCK", StringComparison.OrdinalIgnoreCase);
+        var isLock = string.Equals(command, "LOCK", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(command, "AUTO_LOCK", StringComparison.OrdinalIgnoreCase);
+        if (!device.ParkingSpotId.HasValue || (!isUnlock && !isLock))
         {
             return;
         }
 
-        var booking = await db.Bookings.FirstOrDefaultAsync(b =>
-            b.BookingId == bookingId && b.ParkingSpotId == device.ParkingSpotId.Value);
+        var booking = await db.Bookings
+            .Include(b => b.Vehicle)
+            .Include(b => b.ParkingSpot)
+                .ThenInclude(spot => spot.ParkingAvailabilities)
+            .FirstOrDefaultAsync(b =>
+                b.BookingId == bookingId && b.ParkingSpotId == device.ParkingSpotId.Value);
         if (booking is null)
         {
             _logger.LogWarning("IoT ACK references booking {BookingId} that is not assigned to device {DeviceId}", bookingId, device.Esp32Serial);
@@ -279,28 +394,188 @@ public sealed class MqttService : BackgroundService, IMqttService
             return;
         }
 
-        if (string.Equals(command, "UNLOCK", StringComparison.OrdinalIgnoreCase) &&
-            booking.BookingStatus is BookingStatus.Confirmed or BookingStatus.Active)
+        var vehiclePlate = booking.Vehicle.NumberPlate;
+        var spotId = booking.ParkingSpotId;
+        if (isUnlock && booking.BookingStatus is BookingStatus.Confirmed or BookingStatus.Active)
         {
-            // Start a fresh occupancy interval only once the ESP32 confirms physical unlock.
-            booking.CheckedInAt = receivedAt;
-            booking.ActualExitAt = null;
+            // Treat a successful physical unlock ACK as an entry event. Preserve the booking's
+            // first entry timestamp across later daily entries.
+            var isFirstEntry = !booking.CheckedInAt.HasValue;
+            booking.CheckedInAt ??= receivedAt;
             booking.BookingStatus = BookingStatus.Active;
             booking.UpdatedAt = receivedAt;
             IoTDeviceLogWriter.Add(db, device, "unlock_ack_booking_checkin", "completed", receivedAt,
-                bookingId, "CheckedInAt set from successful ESP32 ACK.");
+                bookingId, isFirstEntry ? "First entry confirmed by successful ESP32 ACK." : "Additional entry confirmed by successful ESP32 ACK.");
+            IoTDeviceLogWriter.Add(db, device, "parking_entry_confirmed", "success", receivedAt, bookingId,
+                $"vehiclePlate={vehiclePlate}; parkingSpotId={spotId}; firstEntry={isFirstEntry}; eventAtUtc={receivedAt:O}");
         }
-        else if (string.Equals(command, "AUTO_LOCK", StringComparison.OrdinalIgnoreCase) &&
+        else if (isLock &&
                  booking.BookingStatus == BookingStatus.Active &&
                  booking.CheckedInAt.HasValue &&
                  !booking.ActualExitAt.HasValue)
         {
-            // Set exit time only after the ESP32 ACK confirms it actually locked.
-            booking.ActualExitAt = receivedAt;
+            // The ESP32 only reports LOCK success after its live obstacle check passes.
+            // Record every daily exit; only the final scheduled booking date sets ActualExitAt.
+            await ApplyDailyOverstayPenaltiesAsync(db, device, booking, receivedAt, notifications);
+            var isFinalBookingExit = IsOnOrAfterLastAvailableDate(booking, receivedAt);
+            if (isFinalBookingExit)
+            {
+                booking.ActualExitAt = receivedAt;
+                booking.BookingStatus = BookingStatus.Completed;
+                await SettleCompletedBookingPayoutAsync(db, device, booking, receivedAt, walletService);
+            }
             booking.UpdatedAt = receivedAt;
-            IoTDeviceLogWriter.Add(db, device, "auto_lock_ack_booking_exit", "completed", receivedAt,
-                bookingId, "ActualExitAt set from successful ESP32 ACK.");
+            IoTDeviceLogWriter.Add(db, device, "parking_exit_confirmed", "success", receivedAt, bookingId,
+                $"vehiclePlate={vehiclePlate}; parkingSpotId={spotId}; finalBookingExit={isFinalBookingExit}; eventAtUtc={receivedAt:O}");
+            if (isFinalBookingExit)
+            {
+                IoTDeviceLogWriter.Add(db, device, "booking_completed_after_final_exit", "completed", receivedAt,
+                    bookingId, "Final scheduled parking date exit confirmed by successful ESP32 ACK.");
+            }
         }
+    }
+
+    private static bool IsOnOrAfterLastAvailableDate(Booking booking, DateTime eventAtUtc)
+    {
+        var startDate = DateOnly.FromDateTime(booking.StartDate);
+        var endDateExclusive = DateOnly.FromDateTime(booking.EndDate);
+        DateOnly? lastAvailableDate = null;
+        for (var date = startDate; date < endDateExclusive; date = date.AddDays(1))
+        {
+            if (HasAvailabilityRuleForDate(booking.ParkingSpot.ParkingAvailabilities, date))
+                lastAvailableDate = date;
+        }
+
+        if (!lastAvailableDate.HasValue)
+            return DateOnly.FromDateTime(eventAtUtc.AddHours(8)) >= endDateExclusive;
+
+        return DateOnly.FromDateTime(eventAtUtc.AddHours(8)) >= lastAvailableDate.Value;
+    }
+
+    private static bool HasAvailabilityRuleForDate(IEnumerable<Availability> rules, DateOnly date)
+        => rules.Any(rule =>
+            (!rule.EffectiveFrom.HasValue || date >= rule.EffectiveFrom.Value) &&
+            (!rule.EffectiveUntil.HasValue || date <= rule.EffectiveUntil.Value) &&
+            (rule.DayType == DayType.Everyday ||
+             (rule.DayType == DayType.Weekday && date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) ||
+             (rule.DayType == DayType.Weekend && date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)));
+
+    private async Task ApplyDailyOverstayPenaltiesAsync(
+        ApplicationDbContext db,
+        IoTDevice device,
+        Booking booking,
+        DateTime exitAtUtc,
+        INotificationService notifications)
+    {
+        var firstDate = DateOnly.FromDateTime((booking.CheckedInAt ?? exitAtUtc).AddHours(8));
+        var lastDate = DateOnly.FromDateTime(exitAtUtc.AddHours(8));
+        for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
+        {
+            var rules = GetAvailabilityRulesForDate(booking.ParkingSpot.ParkingAvailabilities, date).ToList();
+            if (rules.Count == 0 || IsAllDayRental(rules)) continue;
+
+            var dailyClose = rules.Max(rule => rule.EndTime);
+            var graceEndsAtUtc = new DateTimeOffset(date.ToDateTime(dailyClose), TimeSpan.FromHours(8))
+                .AddMinutes(15).UtcDateTime;
+            var lateMinutes = (int)Math.Ceiling((exitAtUtc - graceEndsAtUtc).TotalMinutes);
+            if (lateMinutes <= 0) continue;
+
+            var billableHours = (lateMinutes + 59) / 60;
+            var penalty = Math.Min(billableHours * 5m, 30m);
+            var reference = $"OV-{booking.BookingId}-{date:yyyyMMdd}";
+            var alreadyRecorded = await db.Transactions.AnyAsync(t =>
+                t.BookingId == booking.BookingId && t.TransactionType == TransactionType.OverstayPenalty &&
+                t.ReferenceNumber == reference);
+            if (alreadyRecorded) continue;
+
+            var renterWallet = await db.Wallets.FirstOrDefaultAsync(w =>
+                w.UserId == booking.RenterId && w.Status == WalletStatus.Active);
+            var ownerWallet = await db.Wallets.FirstOrDefaultAsync(w =>
+                w.UserId == booking.ParkingSpot.OwnerId && w.Status == WalletStatus.Active);
+            var paid = renterWallet is not null && ownerWallet is not null && renterWallet.Balance >= penalty;
+            var now = exitAtUtc;
+
+            if (paid)
+            {
+                renterWallet!.Balance -= penalty;
+                renterWallet.UpdatedAt = now;
+                ownerWallet!.Balance += penalty;
+                ownerWallet.UpdatedAt = now;
+                db.Transactions.Add(new Transaction
+                {
+                    WalletId = renterWallet.WalletId, BookingId = booking.BookingId,
+                    TransactionType = TransactionType.OverstayPenalty, Amount = -penalty,
+                    PaymentMethod = PaymentMethod.Wallet, TransactionStatus = TransactionStatus.Completed,
+                    ReferenceNumber = reference, CreatedAt = now, UpdatedAt = now
+                });
+                db.Transactions.Add(new Transaction
+                {
+                    WalletId = ownerWallet.WalletId, BookingId = booking.BookingId,
+                    TransactionType = TransactionType.OverstayPenalty, Amount = penalty,
+                    PaymentMethod = PaymentMethod.Wallet, TransactionStatus = TransactionStatus.Completed,
+                    ReferenceNumber = reference, CreatedAt = now, UpdatedAt = now
+                });
+            }
+            else
+            {
+                db.Transactions.Add(new Transaction
+                {
+                    WalletId = renterWallet?.WalletId, BookingId = booking.BookingId,
+                    TransactionType = TransactionType.OverstayPenalty, Amount = -penalty,
+                    PaymentMethod = PaymentMethod.Wallet, TransactionStatus = TransactionStatus.Pending,
+                    ReferenceNumber = reference, CreatedAt = now, UpdatedAt = now
+                });
+            }
+
+            booking.OverstayHours += billableHours;
+            booking.OverstayPenaltyAmount += penalty;
+            booking.UpdatedAt = now;
+            IoTDeviceLogWriter.Add(db, device, "overstay_penalty_assessed", paid ? "paid" : "payment_due", now,
+                booking.BookingId,
+                $"windowDate={date:yyyy-MM-dd}; hours={billableHours}; amount=RM{penalty:F2}; reference={reference}");
+
+            try
+            {
+                await notifications.PublishAsync(new NotificationPublishRequest(
+                    booking.RenterId,
+                    paid ? "booking.overstay_charged" : "booking.overstay_payment_due",
+                    new Dictionary<string, object?>
+                    {
+                        ["bookingId"] = booking.BookingId,
+                        ["penaltyAmount"] = $"RM {penalty:F2}",
+                        ["overstayHours"] = billableHours,
+                        ["windowDate"] = date.ToString("yyyy-MM-dd")
+                    },
+                    entityType: "Booking", entityId: booking.BookingId.ToString(),
+                    dedupeKey: $"booking.overstay_penalty:{booking.BookingId}:{date:yyyyMMdd}"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not notify renter about overstay penalty for booking {BookingId}", booking.BookingId);
+            }
+        }
+    }
+
+    private async Task SettleCompletedBookingPayoutAsync(
+        ApplicationDbContext db,
+        IoTDevice device,
+        Booking booking,
+        DateTime completedAtUtc,
+        WalletService walletService)
+    {
+        if (booking.OwnerPayoutAmount <= 0) return;
+        var ownerWallet = await db.Wallets.FirstOrDefaultAsync(w =>
+            w.UserId == booking.ParkingSpot.OwnerId && w.Status == WalletStatus.Active);
+        if (ownerWallet is null || ownerWallet.OnHold < booking.OwnerPayoutAmount)
+        {
+            IoTDeviceLogWriter.Add(db, device, "owner_payout_settlement", "failed", completedAtUtc,
+                booking.BookingId, "Owner wallet is missing or held balance is below the booking payout.");
+            return;
+        }
+
+        walletService.SettleOwnerPayout(ownerWallet, booking.OwnerPayoutAmount, completedAtUtc);
+        IoTDeviceLogWriter.Add(db, device, "owner_payout_settlement", "completed", completedAtUtc,
+            booking.BookingId, $"amount=RM{booking.OwnerPayoutAmount:F2}");
     }
 
     private async Task ProcessTelemetryAsync(
@@ -313,12 +588,15 @@ public sealed class MqttService : BackgroundService, IMqttService
         if (!device.IsAssigned || !device.ParkingSpotId.HasValue ||
             !TryReadTelemetry(payload, out var distanceCm, out var bollardPosition) ||
             !string.Equals(bollardPosition, "UNLOCKED", StringComparison.OrdinalIgnoreCase) ||
-            !distanceCm.HasValue || distanceCm.Value <= 50)
+            !distanceCm.HasValue)
         {
             return;
         }
 
         var booking = await db.Bookings
+            .Include(b => b.Vehicle)
+            .Include(b => b.ParkingSpot)
+                .ThenInclude(spot => spot.ParkingAvailabilities)
             .Where(b => b.ParkingSpotId == device.ParkingSpotId.Value &&
                         b.BookingStatus == BookingStatus.Active &&
                         b.CheckedInAt != null &&
@@ -327,6 +605,8 @@ public sealed class MqttService : BackgroundService, IMqttService
             .FirstOrDefaultAsync();
         if (booking?.CheckedInAt is not DateTime checkedInAt)
             return;
+
+        if (distanceCm.Value <= 50) return;
 
         // Require the previous telemetry reading during this check-in to show a nearby vehicle.
         // This prevents the first post-unlock reading from auto-locking while the renter is entering.
@@ -369,6 +649,19 @@ public sealed class MqttService : BackgroundService, IMqttService
                 booking.BookingId, device.Esp32Serial);
         }
     }
+
+    private static IEnumerable<Availability> GetAvailabilityRulesForDate(IEnumerable<Availability> rules, DateOnly date)
+        => rules.Where(rule =>
+            (!rule.EffectiveFrom.HasValue || date >= rule.EffectiveFrom.Value) &&
+            (!rule.EffectiveUntil.HasValue || date <= rule.EffectiveUntil.Value) &&
+            (rule.DayType == DayType.Everyday ||
+             (rule.DayType == DayType.Weekday && date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) ||
+             (rule.DayType == DayType.Weekend && date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)));
+
+    private static bool IsAllDayRental(IEnumerable<Availability> rules)
+        => rules.Any(rule => rule.DayType == DayType.Everyday &&
+                             rule.StartTime == TimeOnly.MinValue &&
+                             rule.EndTime == new TimeOnly(23, 59));
 
     private static bool TryReadTelemetry(string? payload, out double? distanceCm, out string? bollardPosition)
     {

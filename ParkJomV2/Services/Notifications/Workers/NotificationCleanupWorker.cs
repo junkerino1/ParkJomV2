@@ -3,55 +3,27 @@ using ParkJomV2.Data;
 
 namespace ParkJomV2.Services.Notifications.Workers;
 
-public class NotificationCleanupWorker : BackgroundService
+public class NotificationCleanupJob
 {
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IConfiguration _configuration;
-    private readonly ILogger<NotificationCleanupWorker> _logger;
+    private readonly ILogger<NotificationCleanupJob> _logger;
 
-    public NotificationCleanupWorker(
-        IServiceProvider serviceProvider,
+    public NotificationCleanupJob(
+        IServiceScopeFactory scopeFactory,
         IConfiguration configuration,
-        ILogger<NotificationCleanupWorker> logger)
+        ILogger<NotificationCleanupJob> logger)
     {
-        _serviceProvider = serviceProvider;
+        _scopeFactory = scopeFactory;
         _configuration = configuration;
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public async Task<int> RunOnceAsync(CancellationToken ct)
     {
-        _logger.LogInformation("NotificationCleanupWorker initialized.");
-
-        // Initial delay so app startup is not blocked or slowed down
-        await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await RunCleanupAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in NotificationCleanupWorker.");
-            }
-
-            // Run once every 24 hours
-            await Task.Delay(TimeSpan.FromHours(24), stoppingToken);
-        }
-
-        _logger.LogInformation("NotificationCleanupWorker stopped.");
-    }
-
-    private async Task RunCleanupAsync(CancellationToken ct)
-    {
-        using var scope = _serviceProvider.CreateScope();
+        using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var removedCount = 0;
 
         var retentionDays = _configuration.GetValue<int?>("Notifications:RetentionDays") ?? 90;
         var now = DateTime.UtcNow;
@@ -68,6 +40,7 @@ public class NotificationCleanupWorker : BackgroundService
         {
             context.Notifications.RemoveRange(staleNotifications);
             await context.SaveChangesAsync(ct);
+            removedCount += staleNotifications.Count;
             _logger.LogInformation("NotificationCleanupWorker purged {Count} stale/expired notifications.", staleNotifications.Count);
         }
 
@@ -83,7 +56,10 @@ public class NotificationCleanupWorker : BackgroundService
         {
             context.PushSubscriptions.RemoveRange(deadSubscriptions);
             await context.SaveChangesAsync(ct);
+            removedCount += deadSubscriptions.Count;
             _logger.LogInformation("NotificationCleanupWorker removed {Count} dead push subscriptions.", deadSubscriptions.Count);
         }
+
+        return removedCount;
     }
 }

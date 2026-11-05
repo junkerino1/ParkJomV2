@@ -4,51 +4,36 @@ using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Services.Support.Workers;
 
-public class SupportSlaWorker : BackgroundService
+public class SupportSlaJob
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<SupportSlaWorker> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<SupportSlaJob> _logger;
 
-    public SupportSlaWorker(IServiceProvider serviceProvider, ILogger<SupportSlaWorker> logger)
+    public SupportSlaJob(IServiceScopeFactory scopeFactory, ILogger<SupportSlaJob> logger)
     {
-        _serviceProvider = serviceProvider;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public async Task<int> RunOnceAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("SupportSlaWorker started.");
+        using var scope = _scopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var realtimeNotifier = scope.ServiceProvider.GetRequiredService<ISupportRealtimeNotifier>();
+        var now = DateTime.UtcNow;
+        var breachedTickets = await context.SupportTickets
+            .Where(t => (t.Status == SupportTicketStatus.New || t.Status == SupportTicketStatus.Assigned || t.Status == SupportTicketStatus.InProgress)
+                && ((t.FirstResponseDueAt.HasValue && t.FirstResponseDueAt.Value < now && !t.FirstResponseAt.HasValue)
+                    || (t.ResolutionDueAt.HasValue && t.ResolutionDueAt.Value < now && !t.ResolvedAt.HasValue)))
+            .OrderBy(t => t.TicketId)
+            .Take(50)
+            .ToListAsync(cancellationToken);
 
-        while (!stoppingToken.IsCancellationRequested)
+        if (breachedTickets.Count > 0)
         {
-            try
-            {
-                using var scope = _serviceProvider.CreateScope();
-                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var realtimeNotifier = scope.ServiceProvider.GetRequiredService<ISupportRealtimeNotifier>();
-
-                var now = DateTime.UtcNow;
-
-                var breachedTickets = await context.SupportTickets
-                    .Where(t => (t.Status == SupportTicketStatus.New || t.Status == SupportTicketStatus.Assigned || t.Status == SupportTicketStatus.InProgress)
-                        && ((t.FirstResponseDueAt.HasValue && t.FirstResponseDueAt.Value < now && !t.FirstResponseAt.HasValue)
-                            || (t.ResolutionDueAt.HasValue && t.ResolutionDueAt.Value < now && !t.ResolvedAt.HasValue)))
-                    .OrderBy(t => t.TicketId)
-                    .Take(50)
-                    .ToListAsync(stoppingToken);
-
-                if (breachedTickets.Count > 0)
-                {
-                    _logger.LogWarning("Found {Count} tickets currently breaching SLA response/resolution deadlines", breachedTickets.Count);
-                    await realtimeNotifier.BroadcastEventAsync("sla.breach_warning", new { count = breachedTickets.Count, timestamp = now });
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in SupportSlaWorker");
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken);
+            _logger.LogWarning("Found {Count} tickets currently breaching SLA response/resolution deadlines", breachedTickets.Count);
+            await realtimeNotifier.BroadcastEventAsync("sla.breach_warning", new { count = breachedTickets.Count, timestamp = now });
         }
+        return breachedTickets.Count;
     }
 }

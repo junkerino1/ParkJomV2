@@ -6,8 +6,6 @@ namespace ParkJomV2.Services;
 
 /// <summary>
 /// Writes system-wide action logs into the AccessLogs table.
-/// Inject into a controller and call <see cref="LogAsync(ClaimsPrincipal, string, int?, int?)"/>
-/// (or <see cref="LogAsync(int?, string, int?, int?)"/>) after each action.
 /// BookingId / IoTDeviceId are optional — they only apply to IoT access events.
 /// </summary>
 public class AccessLogService

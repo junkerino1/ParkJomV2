@@ -117,6 +117,43 @@ public static class NotificationCatalog
 
         Register(new NotificationDefinition
         {
+            Type = "booking.overstay_warning",
+            Category = NotificationCategory.Booking,
+            DefaultPriority = NotificationPriority.High,
+            DefaultChannels = new() { NotificationChannel.InApp, NotificationChannel.WebPush },
+            Formatter = data =>
+            {
+                var spotName = GetString(data, "spotName", "your parking spot");
+                var windowEnd = GetString(data, "windowEnd", "the scheduled closing time");
+                var bookingId = GetString(data, "bookingId", "");
+                return (
+                    Title: "Parking time exceeded",
+                    Body: $"Today's parking window at {spotName} ended at {windowEnd}. The 15-minute grace period has passed; overstay fees are RM5 per started hour, up to RM30 for this daily window. Please leave now.",
+                    DefaultActionUrl: !string.IsNullOrEmpty(bookingId) ? $"/commuter/bookings/{bookingId}" : "/commuter/bookings"
+                );
+            }
+        });
+
+        Register(new NotificationDefinition
+        {
+            Type = "booking.overstay_payment_due",
+            Category = NotificationCategory.Booking,
+            DefaultPriority = NotificationPriority.High,
+            DefaultChannels = new() { NotificationChannel.InApp, NotificationChannel.WebPush },
+            Formatter = data =>
+            {
+                var penalty = GetString(data, "penaltyAmount", "RM 0.00");
+                var bookingId = GetString(data, "bookingId", "");
+                return (
+                    Title: "Overstay payment due",
+                    Body: $"Your overstay penalty of {penalty} could not be deducted from your wallet. Add funds to settle it before your next bollard unlock.",
+                    DefaultActionUrl: !string.IsNullOrEmpty(bookingId) ? $"/commuter/bookings/{bookingId}" : "/commuter/wallet"
+                );
+            }
+        });
+
+        Register(new NotificationDefinition
+        {
             Type = "booking.cancelled",
             Category = NotificationCategory.Booking,
             DefaultPriority = NotificationPriority.Normal,
