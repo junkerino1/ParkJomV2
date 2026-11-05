@@ -14,6 +14,17 @@ public class UpdateOwnerParkingConfigurationRequest
 
     [Range(typeof(decimal), "0.01", "99999.99")]
     public decimal MonthlyRate { get; set; }
+
+    public bool HasEvCharging { get; set; } = false;
+
+    [StringLength(50)]
+    public string? EvChargingSpeed { get; set; }
+
+    public bool IsCovered { get; set; } = false;
+
+    public bool IsHandicapAccessible { get; set; } = false;
+
+    public bool HasCctv { get; set; } = false;
 }
 
 public class OwnerParkingConfigurationResponse

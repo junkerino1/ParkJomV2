@@ -156,6 +156,16 @@ void loadMqttCredentials() {
     : "[MQTT][WARNING] Device credentials are not provisioned.");
 }
 
+void loadMqttCredentials() {
+  preferences.begin("parkjom", true);
+  mqttUsername = preferences.getString("mqttUser", "");
+  mqttPassword = preferences.getString("mqttPass", "");
+  preferences.end();
+  Serial.println(mqttUsername.length() > 0 && mqttPassword.length() > 0
+    ? "[MQTT] Device credentials loaded from NVS."
+    : "[MQTT][WARNING] Device credentials are not provisioned.");
+}
+
 // The phone writes: challengeId|base64Nonce|deviceUuid. The HMAC input matches
 // the backend exactly: base64Nonce + lowercaseDeviceUuid + challengeId.
 class BleChallengeCallbacks : public NimBLECharacteristicCallbacks {

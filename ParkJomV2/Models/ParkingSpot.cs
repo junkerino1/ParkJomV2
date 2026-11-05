@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 using ParkJomV2.Models.Enums;
@@ -36,6 +36,18 @@ public class ParkingSpot
     public bool IsConfigurationComplete { get; set; }
 
     public DateTime? ConfiguredAt { get; set; }
+
+    // Bay Amenities
+    public bool HasEvCharging { get; set; } = false;
+
+    [StringLength(50)]
+    public string? EvChargingSpeed { get; set; }
+
+    public bool IsCovered { get; set; } = false;
+
+    public bool IsHandicapAccessible { get; set; } = false;
+
+    public bool HasCctv { get; set; } = false;
 
     public DateTime CreatedAt { get; set; }
 
