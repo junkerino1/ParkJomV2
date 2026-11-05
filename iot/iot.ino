@@ -19,12 +19,13 @@ const char* password = "Pota+0CHIP";
 // 2. MQTT CONFIGURATION
 // =============================================
 
-const char* mqtt_server = "192.168.0.8";
-const int mqtt_port = 1883;
+// Self-hosted Ubuntu Mosquitto broker; keep aligned with Mqtt:Broker in ASP.NET.
+const char* mqttServer = "dns-my.samsam123.name.my";
+const int mqttPort = 48881;
 
 // Set this to the computer's reachable LAN IP running ASP.NET Core.
 // Use the backend's HTTP profile/port for this local prototype.
-const char* apiBaseUrl = "http://192.168.0.8:5276";
+const char* apiBaseUrl = "https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.azurewebsites.net";
 
 // =============================================
 // 3. DEVICE IDENTITY
@@ -47,6 +48,8 @@ Preferences preferences;
 
 String deviceId;
 String deviceHmacSecret;
+String mqttUsername;
+String mqttPassword;
 NimBLECharacteristic* bleProofCharacteristic = nullptr;
 NimBLEAdvertising* bleAdvertising = nullptr;
 String activeBleChallengeId;
@@ -159,6 +162,16 @@ void loadDeviceUuid() {
 
   Serial.println("=====================================");
   Serial.println();
+}
+
+void loadMqttCredentials() {
+  preferences.begin("parkjom", true);
+  mqttUsername = preferences.getString("mqttUser", "");
+  mqttPassword = preferences.getString("mqttPass", "");
+  preferences.end();
+  Serial.println(mqttUsername.length() > 0 && mqttPassword.length() > 0
+    ? "[MQTT] Device credentials loaded from NVS."
+    : "[MQTT][WARNING] Device credentials are not provisioned.");
 }
 
 // The phone writes: challengeId|base64Nonce|deviceUuid. The HMAC input matches
@@ -303,6 +316,40 @@ void handleSecretProvisioning() {
   if (!Serial.available()) return;
   String line = Serial.readStringUntil('\n');
   line.trim();
+  if (line.startsWith("SET_MQTT_USER=")) {
+    const String value = line.substring(String("SET_MQTT_USER=").length());
+    if (value.length() == 0 || value.length() > 128) {
+      Serial.println("[MQTT][PROVISION][ERROR] Username length is invalid.");
+      return;
+    }
+    preferences.begin("parkjom", false);
+    const size_t saved = preferences.putString("mqttUser", value);
+    preferences.end();
+    if (saved > 0) {
+      loadMqttCredentials();
+      Serial.println("[MQTT][PROVISION] Username saved to NVS; value was not logged.");
+    } else {
+      Serial.println("[MQTT][PROVISION][ERROR] Username save failed.");
+    }
+    return;
+  }
+  if (line.startsWith("SET_MQTT_PASSWORD=")) {
+    const String value = line.substring(String("SET_MQTT_PASSWORD=").length());
+    if (value.length() == 0 || value.length() > 128) {
+      Serial.println("[MQTT][PROVISION][ERROR] Password length is invalid.");
+      return;
+    }
+    preferences.begin("parkjom", false);
+    const size_t saved = preferences.putString("mqttPass", value);
+    preferences.end();
+    if (saved > 0) {
+      loadMqttCredentials();
+      Serial.println("[MQTT][PROVISION] Password saved to NVS; value was not logged.");
+    } else {
+      Serial.println("[MQTT][PROVISION][ERROR] Password save failed.");
+    }
+    return;
+  }
   if (!line.startsWith("SET_SECRET=")) return;
 
   String secret = line.substring(String("SET_SECRET=").length());
@@ -791,15 +838,23 @@ void reconnectMQTT() {
   if (millis() - lastMqttReconnectAttempt < mqttReconnectInterval) return;
 
   lastMqttReconnectAttempt = millis();
+  if (mqttUsername.length() == 0 || mqttPassword.length() == 0) {
+    Serial.println("[MQTT][ERROR] Provision device username and password through USB Serial first.");
+    return;
+  }
+  if (String(mqttServer).length() == 0 || mqttPort <= 0) {
+    Serial.println("[MQTT][ERROR] Configure the Ubuntu broker host and port in the sketch first.");
+    return;
+  }
   const String mqttClientId = "ParkJom-" + deviceId;
   Serial.print("[MQTT] Connecting to ");
-  Serial.print(mqtt_server);
+  Serial.print(mqttServer);
   Serial.print(":");
-  Serial.print(mqtt_port);
+  Serial.print(mqttPort);
   Serial.print(" using client ID ");
   Serial.println(mqttClientId);
 
-  if (!client.connect(mqttClientId.c_str())) {
+  if (!client.connect(mqttClientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str())) {
     Serial.print("[MQTT][ERROR] Connection failed. State code: ");
     Serial.println(client.state());
     return;
@@ -875,8 +930,10 @@ void setup() {
   // Connect Wi-Fi
   setupWiFi();
 
+  loadMqttCredentials();
+
   // Configure MQTT
-  client.setServer(mqtt_server, mqtt_port);
+  client.setServer(mqttServer, mqttPort);
 
   client.setCallback(callback);
 
@@ -886,9 +943,9 @@ void setup() {
   Serial.print("[HTTP] Backend base URL: ");
   Serial.println(apiBaseUrl);
   Serial.print("[MQTT] Broker: ");
-  Serial.print(mqtt_server);
+  Serial.print(mqttServer);
   Serial.print(":");
-  Serial.println(mqtt_port);
+  Serial.println(mqttPort);
 
   // Registration is idempotent; keep MQTT and sensor operation available if the API is offline.
   lastRegistrationAttempt = millis();
