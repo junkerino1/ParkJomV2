@@ -364,10 +364,23 @@ public sealed class MqttService : BackgroundService, IMqttService
         }
 
         IoTDeviceLogWriter.Add(db, device, "device_ack_received", result ?? "missing_result", receivedAt,
-            bookingId, $"command={command ?? "unknown"}");
+            bookingId > 0 ? bookingId : null, $"command={command ?? "unknown"}");
 
         if (string.Equals(command, "AUTO_LOCK", StringComparison.OrdinalIgnoreCase))
             _pendingAutoLocks.TryRemove(device.IoTDeviceId, out _);
+
+        if (bookingId < 0)
+        {
+            // Owner/admin commands by spot or device are deliberately unassociated with
+            // renter bookings; acknowledge and log them without recording entry or exit.
+            if (string.Equals(command, "UNLOCK", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "LOCK", StringComparison.OrdinalIgnoreCase))
+            {
+                IoTDeviceLogWriter.Add(db, device, "unassociated_device_command_ack", result ?? "missing_result",
+                    receivedAt, details: $"command={command}; payload={payload}");
+            }
+            return;
+        }
 
         if (!string.Equals(result, "SUCCESS", StringComparison.OrdinalIgnoreCase))
             return;
