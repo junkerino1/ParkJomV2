@@ -1013,6 +1013,10 @@ public class CommuterBookingsController : ControllerBase
         };
     }
 
+    /// <summary>
+    /// Maps a booking to the my-bookings item (booking plus its review eligibility and any
+    /// review the current commuter has already submitted for it).
+    /// </summary>
     private static BookingHistoryItemDTO MapToBookingHistoryItemDTO(Booking booking)
     {
         var review = booking.Reviews.SingleOrDefault();
