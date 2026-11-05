@@ -135,33 +135,15 @@ void loadDeviceUuid() {
   preferences.end();
 
   // Generate MQTT topics dynamically
-  commandTopic =
-    "parkjom/devices/" + deviceId + "/commands";
+  commandTopic = "parkjom/devices/" + deviceId + "/commands";
 
-  ackTopic =
-    "parkjom/devices/" + deviceId + "/ack";
+  ackTopic = "parkjom/devices/" + deviceId + "/ack";
 
-  telemetryTopic =
-    "parkjom/devices/" + deviceId + "/telemetry";
+  telemetryTopic = "parkjom/devices/" + deviceId + "/telemetry";
 
   // Display device identity
-  Serial.println();
-  Serial.println("========== DEVICE IDENTITY ==========");
-
-  Serial.print("Device UUID: ");
+  Serial.print("[DEVICE] UUID: ");
   Serial.println(deviceId);
-
-  Serial.print("Command Topic: ");
-  Serial.println(commandTopic);
-
-  Serial.print("ACK Topic: ");
-  Serial.println(ackTopic);
-
-  Serial.print("Telemetry Topic: ");
-  Serial.println(telemetryTopic);
-
-  Serial.println("=====================================");
-  Serial.println();
 }
 
 void loadMqttCredentials() {
@@ -428,14 +410,7 @@ void registerDeviceWithBackend() {
   HTTPClient http;
   http.setTimeout(8000);
 
-  Serial.println();
-  Serial.println("[HTTP][REGISTER] Starting device registration.");
-  Serial.print("[HTTP][REGISTER] URL: ");
-  Serial.println(url);
-  Serial.print("[HTTP][REGISTER] UUID: ");
-  Serial.println(deviceId);
-  Serial.print("[HTTP][REGISTER] Request JSON: ");
-  Serial.println(requestBody);
+  Serial.println("[HTTP][REGISTER] Registering device.");
 
   if (!http.begin(url)) {
     Serial.println("[HTTP][REGISTER][ERROR] Could not initialize HTTP client.");
@@ -443,24 +418,11 @@ void registerDeviceWithBackend() {
   }
 
   http.addHeader("Content-Type", "application/json");
-  Serial.println("[HTTP][REGISTER] Sending POST; waiting for backend response...");
-  const unsigned long requestStartedAt = millis();
   const int statusCode = http.POST(requestBody);
-  Serial.print("[HTTP][REGISTER] Request duration: ");
-  Serial.print(millis() - requestStartedAt);
-  Serial.println(" ms");
   const String responseBody = statusCode > 0 ? http.getString() : "";
   Serial.print("[HTTP][REGISTER] Status: ");
   Serial.println(statusCode);
-  if (statusCode > 0) {
-    Serial.print("[HTTP][REGISTER] Response: ");
-    Serial.println(responseBody);
-    const String responseMessage = jsonStringField(responseBody, "message");
-    if (responseMessage.length() > 0) {
-      Serial.print("[HTTP][REGISTER] Backend message: ");
-      Serial.println(responseMessage);
-    }
-  } else {
+  if (statusCode <= 0) {
     Serial.print("[HTTP][REGISTER][ERROR] ");
     Serial.println(http.errorToString(statusCode));
   }
@@ -474,7 +436,8 @@ void registerDeviceWithBackend() {
       || (statusCode >= 200 && statusCode < 300)) {
     // Redirects, client errors, and unexpected success bodies will not improve by repeated posting.
     registrationBlocked = true;
-    Serial.println("[HTTP][REGISTER][STOPPED] Backend returned a redirect, client error, or unexpected success body; inspect status and response above.");
+    Serial.print("[HTTP][REGISTER][STOPPED] Response: ");
+    Serial.println(responseBody);
   } else {
     Serial.print("[HTTP][REGISTER][WARNING] Temporary failure. Next retry in ");
     Serial.print(registrationRetryDelay / 1000);
@@ -504,10 +467,7 @@ void requestBindingOtp() {
   HTTPClient http;
   http.setTimeout(8000);
 
-  Serial.print("[OTP] POST ");
-  Serial.println(url);
-  Serial.print("[OTP] Request JSON: ");
-  Serial.println(requestBody);
+  Serial.println("[OTP] Requesting binding code.");
 
   if (!http.begin(url)) {
     Serial.println("[OTP][ERROR] Could not initialize HTTP client.");
@@ -520,10 +480,7 @@ void requestBindingOtp() {
   Serial.print("[OTP] HTTP status: ");
   Serial.println(statusCode);
 
-  if (statusCode > 0) {
-    Serial.print("[OTP] Backend response: ");
-    Serial.println(responseBody);
-  } else {
+  if (statusCode <= 0) {
     Serial.print("[OTP][ERROR] ");
     Serial.println(http.errorToString(statusCode));
   }
@@ -540,7 +497,8 @@ void requestBindingOtp() {
     Serial.println("[OTP] Keep this code private; it is valid for five minutes.");
     Serial.println("[OTP] ========================================");
   } else {
-    Serial.println("[OTP][ERROR] No valid OTP was returned. Check the status and response above.");
+    Serial.print("[OTP][ERROR] Invalid OTP response: ");
+    Serial.println(responseBody);
   }
 
   http.end();
@@ -607,16 +565,13 @@ void publishTelemetry() {
 
   payload += "}";
 
-  Serial.print("[SENSOR] HC-SR04 distance: ");
+  Serial.print("[SENSOR] Distance: ");
   if (distance < 0) {
     Serial.println("no echo (timeout)");
   } else {
     Serial.print(distance, 2);
     Serial.println(" cm");
   }
-  Serial.print("[SERVO] Last commanded bollard position: ");
-  Serial.println(position);
-
   if (!client.connected()) {
     Serial.println("[MQTT][TELEMETRY][WARNING] Not connected; telemetry was not published.");
     return;
@@ -626,16 +581,11 @@ void publishTelemetry() {
   bool published =
     client.publish(telemetryTopic.c_str(), payload.c_str());
 
-  if (published) {
-
-    Serial.println();
-    Serial.println("[MQTT][TELEMETRY] Published payload:");
-    Serial.println(payload);
-
-  } else {
-
+  if (!published) {
     Serial.print("[MQTT][TELEMETRY][ERROR] Publish failed. MQTT state: ");
     Serial.println(client.state());
+  } else {
+    Serial.println("[MQTT][TELEMETRY] Published.");
   }
 }
 
@@ -681,13 +631,7 @@ void publishAcknowledgement(
   bool published =
     client.publish(ackTopic.c_str(), payload.c_str());
 
-  if (published) {
-
-    Serial.println("[MQTT][ACK] Published payload:");
-    Serial.println(payload);
-
-  } else {
-
+  if (!published) {
     Serial.print("[MQTT][ACK][ERROR] Publish failed. MQTT state: ");
     Serial.println(client.state());
   }
@@ -702,13 +646,6 @@ void callback(
   byte* payload,
   unsigned int length
 ) {
-
-  Serial.println();
-  Serial.println("[MQTT][COMMAND] Incoming message.");
-  Serial.print("[MQTT][COMMAND] Topic: ");
-  Serial.println(topic);
-  Serial.print("[MQTT][COMMAND] Payload byte count: ");
-  Serial.println(length);
 
   String message = "";
 
@@ -745,8 +682,6 @@ void callback(
 
   // UNLOCK COMMAND
   else if (commandName == "UNLOCK") {
-    Serial.println("[MQTT][COMMAND] Payload: UNLOCK");
-
     bollardServo.write(90);
 
     bollardUnlocked = true;
@@ -795,9 +730,7 @@ void callback(
 
 void setupWiFi() {
 
-  Serial.println("[Wi-Fi] Starting station connection.");
-  Serial.print("[Wi-Fi] SSID: ");
-  Serial.println(ssid);
+  Serial.println("[Wi-Fi] Connecting.");
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -807,7 +740,6 @@ void setupWiFi() {
 
     delay(500);
 
-    Serial.print(".");
   }
 
   Serial.println();
@@ -823,9 +755,7 @@ void setupWiFi() {
   Serial.print("[Wi-Fi] ESP32 IP address: ");
 
   Serial.println(WiFi.localIP());
-  Serial.print("[Wi-Fi] Signal strength: ");
-  Serial.print(WiFi.RSSI());
-  Serial.println(" dBm");
+  Serial.printf("[Wi-Fi] Signal: %d dBm\n", WiFi.RSSI());
 }
 
 // =============================================
@@ -893,9 +823,7 @@ void setup() {
 
   Serial.begin(115200);
   delay(500);
-  Serial.println();
-  Serial.println("[BOOT] ParkJom ESP32 bollard starting.");
-  Serial.println("[BOOT] Serial Monitor baud rate: 115200.");
+  Serial.println("[BOOT] ParkJom bollard starting.");
 
   // Load persistent device identity
   loadDeviceUuid();
@@ -909,12 +837,6 @@ void setup() {
 
   digitalWrite(TRIG_PIN, LOW);
   pinMode(OTP_BUTTON_PIN, INPUT_PULLUP);
-  Serial.print("[BUTTON] OTP button ready on GPIO ");
-  Serial.println(OTP_BUTTON_PIN);
-  Serial.println("[BUTTON] Button wiring: GPIO 23 to GND; press to request a binding OTP.");
-  Serial.print("[SENSOR] Telemetry interval: ");
-  Serial.print(sensorInterval / 1000);
-  Serial.println(" seconds.");
 
   // Initialize servo
   bollardServo.setPeriodHertz(50);
@@ -940,8 +862,6 @@ void setup() {
   // Allow sufficient MQTT message size
   client.setBufferSize(512);
 
-  Serial.print("[HTTP] Backend base URL: ");
-  Serial.println(apiBaseUrl);
   Serial.print("[MQTT] Broker: ");
   Serial.print(mqttServer);
   Serial.print(":");
@@ -951,10 +871,6 @@ void setup() {
   lastRegistrationAttempt = millis();
   registerDeviceWithBackend();
 
-  Serial.println();
-  Serial.println("=====================================");
-  Serial.println("     PARKJOM IOT BOLLARD CONTROLLER");
-  Serial.println("=====================================");
   Serial.println("[BOOT] Setup complete.");
 }
 
