@@ -79,6 +79,25 @@ public class BookingDetailResponse
     public BookingResponseDTO? Data { get; set; }
 }
 
+public class BookingLastDayData
+{
+    public int BookingId { get; set; }
+    public string BookingReference { get; set; } = string.Empty;
+    public string BookingStatus { get; set; } = string.Empty;
+    public DateOnly CheckedLocalDate { get; set; }
+    public DateOnly LastAvailableDate { get; set; }
+    public bool IsLastDay { get; set; }
+    public bool CanReview { get; set; }
+}
+
+public class BookingLastDayResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public BookingLastDayData Data { get; set; } = new();
+}
+
 public class CancelBookingResponse
 {
     public int Code { get; set; }

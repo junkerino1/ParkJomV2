@@ -238,6 +238,113 @@ public class CommuterBookingsController : ControllerBase
     /// GET /api/commuter/bookings/active
     /// Retrieves the commuter's currently active or upcoming reservation across devices.
     /// </summary>
+    /// <summary>Checks whether today is the final scheduled parking day for a booking.</summary>
+    /// <remarks>
+    /// Use this after a successful bollard exit to decide whether the app should offer the renter a review.
+    /// The response also includes canReview, which is true only when the booking is completed and the renter has not reviewed it.
+    /// Pass either the numeric BookingId or the BookingReference in bookingNumber. Dates use Malaysia time.
+    /// </remarks>
+    /// <param name="bookingNumber">Numeric booking ID or public booking reference.</param>
+    /// <param name="cancellationToken">Cancels the lookup if the request is aborted.</param>
+    /// <response code="200">Returns isLastDay and whether the renter can submit a review.</response>
+    /// <response code="403">The booking belongs to another renter.</response>
+    /// <response code="404">The booking or authenticated user was not found.</response>
+    [HttpGet("~/api/bookings/{bookingNumber}/isLastDay")]
+    [ProducesResponseType(typeof(BookingLastDayResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<BookingLastDayResponse>> GetBookingIsLastDay(
+        string bookingNumber,
+        CancellationToken cancellationToken)
+    {
+        var user = await _currentUser.GetCurrentUserAsync();
+        if (user == null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "User not found."
+            });
+        }
+
+        var normalizedBookingNumber = bookingNumber.Trim();
+        var bookingQuery = _context.Bookings
+            .AsNoTracking()
+            .Include(item => item.ParkingSpot)
+                .ThenInclude(spot => spot.ParkingAvailabilities);
+
+        var booking = int.TryParse(normalizedBookingNumber, out var bookingId)
+            ? await bookingQuery.FirstOrDefaultAsync(item => item.BookingId == bookingId, cancellationToken)
+            : await bookingQuery.FirstOrDefaultAsync(item => item.BookingReference == normalizedBookingNumber, cancellationToken);
+        if (booking == null)
+        {
+            return NotFound(new ErrorResponse
+            {
+                Code = StatusCodes.Status404NotFound,
+                Success = false,
+                Message = "Booking not found."
+            });
+        }
+
+        if (booking.RenterId != user.UserId && user.UserType != UserType.Admin)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
+            {
+                Code = StatusCodes.Status403Forbidden,
+                Success = false,
+                Message = "You are not authorized to view this booking."
+            });
+        }
+
+        var malaysiaToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
+        var lastAvailableDate = GetLastAvailableBookingDate(booking);
+        var hasReview = await _context.Reviews
+            .AsNoTracking()
+            .AnyAsync(review => review.BookingId == booking.BookingId && review.ReviewerId == booking.RenterId,
+                cancellationToken);
+
+        return Ok(new BookingLastDayResponse
+        {
+            Code = StatusCodes.Status200OK,
+            Success = true,
+            Message = "Booking last-day status retrieved successfully.",
+            Data = new BookingLastDayData
+            {
+                BookingId = booking.BookingId,
+                BookingReference = booking.BookingReference,
+                BookingStatus = booking.BookingStatus.ToString(),
+                CheckedLocalDate = malaysiaToday,
+                LastAvailableDate = lastAvailableDate,
+                IsLastDay = malaysiaToday >= lastAvailableDate,
+                CanReview = booking.BookingStatus == BookingStatus.Completed && !hasReview
+            }
+        });
+    }
+
+    private static DateOnly GetLastAvailableBookingDate(Booking booking)
+    {
+        var startDate = DateOnly.FromDateTime(booking.StartDate);
+        var endDateExclusive = DateOnly.FromDateTime(booking.EndDate);
+        DateOnly? lastAvailableDate = null;
+
+        for (var date = startDate; date < endDateExclusive; date = date.AddDays(1))
+        {
+            var isAvailable = booking.ParkingSpot.ParkingAvailabilities.Any(rule =>
+                (!rule.EffectiveFrom.HasValue || date >= rule.EffectiveFrom.Value) &&
+                (!rule.EffectiveUntil.HasValue || date <= rule.EffectiveUntil.Value) &&
+                (rule.DayType == DayType.Everyday ||
+                 (rule.DayType == DayType.Weekday && date.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) ||
+                 (rule.DayType == DayType.Weekend && date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)));
+
+            if (isAvailable) lastAvailableDate = date;
+        }
+
+        // Booking creation already rejects periods with no available days. This fallback
+        // keeps legacy rows with missing availability rules deterministic.
+        return lastAvailableDate ?? (endDateExclusive > startDate ? endDateExclusive.AddDays(-1) : startDate);
+    }
+
     [HttpGet("active")]
     [ProducesResponseType(typeof(ActiveBookingResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
