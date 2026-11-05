@@ -105,7 +105,6 @@ public class CommuterBookingListResponse
     public List<BookingHistoryItemDTO> Data { get; set; } = new();
 }
 
-
 public class ActiveBookingSpotDTO
 {
     public int ParkingSpotId { get; set; }

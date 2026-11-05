@@ -77,7 +77,6 @@ public class SupportBookingSummaryDto
     public bool HasIoTDevice { get; set; }
     public string? IoTDeviceStatus { get; set; }
     public DateTime? LastHeartbeatAt { get; set; }
-    public bool CanSelfUnlockGate { get; set; }
 }
 
 public class SupportVehicleSummaryDto

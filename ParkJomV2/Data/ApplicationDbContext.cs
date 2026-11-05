@@ -34,6 +34,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
     public DbSet<SystemConfiguration> SystemConfigurations => Set<SystemConfiguration>();
     public DbSet<OwnerPayoutAccount> OwnerPayoutAccounts => Set<OwnerPayoutAccount>();
+    public DbSet<RevokedToken> RevokedTokens => Set<RevokedToken>();
 
     public DbSet<Availability> Availabilities => Set<Availability>();
     public DbSet<MediaFile> MediaFiles => Set<MediaFile>();
@@ -44,6 +45,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<ReviewReport> ReviewReports => Set<ReviewReport>();
 
     // Support Module
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
@@ -161,6 +163,24 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Review>()
             .HasIndex(r => r.BookingId)
             .IsUnique();
+
+        modelBuilder.Entity<ReviewReport>(entity =>
+        {
+            entity.HasOne(r => r.Review)
+                .WithMany()
+                .HasForeignKey(r => r.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(r => r.Reporter)
+                .WithMany()
+                .HasForeignKey(r => r.ReporterId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(r => r.ResolvedByAdmin)
+                .WithMany()
+                .HasForeignKey(r => r.ResolvedByAdminId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
 
         // =========================
         // Access Log
@@ -302,30 +322,6 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<IoTDevice>()
             .Property(i => i.DeviceStatus)
             .HasConversion<string>();
-
-        // UUIDs identify devices uniquely; the filtered spot index permits many unbound devices.
-        modelBuilder.Entity<IoTDevice>()
-            .HasIndex(i => i.Esp32Serial)
-            .IsUnique();
-
-        modelBuilder.Entity<IoTDevice>()
-            .HasIndex(i => i.ParkingSpotId)
-            .IsUnique()
-            .HasFilter("[ParkingSpotId] IS NOT NULL");
-
-        // Keep one current OTP per device and cascade it away if its device is deleted.
-        modelBuilder.Entity<IoTDeviceBindingOtp>()
-            .HasOne(o => o.IoTDevice)
-            .WithOne(d => d.BindingOtp)
-            .HasForeignKey<IoTDeviceBindingOtp>(o => o.IoTDeviceId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        // The existing relationship is retained as one device per optional parking spot.
-        modelBuilder.Entity<IoTDevice>()
-            .HasOne(d => d.ParkingSpot)
-            .WithOne(p => p.IoTDevice)
-            .HasForeignKey<IoTDevice>(d => d.ParkingSpotId)
-            .OnDelete(DeleteBehavior.NoAction);
 
         modelBuilder.Entity<IoTStatusLog>()
             .Property(i => i.DeviceStatus)

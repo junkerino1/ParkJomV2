@@ -12,6 +12,8 @@ public class CreateReviewRequest
 
     [StringLength(1000, ErrorMessage = "Comment cannot exceed 1000 characters.")]
     public string? Comment { get; set; }
+
+    public List<string>? Photos { get; set; }
 }
 
 public class UpdateReviewRequest
@@ -21,6 +23,8 @@ public class UpdateReviewRequest
 
     [StringLength(1000, ErrorMessage = "Comment cannot exceed 1000 characters.")]
     public string? Comment { get; set; }
+
+    public List<string>? Photos { get; set; }
 }
 
 public class OwnerReplyRequest
@@ -36,6 +40,7 @@ public class ReviewDTO
     public int ParkingSpotId { get; set; }
     public int Rating { get; set; }
     public string? Comment { get; set; }
+    public List<string> Photos { get; set; } = new();
     public string ReviewerDisplayName { get; set; } = string.Empty;
     public bool IsVerifiedBooking { get; set; }
     public string? OwnerReply { get; set; }
@@ -92,4 +97,43 @@ public class AllReviewsResponse
     public string Message { get; set; } = string.Empty;
     public int TotalCount { get; set; }
     public List<ReviewDTO> Data { get; set; } = new();
+}
+
+public class ReportReviewRequest
+{
+    [Required(ErrorMessage = "Reason is required.")]
+    [StringLength(100, ErrorMessage = "Reason cannot exceed 100 characters.")]
+    public string Reason { get; set; } = string.Empty;
+
+    [StringLength(1000, ErrorMessage = "Details cannot exceed 1000 characters.")]
+    public string? Details { get; set; }
+}
+
+public class ReviewReportDTO
+{
+    public int ReviewReportId { get; set; }
+    public int ReviewId { get; set; }
+    public int ReporterId { get; set; }
+    public string ReporterDisplayName { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public string? Details { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public ReviewDTO? Review { get; set; }
+}
+
+public class ReportReviewResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int? ReportId { get; set; }
+}
+
+public class ReviewReportsResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<ReviewReportDTO> Data { get; set; } = new();
 }

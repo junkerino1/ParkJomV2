@@ -21,6 +21,7 @@ namespace ParkJomV2.Controllers
         private readonly ApplicationDbContext _context;
         private readonly GoogleAuthService _googleService;
         private readonly JwtTokenService _jwtService;
+        private readonly ITokenBlacklistService _blacklistService;
         private readonly AccessLogService _accessLogService;
         private readonly ILogger<AuthController> _logger;
 
@@ -28,12 +29,14 @@ namespace ParkJomV2.Controllers
             ApplicationDbContext context,
             GoogleAuthService googleService,
             JwtTokenService jwtService,
+            ITokenBlacklistService blacklistService,
             AccessLogService accessLogService,
             ILogger<AuthController> logger)
         {
             _context = context;
             _googleService = googleService;
             _jwtService = jwtService;
+            _blacklistService = blacklistService;
             _accessLogService = accessLogService;
             _logger = logger;
         }
@@ -331,6 +334,28 @@ namespace ParkJomV2.Controllers
                 IsProfileComplete = true,
                 User = MapUser(user)
             });
+        }
+
+        [Authorize]
+        [HttpPost("logout")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<IActionResult> Logout()
+        {
+            var rawToken = Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase)?.Trim();
+            if (!string.IsNullOrEmpty(rawToken))
+            {
+                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                int? userId = int.TryParse(userIdStr, out var id) ? id : null;
+                var expClaim = User.FindFirst("exp")?.Value;
+                DateTime? expiresAt = null;
+                if (long.TryParse(expClaim, out var expSeconds))
+                {
+                    expiresAt = DateTimeOffset.FromUnixTimeSeconds(expSeconds).UtcDateTime;
+                }
+                await _blacklistService.RevokeTokenAsync(rawToken, userId, expiresAt);
+                await _accessLogService.LogAsync(User, "Logout", true, "User logged out; token revoked.");
+            }
+            return Ok(new { Code = 200, Success = true, Message = "Logged out successfully and token revoked." });
         }
 
         private static UserDTO MapUser(User user)
