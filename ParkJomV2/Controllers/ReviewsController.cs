@@ -96,6 +96,7 @@ public class ReviewsController : ControllerBase
                 ReviewerId = user.UserId,
                 Rating = request.Rating,
                 Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim(),
+                PhotosJson = request.Photos != null && request.Photos.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(request.Photos) : null,
                 CreatedAt = now,
                 UpdatedAt = now
             };
@@ -394,6 +395,10 @@ public class ReviewsController : ControllerBase
 
             review.Rating = request.Rating;
             review.Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim();
+            if (request.Photos != null)
+            {
+                review.PhotosJson = request.Photos.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(request.Photos) : null;
+            }
             review.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -647,6 +652,127 @@ public class ReviewsController : ControllerBase
         Data = reviews.Select(ToDto).ToList()
     };
 
+    /// <summary>Reports/flags a review for moderation (open to commuters and owners).</summary>
+    [Authorize]
+    [HttpPost("{reviewId:int}/report")]
+    [ProducesResponseType(typeof(ReportReviewResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ReportReviewResponse>> ReportReview(int reviewId, [FromBody] ReportReviewRequest request)
+    {
+        try
+        {
+            var user = await _currentUser.GetCurrentUserAsync();
+            if (user == null)
+            {
+                return NotFound(Error(StatusCodes.Status404NotFound, "User not found."));
+            }
+
+            var review = await _context.Reviews.FindAsync(reviewId);
+            if (review == null)
+            {
+                return NotFound(Error(StatusCodes.Status404NotFound, "Review not found."));
+            }
+
+            if (review.ReviewerId == user.UserId)
+            {
+                return BadRequest(Error(StatusCodes.Status400BadRequest, "You cannot report your own review."));
+            }
+
+            var alreadyReported = await _context.ReviewReports.AnyAsync(r =>
+                r.ReviewId == reviewId && r.ReporterId == user.UserId && r.Status == "Pending");
+            if (alreadyReported)
+            {
+                return Conflict(Error(StatusCodes.Status409Conflict, "You have already submitted a pending report for this review."));
+            }
+
+            var report = new ReviewReport
+            {
+                ReviewId = reviewId,
+                ReporterId = user.UserId,
+                Reason = request.Reason.Trim(),
+                Details = string.IsNullOrWhiteSpace(request.Details) ? null : request.Details.Trim(),
+                Status = "Pending",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.ReviewReports.Add(report);
+            await _context.SaveChangesAsync();
+
+            await _accessLogService.LogAsync(User, "ReportReview", true,
+                $"ReviewReportId={report.ReviewReportId}, ReviewId={reviewId}, Reason={report.Reason}");
+
+            return Ok(new ReportReviewResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Thank you. Your report has been submitted for moderation.",
+                ReportId = report.ReviewReportId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reporting review {ReviewId}", reviewId);
+            await _accessLogService.LogAsync(User, "ReportReview", false, ex.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                Error(StatusCodes.Status500InternalServerError, "An error occurred while reporting the review."));
+        }
+    }
+
+    /// <summary>Gets flagged review reports for administrator moderation.</summary>
+    [Authorize(Policy = "AdminOnly")]
+    [HttpGet("reports")]
+    [ProducesResponseType(typeof(ReviewReportsResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ReviewReportsResponse>> GetReports([FromQuery] string? status = null)
+    {
+        try
+        {
+            var query = _context.ReviewReports
+                .Include(r => r.Reporter)
+                .Include(r => r.Review)
+                    .ThenInclude(rv => rv.Reviewer)
+                .Include(r => r.Review)
+                    .ThenInclude(rv => rv.Booking)
+                .AsNoTracking();
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                query = query.Where(r => r.Status == status);
+            }
+
+            var reports = await query
+                .OrderByDescending(r => r.CreatedAt)
+                .Take(100)
+                .ToListAsync();
+
+            return Ok(new ReviewReportsResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = "Reports retrieved successfully.",
+                Data = reports.Select(r => new ReviewReportDTO
+                {
+                    ReviewReportId = r.ReviewReportId,
+                    ReviewId = r.ReviewId,
+                    ReporterId = r.ReporterId,
+                    ReporterDisplayName = $"{r.Reporter.FirstName} {r.Reporter.LastName}".Trim(),
+                    Reason = r.Reason,
+                    Details = r.Details,
+                    Status = r.Status,
+                    CreatedAt = r.CreatedAt,
+                    Review = r.Review != null ? ToDto(r.Review) : null
+                }).ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving review reports");
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                Error(StatusCodes.Status500InternalServerError, "An error occurred while retrieving reports."));
+        }
+    }
+
     private static ReviewDTO ToDto(Review review)
     {
         var firstName = review.Reviewer.FirstName?.Trim();
@@ -654,12 +780,26 @@ public class ReviewsController : ControllerBase
             ? string.Empty
             : $" {char.ToUpperInvariant(review.Reviewer.LastName.Trim()[0])}.";
 
+        List<string> photos = new();
+        if (!string.IsNullOrWhiteSpace(review.PhotosJson))
+        {
+            try
+            {
+                photos = System.Text.Json.JsonSerializer.Deserialize<List<string>>(review.PhotosJson) ?? new();
+            }
+            catch
+            {
+                photos = new();
+            }
+        }
+
         return new ReviewDTO
         {
             ReviewId = review.ReviewId,
             ParkingSpotId = review.ParkingSpotId,
             Rating = review.Rating,
             Comment = review.Comment,
+            Photos = photos,
             ReviewerDisplayName = string.IsNullOrWhiteSpace(firstName) ? "ParkJom commuter" : firstName + lastInitial,
             IsVerifiedBooking = review.Booking.RenterId == review.ReviewerId &&
                                 review.Booking.BookingStatus == BookingStatus.Completed,

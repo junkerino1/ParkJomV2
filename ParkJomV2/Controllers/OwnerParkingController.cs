@@ -159,6 +159,11 @@ public class OwnerParkingController : ControllerBase
                 AvailabilityStatus = AvailabilityStatus.Inactive,
                 IsPublished = false,
                 IsConfigurationComplete = false,
+                HasEvCharging = request.HasEvCharging,
+                EvChargingSpeed = request.HasEvCharging ? request.EvChargingSpeed : null,
+                IsCovered = request.IsCovered,
+                IsHandicapAccessible = request.IsHandicapAccessible,
+                HasCctv = request.HasCctv,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -1982,6 +1987,11 @@ public class OwnerParkingController : ControllerBase
             spot.Description = request.Description.Trim();
             spot.DailyRate = request.DailyRate;
             spot.MonthlyRate = request.MonthlyRate;
+            spot.HasEvCharging = request.HasEvCharging;
+            spot.EvChargingSpeed = request.HasEvCharging ? request.EvChargingSpeed : null;
+            spot.IsCovered = request.IsCovered;
+            spot.IsHandicapAccessible = request.IsHandicapAccessible;
+            spot.HasCctv = request.HasCctv;
             spot.UpdatedAt = DateTime.UtcNow;
 
             var missingRequirements = GetConfigurationRequirements(spot);
@@ -2935,6 +2945,11 @@ public class OwnerParkingController : ControllerBase
             MonthlyRate = parkingSpot.MonthlyRate,
             DailyRate = parkingSpot.DailyRate,
             IsPublished = parkingSpot.IsPublished,
+            HasEvCharging = parkingSpot.HasEvCharging,
+            EvChargingSpeed = parkingSpot.EvChargingSpeed,
+            IsCovered = parkingSpot.IsCovered,
+            IsHandicapAccessible = parkingSpot.IsHandicapAccessible,
+            HasCctv = parkingSpot.HasCctv,
             CreatedAt = parkingSpot.CreatedAt,
             UpdatedAt = parkingSpot.UpdatedAt,
             ActiveBookingCount = parkingSpot.Bookings?.Count(b => b.BookingStatus is BookingStatus.Pending or BookingStatus.Confirmed or BookingStatus.Active) ?? 0,

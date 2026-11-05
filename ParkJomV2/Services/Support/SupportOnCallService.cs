@@ -3,6 +3,7 @@ using ParkJomV2.Data;
 using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
+using ParkJomV2.Services.Notifications.Channels;
 
 namespace ParkJomV2.Services.Support;
 
@@ -10,15 +11,18 @@ public class SupportOnCallService
 {
     private readonly ApplicationDbContext _context;
     private readonly SupportAuditService _auditService;
+    private readonly IEmailSender _emailSender;
     private readonly ILogger<SupportOnCallService> _logger;
 
     public SupportOnCallService(
         ApplicationDbContext context,
         SupportAuditService auditService,
+        IEmailSender emailSender,
         ILogger<SupportOnCallService> logger)
     {
         _context = context;
         _auditService = auditService;
+        _emailSender = emailSender;
         _logger = logger;
     }
 
@@ -112,7 +116,7 @@ public class SupportOnCallService
                 ShiftStart = DateTime.UtcNow,
                 ShiftEnd = DateTime.UtcNow.AddDays(30),
                 PrimaryResponderId = adminUser?.UserId,
-                ActiveChannels = "Push,SMS,Phone,Email",
+                ActiveChannels = "Email",
                 IsActive = true
             };
             _context.SupportOnCallSchedules.Add(schedule);
@@ -150,34 +154,45 @@ public class SupportOnCallService
         var recipient = string.IsNullOrWhiteSpace(request.TargetRecipient) ? "oncall-duty@parkjom.com" : request.TargetRecipient.Trim();
         var message = string.IsNullOrWhiteSpace(request.Message) ? "[TEST ALERT] ParkJom 24/7 On-Call Notification System Test" : request.Message;
 
+        // Dispatch real email alert using existing IEmailSender
+        var emailResult = await _emailSender.SendEmailAsync(
+            recipient,
+            "ParkJom On-Call Responder",
+            "[TEST] 24/7 On-Call Alert Notification",
+            $"<div style='font-family: sans-serif; padding: 20px;'><h3>ParkJom 24/7 On-Call Alert Notification</h3><p>{System.Net.WebUtility.HtmlEncode(message)}</p><p style='font-size: 11px; color: #888;'>Dispatched to verified on-call email channel by Admin #{adminUserId}.</p></div>",
+            message
+        );
+
         var attempt = new SupportNotificationAttempt
         {
-            Channel = Enum.TryParse<NotificationChannel>(channel, true, out var ch) ? ch : NotificationChannel.Push,
+            Channel = NotificationChannel.Email,
             Recipient = recipient,
             RecipientUserId = adminUserId,
             Subject = "[TEST] On-Call Alert",
             Message = message,
-            Status = "Sent",
+            Status = emailResult.Success ? "Sent" : "Failed",
             AttemptCount = 1,
-            ProviderResponse = "OK - Simulation Success",
+            ProviderResponse = emailResult.Success ? $"Email Sent ({emailResult.MessageId})" : $"Email Dispatch Error: {emailResult.Error}",
             CreatedAt = DateTime.UtcNow,
-            SentAt = DateTime.UtcNow
+            SentAt = emailResult.Success ? DateTime.UtcNow : null
         };
 
         _context.SupportNotificationAttempts.Add(attempt);
         await _context.SaveChangesAsync();
 
-        await _auditService.LogAsync("OnCall", attempt.NotificationAttemptId, "TEST-ALERT", "TestNotificationSent", adminUserId, "Admin", null, "Sent", $"Tested channel {channel} to {recipient}");
+        await _auditService.LogAsync("OnCall", attempt.NotificationAttemptId, "TEST-ALERT", "TestNotificationSent", adminUserId, "Admin", null, attempt.Status, $"Tested on-call email notification to {recipient}");
 
-        _logger.LogInformation("Test on-call notification dispatched: Channel {Channel}, Recipient {Recipient}", channel, recipient);
+        _logger.LogInformation("Test on-call email alert dispatched: Recipient {Recipient}, Success {Success}", recipient, emailResult.Success);
 
         return new TestNotificationResultDto
         {
-            Success = true,
-            Channel = channel,
+            Success = emailResult.Success,
+            Channel = "Email",
             Recipient = recipient,
-            Status = "Sent",
-            Detail = $"Successfully verified provider dispatch over {channel}.",
+            Status = attempt.Status,
+            Detail = emailResult.Success
+                ? $"Successfully delivered on-call alert via email to {recipient} (Message ID: {emailResult.MessageId})."
+                : $"Failed to deliver email: {emailResult.Error}",
             Timestamp = DateTime.UtcNow
         };
     }

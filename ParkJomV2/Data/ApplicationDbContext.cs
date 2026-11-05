@@ -34,6 +34,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
     public DbSet<SystemConfiguration> SystemConfigurations => Set<SystemConfiguration>();
     public DbSet<OwnerPayoutAccount> OwnerPayoutAccounts => Set<OwnerPayoutAccount>();
+    public DbSet<RevokedToken> RevokedTokens => Set<RevokedToken>();
 
     public DbSet<Availability> Availabilities => Set<Availability>();
     public DbSet<MediaFile> MediaFiles => Set<MediaFile>();
@@ -44,6 +45,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<Review> Reviews => Set<Review>();
+    public DbSet<ReviewReport> ReviewReports => Set<ReviewReport>();
 
     // Support Module
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
@@ -161,6 +163,24 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<Review>()
             .HasIndex(r => r.BookingId)
             .IsUnique();
+
+        modelBuilder.Entity<ReviewReport>(entity =>
+        {
+            entity.HasOne(r => r.Review)
+                .WithMany()
+                .HasForeignKey(r => r.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(r => r.Reporter)
+                .WithMany()
+                .HasForeignKey(r => r.ReporterId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity.HasOne(r => r.ResolvedByAdmin)
+                .WithMany()
+                .HasForeignKey(r => r.ResolvedByAdminId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
 
         // =========================
         // Access Log

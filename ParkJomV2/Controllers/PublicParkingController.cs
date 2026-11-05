@@ -89,6 +89,11 @@ public class ParkingController : ControllerBase
                 MonthlyRate = spot.MonthlyRate,
                 DailyRate = spot.DailyRate,
                 IsPublished = spot.IsPublished,
+                HasEvCharging = spot.HasEvCharging,
+                EvChargingSpeed = spot.EvChargingSpeed,
+                IsCovered = spot.IsCovered,
+                IsHandicapAccessible = spot.IsHandicapAccessible,
+                HasCctv = spot.HasCctv,
                 CreatedAt = spot.CreatedAt,
                 UpdatedAt = spot.UpdatedAt,
                 Images = spot.ParkingSpotImages.Select(psi => new ParkingSpotImageDTO

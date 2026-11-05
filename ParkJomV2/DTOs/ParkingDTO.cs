@@ -59,6 +59,17 @@ public class ParkingRegistrationRequest
 
     [Required(ErrorMessage = "Document is required")]
     public IFormFile? Document { get; set; } = null!;
+
+    public bool HasEvCharging { get; set; } = false;
+
+    [StringLength(50)]
+    public string? EvChargingSpeed { get; set; }
+
+    public bool IsCovered { get; set; } = false;
+
+    public bool IsHandicapAccessible { get; set; } = false;
+
+    public bool HasCctv { get; set; } = false;
 }
 
 public class VerificationRequestDTO
@@ -212,6 +223,11 @@ public class DisplayParkingSpotDTO
     public decimal? MonthlyRate { get; set; }
     public decimal? DailyRate { get; set; }
     public bool IsPublished { get; set; }
+    public bool HasEvCharging { get; set; }
+    public string? EvChargingSpeed { get; set; }
+    public bool IsCovered { get; set; }
+    public bool IsHandicapAccessible { get; set; }
+    public bool HasCctv { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public int ActiveBookingCount { get; set; }
