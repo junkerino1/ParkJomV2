@@ -6,6 +6,7 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Notifications;
 
 namespace ParkJomV2.Controllers;
 
@@ -19,6 +20,7 @@ public class OwnerPayoutController : ControllerBase
     private readonly WalletService _walletService;
     private readonly TransactionService _transactionService;
     private readonly AccessLogService _accessLogService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<OwnerPayoutController> _logger;
 
     public OwnerPayoutController(
@@ -27,6 +29,7 @@ public class OwnerPayoutController : ControllerBase
         WalletService walletService,
         TransactionService transactionService,
         AccessLogService accessLogService,
+        INotificationService notificationService,
         ILogger<OwnerPayoutController> logger)
     {
         _context = context;
@@ -34,6 +37,7 @@ public class OwnerPayoutController : ControllerBase
         _walletService = walletService;
         _transactionService = transactionService;
         _accessLogService = accessLogService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -248,6 +252,26 @@ public class OwnerPayoutController : ControllerBase
 
             await _context.SaveChangesAsync();
             await dbTransaction.CommitAsync();
+
+            try
+            {
+                await _notificationService.PublishAsync(new NotificationPublishRequest(
+                    owner.UserId,
+                    "withdrawal.status_changed",
+                    new Dictionary<string, object?>
+                    {
+                        ["status"] = "Processing",
+                        ["amount"] = $"RM {request.Amount:F2}"
+                    },
+                    entityType: "Transaction",
+                    entityId: transaction.TransactionId.ToString(),
+                    dedupeKey: $"withdrawal:{transaction.TransactionId}"
+                ));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to publish withdrawal notification for TransactionId {TransactionId}", transaction.TransactionId);
+            }
 
             await _accessLogService.LogAsync(
                 User,

@@ -125,7 +125,6 @@ public class SupportContextService
             UserType = user.UserType.ToString(),
             WalletBalance = user.Wallet?.Balance ?? 0m,
             ActiveBooking = activeBookingDto,
-            CanSelfUnlockGate = activeBookingDto?.CanSelfUnlockGate ?? false,
             QuickIssueTemplates = GetQuickIssueTemplates(user.UserType),
             RecentBookings = recentBookingsEntities.Select(b => MapBookingSummary(b, now)).ToList(),
             Vehicles = vehicles,
@@ -150,8 +149,7 @@ public class SupportContextService
                     DefaultPriority = "P1",
                     EstimatedResponseTime = "Within 15 minutes",
                     RequiresBooking = true,
-                    SuggestPhotoUpload = true,
-                    SupportsSelfUnlock = false
+                    SuggestPhotoUpload = true
                 },
                 new()
                 {
@@ -162,8 +160,7 @@ public class SupportContextService
                     DefaultPriority = "P1",
                     EstimatedResponseTime = "Within 15 minutes",
                     RequiresBooking = false,
-                    SuggestPhotoUpload = true,
-                    SupportsSelfUnlock = false
+                    SuggestPhotoUpload = true
                 },
                 new()
                 {
@@ -174,8 +171,7 @@ public class SupportContextService
                     DefaultPriority = "P2",
                     EstimatedResponseTime = "Within 1 hour",
                     RequiresBooking = false,
-                    SuggestPhotoUpload = false,
-                    SupportsSelfUnlock = false
+                    SuggestPhotoUpload = false
                 },
                 new()
                 {
@@ -186,8 +182,7 @@ public class SupportContextService
                     DefaultPriority = "P2",
                     EstimatedResponseTime = "Within 1 hour",
                     RequiresBooking = false,
-                    SuggestPhotoUpload = false,
-                    SupportsSelfUnlock = false
+                    SuggestPhotoUpload = false
                 }
             };
         }
@@ -198,13 +193,12 @@ public class SupportContextService
             {
                 IssueCode = "GATE_STUCK",
                 Title = "Gate Stuck / Cannot Enter or Exit",
-                Description = "Barrier failed to open or license plate was not recognized upon arrival. Emergency self-unlock or human agent available.",
+                Description = "Barrier failed to open or license plate was not recognized upon arrival.",
                 Category = "ParkingAccess",
                 DefaultPriority = "P0",
-                EstimatedResponseTime = "Immediate self-unlock / 24/7 urgent dispatch",
+                EstimatedResponseTime = "Within 15 minutes",
                 RequiresBooking = true,
-                SuggestPhotoUpload = false,
-                SupportsSelfUnlock = true
+                SuggestPhotoUpload = false
             },
             new()
             {
@@ -215,8 +209,7 @@ public class SupportContextService
                 DefaultPriority = "P0",
                 EstimatedResponseTime = "Within 5 minutes",
                 RequiresBooking = true,
-                SuggestPhotoUpload = true,
-                SupportsSelfUnlock = false
+                SuggestPhotoUpload = true
             },
             new()
             {
@@ -227,8 +220,7 @@ public class SupportContextService
                 DefaultPriority = "P2",
                 EstimatedResponseTime = "Within 30 minutes",
                 RequiresBooking = true,
-                SuggestPhotoUpload = false,
-                SupportsSelfUnlock = false
+                SuggestPhotoUpload = false
             },
             new()
             {
@@ -239,8 +231,7 @@ public class SupportContextService
                 DefaultPriority = "P1",
                 EstimatedResponseTime = "Within 15 minutes",
                 RequiresBooking = false,
-                SuggestPhotoUpload = true,
-                SupportsSelfUnlock = false
+                SuggestPhotoUpload = true
             },
             new()
             {
@@ -251,18 +242,9 @@ public class SupportContextService
                 DefaultPriority = "P2",
                 EstimatedResponseTime = "Within 1 hour",
                 RequiresBooking = false,
-                SuggestPhotoUpload = false,
-                SupportsSelfUnlock = false
+                SuggestPhotoUpload = false
             }
         };
-    }
-
-    public static bool CanBookingSelfUnlock(Booking b, DateTime now)
-    {
-        var isEligibleStatus = b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Active;
-        var isWithinWindow = b.StartDate <= now.AddHours(1) && b.EndDate >= now.AddHours(-2);
-        var isIotOnline = b.ParkingSpot?.IoTDevice != null && b.ParkingSpot.IoTDevice.DeviceStatus == DeviceStatus.Online;
-        return isEligibleStatus && isWithinWindow && isIotOnline;
     }
 
     private static SupportBookingSummaryDto MapBookingSummary(Booking b, DateTime now)

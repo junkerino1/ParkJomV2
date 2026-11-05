@@ -93,6 +93,8 @@ public enum DisputeDecision
 
 public enum NotificationChannel
 {
+    InApp,
+    WebPush,
     Push,
     SMS,
     Phone,

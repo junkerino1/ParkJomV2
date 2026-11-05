@@ -6,6 +6,8 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Copilot;
+using ParkJomV2.Services.Vision;
 
 namespace ParkJomV2.Controllers
 {
@@ -16,13 +18,20 @@ namespace ParkJomV2.Controllers
         private readonly ApplicationDbContext _context;
         private readonly CurrentUserService _currentUser;
         private readonly AccessLogService _accessLogService;
+        private readonly VehicleVisionService _visionService;
         private readonly ILogger<VehicleController> _logger;
 
-        public VehicleController(ApplicationDbContext context, CurrentUserService currentUser, AccessLogService accessLogService, ILogger<VehicleController> logger)
+        public VehicleController(
+            ApplicationDbContext context,
+            CurrentUserService currentUser,
+            AccessLogService accessLogService,
+            VehicleVisionService visionService,
+            ILogger<VehicleController> logger)
         {
             _context = context;
             _currentUser = currentUser;
             _accessLogService = accessLogService;
+            _visionService = visionService;
             _logger = logger;
         }
 
@@ -432,6 +441,186 @@ namespace ParkJomV2.Controllers
                     Code = StatusCodes.Status500InternalServerError,
                     Success = false,
                     Message = "An error occurred while retrieving all vehicles."
+                });
+            }
+        }
+
+        /// <summary>
+        /// AI-3 Vision ALPR: Extracts license plate, brand, model, color, and JPJ region from a vehicle/road-tax photo.
+        /// </summary>
+        [Authorize]
+        [HttpPost("vision-scan")]
+        [ProducesResponseType(typeof(VehicleVisionScanResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<VehicleVisionScanResponse>> VisionScanVehicle(
+            [FromBody] VehicleVisionScanRequest request,
+            CancellationToken ct)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ImageBase64))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Please provide a vehicle photo to scan."
+                });
+            }
+
+            try
+            {
+                var result = await _visionService.ScanVehicleAsync(request, ct);
+                await _accessLogService.LogAsync(
+                    User,
+                    "ALPR_VisionScan",
+                    true,
+                    $"Plate={result.NumberPlate}, Make={result.Brand} {result.Model}, Color={result.Color}, Conf={result.Confidence:P0}");
+
+                return Ok(new VehicleVisionScanResponse
+                {
+                    Code = StatusCodes.Status200OK,
+                    Success = true,
+                    Message = $"Detected {result.FormattedPlate} ({result.Brand} {result.Model} · {result.Color})",
+                    Data = result
+                });
+            }
+            catch (GeminiException ex)
+            {
+                await _accessLogService.LogAsync(User, "ALPR_VisionScan", false, ex.Message);
+                return StatusCode(ex.StatusCode, new ErrorResponse
+                {
+                    Code = ex.StatusCode,
+                    Success = false,
+                    Message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error running ALPR vision scan");
+                await _accessLogService.LogAsync(User, "ALPR_VisionScan", false, ex.Message);
+                return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+                {
+                    Code = StatusCodes.Status500InternalServerError,
+                    Success = false,
+                    Message = "Unable to analyze the vehicle image right now."
+                });
+            }
+        }
+
+        /// <summary>
+        /// AI-3 Smart Bollard Check-In: Cross-verifies the physical car's license plate against the booked vehicle.
+        /// </summary>
+        [Authorize]
+        [HttpPost("verify-plate")]
+        [ProducesResponseType(typeof(BarrierPlateVerifyResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<BarrierPlateVerifyResponse>> VerifyBarrierPlate(
+            [FromBody] BarrierPlateVerifyRequest request,
+            CancellationToken ct)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ImageBase64))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Please capture or upload a vehicle photo for barrier verification."
+                });
+            }
+
+            try
+            {
+                var user = await _currentUser.GetCurrentUserAsync();
+                string? expectedPlate = request.ExpectedPlate?.Trim();
+                int? iotDeviceId = null;
+                Booking? booking = null;
+
+                if (request.BookingId.HasValue && request.BookingId.Value > 0)
+                {
+                    booking = await _context.Bookings
+                        .Include(b => b.Vehicle)
+                        .Include(b => b.ParkingSpot)
+                        .ThenInclude(p => p.IoTDevice)
+                        .FirstOrDefaultAsync(b => b.BookingId == request.BookingId.Value, ct);
+
+                    if (booking != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(expectedPlate))
+                            expectedPlate = booking.Vehicle?.NumberPlate;
+                        iotDeviceId = booking.ParkingSpot?.IoTDevice?.IoTDeviceId;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(expectedPlate) && user != null)
+                {
+                    var latestVehicle = await _context.Vehicles
+                        .AsNoTracking()
+                        .Where(v => v.UserId == user.UserId)
+                        .OrderByDescending(v => v.UpdatedAt)
+                        .FirstOrDefaultAsync(ct);
+                    expectedPlate = latestVehicle?.NumberPlate;
+                }
+
+                if (string.IsNullOrWhiteSpace(expectedPlate))
+                {
+                    return BadRequest(new ErrorResponse
+                    {
+                        Code = StatusCodes.Status400BadRequest,
+                        Success = false,
+                        Message = "No registered vehicle plate found to verify against."
+                    });
+                }
+
+                var result = await _visionService.VerifyBarrierPlateAsync(request, expectedPlate, ct);
+
+                if (result.Verified && booking != null && !booking.CheckedInAt.HasValue)
+                {
+                    booking.CheckedInAt = DateTime.UtcNow;
+                    booking.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync(ct);
+                }
+
+                await _accessLogService.LogAsync(
+                    User,
+                    "ALPR_BarrierVerify",
+                    result.Verified,
+                    $"Expected={result.ExpectedPlate}, Detected={result.DetectedPlate}, Similarity={result.SimilarityScore:P0}, Status={result.Status}",
+                    request.BookingId,
+                    iotDeviceId);
+
+                var message = result.Status switch
+                {
+                    "exact_match" => $"Exact ALPR match confirmed: {result.FormattedDetectedPlate} ({result.Brand} {result.Model}). Barrier ready to release.",
+                    "near_match" => $"Verified with OCR tolerance ({result.SimilarityScore:P0} match): {result.FormattedDetectedPlate} matches {result.ExpectedPlate}.",
+                    _ => $"Vehicle mismatch: Camera detected {result.FormattedDetectedPlate} ({result.Brand} {result.Model}), but reservation expects {result.ExpectedPlate}."
+                };
+
+                return Ok(new BarrierPlateVerifyResponse
+                {
+                    Code = StatusCodes.Status200OK,
+                    Success = true,
+                    Message = message,
+                    Data = result
+                });
+            }
+            catch (GeminiException ex)
+            {
+                await _accessLogService.LogAsync(User, "ALPR_BarrierVerify", false, ex.Message, request.BookingId);
+                return StatusCode(ex.StatusCode, new ErrorResponse
+                {
+                    Code = ex.StatusCode,
+                    Success = false,
+                    Message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying vehicle plate at barrier");
+                await _accessLogService.LogAsync(User, "ALPR_BarrierVerify", false, ex.Message, request.BookingId);
+                return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
+                {
+                    Code = StatusCodes.Status500InternalServerError,
+                    Success = false,
+                    Message = "Unable to verify vehicle plate right now."
                 });
             }
         }

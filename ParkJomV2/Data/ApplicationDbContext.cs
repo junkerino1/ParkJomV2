@@ -38,7 +38,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<Availability> Availabilities => Set<Availability>();
     public DbSet<MediaFile> MediaFiles => Set<MediaFile>();
 
-    //public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationDelivery> NotificationDeliveries => Set<NotificationDelivery>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<Review> Reviews => Set<Review>();
 
@@ -655,6 +658,77 @@ public class ApplicationDbContext : DbContext
                 UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                 UpdatedByUserId = null
             });
+        });
+
+        // =========================
+        // Notification Module
+        // =========================
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(n => n.NotificationId);
+            entity.HasIndex(n => new { n.UserId, n.ReadAt, n.CreatedAt });
+            entity.HasIndex(n => new { n.UserId, n.DedupeKey })
+                .IsUnique()
+                .HasFilter("[DedupeKey] IS NOT NULL");
+
+            entity.Property(n => n.Category)
+                .HasConversion<string>();
+
+            entity.Property(n => n.Priority)
+                .HasConversion<string>();
+
+            entity.HasOne(n => n.User)
+                .WithMany(u => u.Notifications)
+                .HasForeignKey(n => n.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NotificationDelivery>(entity =>
+        {
+            entity.HasKey(d => d.DeliveryId);
+            entity.HasIndex(d => new { d.Status, d.NextAttemptAt });
+
+            entity.Property(d => d.Channel)
+                .HasConversion<string>();
+
+            entity.Property(d => d.Status)
+                .HasConversion<string>();
+
+            entity.HasOne(d => d.Notification)
+                .WithMany(n => n.Deliveries)
+                .HasForeignKey(d => d.NotificationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NotificationPreference>(entity =>
+        {
+            entity.HasKey(p => p.PreferenceId);
+            entity.HasIndex(p => new { p.UserId, p.Category, p.Channel })
+                .IsUnique();
+
+            entity.Property(p => p.Category)
+                .HasConversion<string>();
+
+            entity.Property(p => p.Channel)
+                .HasConversion<string>();
+
+            entity.HasOne(p => p.User)
+                .WithMany(u => u.NotificationPreferences)
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PushSubscription>(entity =>
+        {
+            entity.HasKey(s => s.PushSubscriptionId);
+            entity.HasIndex(s => s.Endpoint)
+                .IsUnique();
+            entity.HasIndex(s => s.UserId);
+
+            entity.HasOne(s => s.User)
+                .WithMany(u => u.PushSubscriptions)
+                .HasForeignKey(s => s.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
