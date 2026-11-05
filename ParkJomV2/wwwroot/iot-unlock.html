@@ -40,7 +40,7 @@
   <section class="card">
     <h2><span class="step">1</span>Optional: prepare a device ID</h2>
     <p>For your current ESP32, use the UUID shown in Serial Monitor. Generate a new ID only for a new unit. A new ID must be copied into <code>configuredDeviceUuid</code> in the sketch before its first boot; an ID already saved in ESP32 memory takes priority.</p>
-    <div class="row"><input id="deviceUuid" aria-label="Device UUID" placeholder="Click Generate device ID"><button id="generateId" class="secondary">Generate device ID</button></div>
+    <div class="row"><input id="deviceUuid" aria-label="Device UUID" placeholder="ESP32 device UUID"><button id="generateId" class="secondary">Generate device ID</button></div>
     <button id="registerDevice">Register this ID with backend</button>
     <div class="hint">Registering an ID does not assign it to a parking spot. The owner must still bind the real ESP32 to the spot using the existing OTP process before a booking can unlock it.</div>
   </section>
@@ -53,19 +53,20 @@
     <input id="token" type="password" autocomplete="off" placeholder="Paste the JWT access token">
     <label for="bookingId">Booking ID</label>
     <input id="bookingId" inputmode="numeric" placeholder="For example: 125">
-    <p class="hint">The token stays in this page only and is not saved. Use the token of the renter who owns an eligible booking.</p>
+    <p class="hint">The token is kept only in this browser tab and is cleared when the tab closes. Use the token of the renter who owns an eligible booking.</p>
   </section>
 
   <section class="card">
     <h2><span class="step">3</span>Unlock bollard</h2>
-    <p>Press once to run the complete renter flow: GPS check, short-lived challenge, BLE proof, fresh GPS check, then unlock. The browser asks you to choose and approve the ESP32 the first time; later attempts can reconnect automatically when the browser remembers that device.</p>
+    <p>Press once to run the complete renter flow: GPS check, short-lived challenge, BLE proof, fresh GPS check, unlock command, then wait for the ESP32 result. The browser asks you to choose and approve the ESP32 the first time; later attempts can reconnect automatically when the browser remembers that device.</p>
     <button id="unlockNow">Unlock bollard</button>
+    <p class="hint">Each challenge expires after 30 seconds and can be used once. The button is disabled while an attempt is running. If the ESP32 reports a failed unlock, that challenge has already been used; pressing again starts a new challenge. If Bluetooth fails before a proof is received, you can press again to continue with the same challenge while it is still valid.</p>
     <p class="hint"><strong>You do not type the BLE challenge text.</strong> The page sends it to the ESP32 and submits its proof to the backend automatically. Use HTTPS or localhost and a browser that supports Web Bluetooth.</p>
   </section>
 
   <section class="card">
     <h2>Lock the bollard</h2>
-    <p>This action does not ask for GPS or BLE. The backend checks the latest sensor reading, and the ESP32 checks its live HC-SR04 reading again before moving the servo. A reading at or below 50 cm blocks locking.</p>
+    <p>This action does not ask for GPS or BLE. The API waits for the ESP32 to check three fresh HC-SR04 readings before it returns. A median reading at or below 50 cm blocks locking; too few valid readings also block it as a sensor failure.</p>
     <button id="lockNow" class="secondary">Lock bollard (no location check)</button>
   </section>
 
@@ -78,6 +79,7 @@
   const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
   const CHALLENGE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
   const PROOF_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+  const DEFAULT_DEVICE_UUID = "7d9f2c41-8a63-4b72-9e15-6c2a0f84b731";
   const $ = (id) => document.getElementById(id);
   const status = $("status");
   const events = $("events");
@@ -86,6 +88,12 @@
   let pendingUnlockBookingId = null;
 
   $("apiBase").value = window.location.origin;
+  $("deviceUuid").value = DEFAULT_DEVICE_UUID;
+  $("bookingId").value = "13";
+  try { $("token").value = sessionStorage.getItem("parkjom.iotTestToken") || ""; } catch { /* Private browsing may disable session storage. */ }
+  $("token").addEventListener("input", () => {
+    try { sessionStorage.setItem("parkjom.iotTestToken", $("token").value); } catch { /* Keep the token in the current field only. */ }
+  });
 
   function note(message, isError = false) {
     status.textContent = message;
@@ -119,7 +127,10 @@
     try { body = text ? JSON.parse(text) : {}; } catch { body = { message: text }; }
     if (!response.ok) {
       const code = body.errorCode ? `${body.errorCode}: ` : "";
-      throw new Error(`${code}${body.message || body.title || `HTTP ${response.status}`}`);
+      const error = new Error(`${code}${body.message || body.title || `HTTP ${response.status}`}`);
+      error.errorCode = body.errorCode;
+      error.httpStatus = response.status;
+      throw error;
     }
     return body;
   }
@@ -228,7 +239,7 @@
         immediateDeviceChoice = Promise.reject(error);
       }
     }
-    let proofReceived = false;
+    let unlockRequestSubmitted = false;
     try {
       connectedDevice = null;
       if (!challenge) {
@@ -243,6 +254,14 @@
         challenge = challengeResult.data;
         if (!challenge?.challengeId || !challenge?.nonce || !challenge?.deviceUuid)
           throw new Error("The backend response did not contain the unlock challenge details.");
+        const configuredDeviceUuid = $("deviceUuid").value.trim();
+        if (configuredDeviceUuid && challenge.deviceUuid.toLowerCase() !== configuredDeviceUuid.toLowerCase()) {
+          const assignedDeviceUuid = challenge.deviceUuid;
+          challenge = null;
+          pendingUnlockChallenge = null;
+          pendingUnlockBookingId = null;
+          throw new Error(`Booking ${bookingId} is assigned to device ${assignedDeviceUuid}, but this page is set to ${configuredDeviceUuid}. Check the booking's assigned bollard.`);
+        }
         pendingUnlockChallenge = challenge;
         pendingUnlockBookingId = bookingId;
       }
@@ -274,10 +293,6 @@
       note("Challenge sent. Waiting for the ESP32's cryptographic proof…");
       const bleProof = await proofPromise;
       if (!bleProof) throw new Error("The bollard returned an empty proof. Try again with a new challenge.");
-      proofReceived = true;
-      pendingUnlockChallenge = null;
-      pendingUnlockBookingId = null;
-
       note("Step 4 of 4: BLE proof received. getting a fresh GPS location and asking the backend to unlock.");
       const unlockPosition = await getCurrentPosition();
       const body = {
@@ -289,11 +304,14 @@
           rssi: null
         }
       };
+      unlockRequestSubmitted = true;
       const result = await apiRequest(`/api/iot/${encodeURIComponent(bookingId)}/unlock`, {
         method: "POST", headers: renterHeaders(), body: JSON.stringify(body)
       });
+      pendingUnlockChallenge = null;
+      pendingUnlockBookingId = null;
       const distance = result.data?.distanceMeters;
-      note(`${result.message || "Unlock request accepted."}${Number.isFinite(distance) ? ` Distance from property: ${distance} m.` : ""} The command is waiting for the ESP32 acknowledgement.`);
+      note(`${result.message || "The ESP32 confirmed the unlock."}${Number.isFinite(distance) ? ` Distance from property: ${distance} m.` : ""} Device result: ${result.data?.deviceResult || "confirmed"}; reported position: ${result.data?.bollardPosition || "unknown"}.`);
     } catch (error) {
       const message = error.name === "NotFoundError"
         ? "No bollard was selected in the Bluetooth window. Press Unlock bollard to try again."
@@ -303,14 +321,20 @@
             : error.code === 2 ? "Your location is unavailable. Turn on location services and try again."
               : error.code === 3 ? "Getting your location took too long. Try again where GPS reception is better."
                 : error.message || "Could not complete unlock request.";
-      if (challenge && !proofReceived) {
+      if (challenge && !unlockRequestSubmitted) {
         pendingUnlockChallenge = challenge;
         pendingUnlockBookingId = bookingId;
-        note(`${message} Press Unlock bollard again right away to continue with this challenge.`, true);
+        const expiry = challenge.expiresAt ? Date.parse(challenge.expiresAt) : 0;
+        const stillValid = expiry > Date.now();
+        if (!stillValid) {
+          pendingUnlockChallenge = null;
+          pendingUnlockBookingId = null;
+        }
+        note(`${message} ${stillValid ? "Press Unlock bollard again before this challenge expires to continue with it; a new challenge is not needed yet." : "This challenge expired; press again to request a new one."}`, true);
       } else {
         pendingUnlockChallenge = null;
         pendingUnlockBookingId = null;
-        note(`${message}${proofReceived ? " Start again to create a fresh challenge." : ""}`, true);
+        note(`${message}${unlockRequestSubmitted ? " This attempt may have consumed its challenge. Press Unlock bollard again to request a fresh challenge and retry." : ""}`, true);
       }
     } finally {
       button.disabled = true;
@@ -329,7 +353,7 @@
         method: "POST",
         headers: renterHeaders()
       });
-      note(`${result.message || "Lock command sent."} Waiting for the ESP32 acknowledgement.`);
+      note(`${result.message || "The ESP32 confirmed the lock."} Device result: ${result.data?.deviceResult || "confirmed"}; reported position: ${result.data?.bollardPosition || "unknown"}.`);
     } catch (error) {
       note(error.message || "Could not lock the bollard.", true);
     } finally { button.disabled = false; }

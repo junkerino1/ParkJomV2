@@ -285,17 +285,20 @@ builder.Services.AddRateLimiter(options =>
 });
 
 // Background Hosted Services
-builder.Services.AddHostedService<IncidentEscalationWorker>();
-builder.Services.AddHostedService<SupportSlaWorker>();
+builder.Services.AddScoped<IncidentEscalationJob>();
+builder.Services.AddScoped<SupportSlaJob>();
 
 // Notification Module Services
 builder.Services.AddSingleton<INotificationQueue, NotificationQueue>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<IWebPushSender, WebPushSender>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
-builder.Services.AddHostedService<NotificationDispatchWorker>();
-builder.Services.AddHostedService<BookingReminderWorker>();
-builder.Services.AddHostedService<NotificationCleanupWorker>();
+builder.Services.AddSingleton<NotificationDispatchWorker>();
+builder.Services.AddHostedService(services => services.GetRequiredService<NotificationDispatchWorker>());
+builder.Services.AddScoped<BookingReminderJob>();
+builder.Services.AddScoped<OverstayMonitoringJob>();
+builder.Services.AddScoped<NotificationCleanupJob>();
+builder.Services.AddScoped<CronMaintenanceJob>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -339,6 +342,14 @@ builder.Services.AddSwaggerGen(options =>
 
     // Avoid SchemaId conflicts across controllers with similarly named DTOs
     options.CustomSchemaIds(type => type.FullName?.Replace("+", ".") ?? type.Name);
+
+    var xmlDocumentation = Path.Combine(
+        AppContext.BaseDirectory,
+        $"{typeof(Program).Assembly.GetName().Name}.xml");
+    if (File.Exists(xmlDocumentation))
+    {
+        options.IncludeXmlComments(xmlDocumentation, includeControllerXmlComments: true);
+    }
 
     // Automatically categorize all 42 controllers into 9 core business modules (English only)
     options.TagActionsBy(api =>

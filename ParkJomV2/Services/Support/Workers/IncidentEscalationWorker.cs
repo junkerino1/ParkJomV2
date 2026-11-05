@@ -5,45 +5,37 @@ using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Services.Support.Workers;
 
-public class IncidentEscalationWorker : BackgroundService
+public class IncidentEscalationJob
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<IncidentEscalationWorker> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<IncidentEscalationJob> _logger;
 
-    public IncidentEscalationWorker(IServiceProvider serviceProvider, ILogger<IncidentEscalationWorker> logger)
+    public IncidentEscalationJob(IServiceScopeFactory scopeFactory, ILogger<IncidentEscalationJob> logger)
     {
-        _serviceProvider = serviceProvider;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public async Task<int> RunOnceAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("IncidentEscalationWorker started.");
+        using var scope = _scopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var auditService = scope.ServiceProvider.GetRequiredService<SupportAuditService>();
+        var realtimeNotifier = scope.ServiceProvider.GetRequiredService<ISupportRealtimeNotifier>();
+        var now = DateTime.UtcNow;
+        var overdueIncidents = await context.OperationalIncidents
+            .Where(i => (i.Status == IncidentStatus.Open || i.Status == IncidentStatus.Escalated)
+                && i.NextEscalationAt.HasValue
+                && i.NextEscalationAt.Value <= now)
+            .ToListAsync(cancellationToken);
 
-        while (!stoppingToken.IsCancellationRequested)
+        if (overdueIncidents.Count > 0)
         {
-            try
+            var policy = await context.SupportOnCallPolicies.FirstOrDefaultAsync(cancellationToken) ?? new SupportOnCallPolicy();
+            var schedule = await context.SupportOnCallSchedules.FirstOrDefaultAsync(s => s.IsActive, cancellationToken);
+
+            foreach (var incident in overdueIncidents)
             {
-                using var scope = _serviceProvider.CreateScope();
-                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var auditService = scope.ServiceProvider.GetRequiredService<SupportAuditService>();
-                var realtimeNotifier = scope.ServiceProvider.GetRequiredService<ISupportRealtimeNotifier>();
-
-                var now = DateTime.UtcNow;
-
-                var overdueIncidents = await context.OperationalIncidents
-                    .Where(i => (i.Status == IncidentStatus.Open || i.Status == IncidentStatus.Escalated)
-                        && i.NextEscalationAt.HasValue
-                        && i.NextEscalationAt.Value <= now)
-                    .ToListAsync(stoppingToken);
-
-                if (overdueIncidents.Count > 0)
-                {
-                    var policy = await context.SupportOnCallPolicies.FirstOrDefaultAsync(stoppingToken) ?? new SupportOnCallPolicy();
-                    var schedule = await context.SupportOnCallSchedules.FirstOrDefaultAsync(s => s.IsActive, stoppingToken);
-
-                    foreach (var incident in overdueIncidents)
-                    {
                         var oldLevel = incident.EscalationLevel;
                         var nextLevel = oldLevel + 1;
                         incident.EscalationLevel = nextLevel;
@@ -86,22 +78,16 @@ public class IncidentEscalationWorker : BackgroundService
                         };
                         context.SupportNotificationAttempts.Add(attempt);
 
-                        await auditService.LogAsync("Incident", incident.IncidentId, incident.IncidentReference, "Escalated", null, "System", $"L{oldLevel}", $"L{nextLevel}", $"Escalated to {targetRoleName} due to response timeout");
-                        await realtimeNotifier.BroadcastEventAsync("incident.updated", new { incidentId = incident.IncidentId, status = "Escalated", escalationLevel = nextLevel });
+                await auditService.LogAsync("Incident", incident.IncidentId, incident.IncidentReference, "Escalated", null, "System", $"L{oldLevel}", $"L{nextLevel}", $"Escalated to {targetRoleName} due to response timeout");
+                await realtimeNotifier.BroadcastEventAsync("incident.updated", new { incidentId = incident.IncidentId, status = "Escalated", escalationLevel = nextLevel });
 
-                        _logger.LogWarning("Escalated Incident {Reference} (Priority {Priority}) to Level {Level} ({Role})",
-                            incident.IncidentReference, incident.Priority, nextLevel, targetRoleName);
-                    }
-
-                    await context.SaveChangesAsync(stoppingToken);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error occurred in IncidentEscalationWorker.");
+                _logger.LogWarning("Escalated Incident {Reference} (Priority {Priority}) to Level {Level} ({Role})",
+                    incident.IncidentReference, incident.Priority, nextLevel, targetRoleName);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            await context.SaveChangesAsync(cancellationToken);
         }
+
+        return overdueIncidents.Count;
     }
 }

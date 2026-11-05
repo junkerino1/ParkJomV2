@@ -5,48 +5,21 @@ using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Services.Notifications.Workers;
 
-public class BookingReminderWorker : BackgroundService
+public class BookingReminderJob
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<BookingReminderWorker> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public BookingReminderWorker(
-        IServiceProvider serviceProvider,
-        ILogger<BookingReminderWorker> logger)
+    public BookingReminderJob(IServiceScopeFactory scopeFactory)
     {
-        _serviceProvider = serviceProvider;
-        _logger = logger;
+        _scopeFactory = scopeFactory;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        _logger.LogInformation("BookingReminderWorker started.");
-
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await timer.WaitForNextTickAsync(stoppingToken);
-                await CheckBookingRemindersAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error occurred during booking reminder evaluation.");
-            }
-        }
-
-        _logger.LogInformation("BookingReminderWorker stopped.");
-    }
+    public Task RunOnceAsync(CancellationToken cancellationToken)
+        => CheckBookingRemindersAsync(cancellationToken);
 
     private async Task CheckBookingRemindersAsync(CancellationToken ct)
     {
-        using var scope = _serviceProvider.CreateScope();
+        using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
 

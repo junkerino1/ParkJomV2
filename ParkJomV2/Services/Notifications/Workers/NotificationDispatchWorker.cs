@@ -34,9 +34,6 @@ public class NotificationDispatchWorker : BackgroundService
     {
         _logger.LogInformation("NotificationDispatchWorker started.");
 
-        // Start periodic sweep task for retries and missed deliveries
-        _ = RunPeriodicSweepAsync(stoppingToken);
-
         // Process real-time queue
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -276,44 +273,24 @@ public class NotificationDispatchWorker : BackgroundService
         await context.SaveChangesAsync(ct);
     }
 
-    private async Task RunPeriodicSweepAsync(CancellationToken ct)
+    public async Task<int> RunRetrySweepOnceAsync(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        using var scope = _serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var now = DateTime.UtcNow;
+        var pendingDeliveries = await context.NotificationDeliveries
+            .Where(d => d.Status == DeliveryStatus.Pending &&
+                        (d.NextAttemptAt == null || d.NextAttemptAt <= now))
+            .Select(d => d.NotificationId)
+            .Distinct()
+            .Take(50)
+            .ToListAsync(ct);
 
-        while (!ct.IsCancellationRequested)
+        foreach (var id in pendingDeliveries)
         {
-            try
-            {
-                await timer.WaitForNextTickAsync(ct);
-
-                using var scope = _serviceProvider.CreateScope();
-                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-                var now = DateTime.UtcNow;
-
-                // Pick up pending InApp or pending Email deliveries ready for retry
-                var pendingDeliveries = await context.NotificationDeliveries
-                    .Where(d => d.Status == DeliveryStatus.Pending &&
-                               (d.NextAttemptAt == null || d.NextAttemptAt <= now))
-                    .Select(d => d.NotificationId)
-                    .Distinct()
-                    .Take(50)
-                    .ToListAsync(ct);
-
-                foreach (var id in pendingDeliveries)
-                {
-                    await ProcessNotificationAsync(id, ct);
-                }
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error occurred during periodic notification sweep.");
-            }
+            await ProcessNotificationAsync(id, ct);
         }
+        return pendingDeliveries.Count;
     }
 
     private static NotificationDto MapToDto(Notification n)

@@ -45,6 +45,29 @@ public sealed class IoTCommandController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>Generates a short-lived BLE challenge for a renter's booking.</summary>
+    /// <remarks>
+    /// The renter must own a confirmed or active booking, have an assigned device, and request access during the booking's Malaysia-time availability window. GPS is checked here and again when unlocking. Any pending overstay debt is automatically settled from the wallet if funds are sufficient; otherwise this endpoint returns PENALTY_DUE. The backend sends the nonce to the assigned ESP32 over MQTT; it never returns the device secret.
+    ///
+    /// Example request:
+    /// <code>{"location":{"latitude":3.0738,"longitude":101.5183,"accuracyMeters":8.5,"timestamp":"2026-11-03T08:30:10Z"}}</code>
+    ///
+    /// Example success data contains challengeId, nonce, expiresAt, deviceUuid, and bleServiceUuid.
+    /// </remarks>
+    /// <response code="200">Challenge generated; the client can connect to the ESP32 and obtain a BLE proof.</response>
+    /// <response code="401">No authenticated renter.</response>
+    /// <response code="404">Booking not found or not owned by the renter.</response>
+    /// <response code="409">Booking is invalid, outside its date/time window, or has no assigned device.</response>
+    /// <response code="422">GPS accuracy or timestamp is invalid.</response>
+    /// <response code="402">The renter has unpaid overstay penalties and insufficient wallet balance.</response>
+    /// <response code="503">The backend could not activate BLE on the assigned ESP32.</response>
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(StatusCodes.Status402PaymentRequired)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [HttpPost("{bookingId:int}/unlock/challenge")]
     [HttpPost("~/api/bookings/{bookingId:int}/unlock/challenge")]
     [HttpPost("~/api/iot/{bookingId:int}/unlock/challenge")]
@@ -81,6 +104,8 @@ public sealed class IoTCommandController : ControllerBase
         }
 
         device = booking.ParkingSpot.IoTDevice!;
+        var penaltySettlementError = await SettlePendingOverstayPenaltiesAsync(booking, device, cancellationToken);
+        if (penaltySettlementError is not null) return penaltySettlementError;
         await LogDeviceActionAsync(device, "unlock_challenge_location", "verified", booking.BookingId,
             $"distanceMeters={distanceMeters!.Value.ToString("F1", CultureInfo.InvariantCulture)}");
         var challenge = _challenges.Create(booking.BookingId, userId.Value, device.IoTDeviceId, device.Esp32Serial);
@@ -122,12 +147,54 @@ public sealed class IoTCommandController : ControllerBase
         });
     }
 
+    /// <summary>Requests a physical bollard lock for the booking.</summary>
+    /// <remarks>
+    /// The backend waits for the ESP32 acknowledgement before returning. The ESP32 reads the HC-SR04 immediately before moving the servo; a nearby obstacle or failed sensor reading is returned as a lock failure. This endpoint does not use cached telemetry as a safety decision. Locking remains available outside the booking access hours so a renter can secure the spot.
+    /// </remarks>
+    /// <response code="200">ESP32 confirmed that the bollard was locked.</response>
+    /// <response code="409">Booking is not eligible, another identical command is in progress, or the ESP32 blocked locking because it detected an obstacle.</response>
+    /// <response code="504">The command was published but no device acknowledgement arrived before timeout.</response>
+    /// <response code="404">Booking not found or not owned by the renter.</response>
+    /// <response code="503">MQTT is unavailable or the distance sensor failed.</response>
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [HttpPost("~/api/iot/{bookingId:int}/lock")]
     public Task<IActionResult> LockBooking(
         int bookingId,
         CancellationToken cancellationToken)
         => SendRenterCommandAsync(bookingId, "LOCK", new BollardCommandRequest(), cancellationToken);
 
+    /// <summary>Verifies GPS and BLE proof, then requests a bollard unlock.</summary>
+    /// <remarks>
+    /// Call the challenge endpoint first and obtain the HMAC proof from the assigned ESP32's BLE characteristic. Unlock is allowed only during the booking's Malaysia-time date, weekday, and time window. The backend validates booking ownership, GPS, challenge expiry and single use, BLE device UUID, and the cryptographic proof before publishing MQTT.
+    ///
+    /// Example request:
+    /// <code>{"challengeId":"CHL-example","location":{"latitude":3.0738,"longitude":101.5183,"accuracyMeters":8.5,"timestamp":"2026-11-03T08:30:10Z"},"bleVerification":{"deviceUuid":"7d9f2c41-8a63-4b72-9e15-6c2a0f84b731","challengeResponse":"BASE64_HMAC_PROOF","rssi":-58}}</code>
+    ///
+    /// The backend waits for the matching ESP32 acknowledgement and returns only after the device confirms success or reports failure. If no acknowledgement arrives before timeout, execution status is unknown because the command may still have reached the bollard.
+    /// </remarks>
+    /// <response code="200">ESP32 confirmed that the bollard was unlocked.</response>
+    /// <response code="409">Booking or challenge is invalid, another identical command is in progress, or the ESP32 blocked the command because it detected an obstacle.</response>
+    /// <response code="403">GPS is out of range or BLE proof is invalid.</response>
+    /// <response code="402">The renter has unpaid overstay penalties and insufficient wallet balance.</response>
+    /// <response code="410">Challenge expired.</response>
+    /// <response code="422">GPS accuracy or timestamp is invalid.</response>
+    /// <response code="502">The device reported an execution failure.</response>
+    /// <response code="503">MQTT is unavailable.</response>
+    /// <response code="504">The command was published but no device acknowledgement arrived before timeout.</response>
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status402PaymentRequired)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status410Gone)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     [HttpPost("~/api/iot/{bookingId:int}/unlock")]
     public Task<IActionResult> UnlockBooking(
         int bookingId,
@@ -135,11 +202,33 @@ public sealed class IoTCommandController : ControllerBase
         CancellationToken cancellationToken)
         => SendRenterCommandAsync(bookingId, "UNLOCK", request, cancellationToken);
 
+    /// <summary>Requests a bollard lock as an administrator.</summary>
+    /// <remarks>The backend waits for the ESP32 acknowledgement. The ESP32 performs its live HC-SR04 obstacle check before moving the servo.</remarks>
+    /// <response code="200">ESP32 confirmed that the bollard was locked.</response>
+    /// <response code="409">No assigned device is available, another identical command is in progress, or the ESP32 blocked locking because it detected an obstacle.</response>
+    /// <response code="504">The command was published but no device acknowledgement arrived before timeout.</response>
+    /// <response code="503">MQTT is unavailable or the distance sensor failed.</response>
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [Authorize(Policy = "AdminOnly")]
     [HttpPost("~/api/admin/iot/{bookingId:int}/lock")]
     public Task<IActionResult> AdminLockBooking(int bookingId, CancellationToken cancellationToken)
         => SendAdminCommandAsync(bookingId, "LOCK", cancellationToken);
 
+    /// <summary>Requests a bollard unlock as an administrator.</summary>
+    /// <remarks>Admin unlock bypasses renter, GPS, BLE, and booking-window checks, but waits for the ESP32 acknowledgement before returning. Use only for operational recovery.</remarks>
+    /// <response code="200">ESP32 confirmed that the bollard was unlocked.</response>
+    /// <response code="409">No assigned device is available, another identical command is in progress, or the ESP32 rejected the command due to an obstacle.</response>
+    /// <response code="504">The command was published but no device acknowledgement arrived before timeout.</response>
+    /// <response code="503">MQTT is unavailable or the distance sensor failed.</response>
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [Authorize(Policy = "AdminOnly")]
     [HttpPost("~/api/admin/iot/{bookingId:int}/unlock")]
     public Task<IActionResult> AdminUnlockBooking(int bookingId, CancellationToken cancellationToken)
@@ -167,17 +256,6 @@ public sealed class IoTCommandController : ControllerBase
             return eligibilityError;
         }
         device = booking.ParkingSpot.IoTDevice!;
-
-        if (command == "LOCK")
-        {
-            var lockSafetyError = await ValidateLockClearanceAsync(device.IoTDeviceId, cancellationToken);
-            if (lockSafetyError is not null)
-            {
-                await LogDeviceActionAsync(device, "manual_lock_sensor_check", "rejected", booking.BookingId, DescribeResult(lockSafetyError));
-                return lockSafetyError;
-            }
-            await LogDeviceActionAsync(device, "manual_lock_sensor_check", "passed", booking.BookingId, "Latest HC-SR04 reading was greater than 50 cm.");
-        }
 
         double? distanceMeters = null;
         UnlockChallenge? verifiedChallenge = null;
@@ -232,6 +310,9 @@ public sealed class IoTCommandController : ControllerBase
             }
             await LogDeviceActionAsync(device, "ble_proof_verification", "passed", booking.BookingId, $"challengeId={challenge.ChallengeId}");
 
+            var penaltySettlementError = await SettlePendingOverstayPenaltiesAsync(booking, device, cancellationToken);
+            if (penaltySettlementError is not null) return penaltySettlementError;
+
             // The final atomic remove is the single-use gate for concurrent submissions.
             if (!_challenges.TryConsume(challenge.ChallengeId, DateTimeOffset.UtcNow))
             {
@@ -246,43 +327,35 @@ public sealed class IoTCommandController : ControllerBase
             await LogDeviceActionAsync(device, "unlock_challenge_consumption", "consumed", booking.BookingId, $"challengeId={challenge.ChallengeId}");
         }
 
+        MqttCommandResult commandResult;
         try
         {
-            await _mqtt.PublishCommandAsync(device.Esp32Serial, $"{command}|{booking.BookingId}", cancellationToken);
-            await LogDeviceActionAsync(device, $"mqtt_{command.ToLowerInvariant()}_command", "published", booking.BookingId,
-                command == "UNLOCK"
-                    ? $"GPS and BLE verified; distanceMeters={distanceMeters!.Value.ToString("F1", CultureInfo.InvariantCulture)}; challengeId={verifiedChallenge!.ChallengeId}"
-                    : $"deviceUuid={device.Esp32Serial}");
-            await _accessLogs.LogAsync(userId.Value, $"Bollard {command} command", true,
-                command == "UNLOCK"
-                    ? $"GPS and BLE verified ({distanceMeters!.Value.ToString("F1", CultureInfo.InvariantCulture)} m); MQTT command published. Challenge {verifiedChallenge!.ChallengeId}."
-                    : $"Published for device {device.Esp32Serial}",
-                booking.BookingId, device.IoTDeviceId);
+            commandResult = await _mqtt.PublishCommandAndWaitForAckAsync(
+                device.Esp32Serial, booking.BookingId, command, cancellationToken);
         }
         catch (InvalidOperationException)
         {
             await LogDeviceActionAsync(device, $"mqtt_{command.ToLowerInvariant()}_command", "failed", booking.BookingId, "MQTT unavailable.");
+            await _accessLogs.LogAsync(userId.Value, $"Bollard {command} command", false,
+                "MQTT unavailable.", booking.BookingId, device.IoTDeviceId);
             return StatusCode(StatusCodes.Status503ServiceUnavailable,
                 new { success = false, errorCode = "MQTT_UNAVAILABLE", message = "The device control service is temporarily unavailable." });
         }
 
-        return Accepted(new
-        {
-            success = true,
-            message = command == "UNLOCK" ? "Location verified. Bollard unlock command sent." : "Bollard lock command sent.",
-            data = command == "UNLOCK"
-                ? (object)new
-                {
-                    bookingId = booking.BookingId,
-                    deviceUuid = device.Esp32Serial,
-                    locationVerified = true,
-                    bleVerified = true,
-                    distanceMeters = Math.Round(distanceMeters!.Value, 1),
-                    unlockCommandSent = true,
-                    executionStatus = "awaiting_device_ack"
-                }
-                : new { bookingId = booking.BookingId, deviceUuid = device.Esp32Serial, command, executionStatus = "awaiting_device_ack" }
-        });
+        var commandSucceeded = IsSuccessfulDeviceAck(commandResult, command);
+        var resultDetails = commandResult.Message ?? commandResult.ErrorCode ?? commandResult.Result ?? commandResult.WaitStatus.ToString();
+        await LogDeviceActionAsync(device, $"mqtt_{command.ToLowerInvariant()}_command",
+            commandSucceeded ? "acknowledged_success" : commandResult.WaitStatus == MqttCommandWaitStatus.TimedOut ? "ack_timeout" : "acknowledged_failure",
+            booking.BookingId,
+            $"result={commandResult.Result ?? "none"}; errorCode={commandResult.ErrorCode ?? "none"}; message={resultDetails}; distanceCm={commandResult.DistanceCm?.ToString("F1", CultureInfo.InvariantCulture) ?? "unknown"}; challengeId={verifiedChallenge?.ChallengeId ?? "none"}");
+        await _accessLogs.LogAsync(userId.Value, $"Bollard {command} command", commandSucceeded,
+            command == "UNLOCK"
+                ? $"GPS and BLE verified ({distanceMeters!.Value.ToString("F1", CultureInfo.InvariantCulture)} m); device result: {resultDetails}. Challenge {verifiedChallenge!.ChallengeId}."
+                : $"Device result: {resultDetails}",
+            booking.BookingId, device.IoTDeviceId);
+
+        return CreateDeviceCommandResponse(commandResult, command, booking.BookingId, device.Esp32Serial,
+            command == "UNLOCK", distanceMeters, isAdmin: false);
     }
 
     private async Task<IActionResult> SendAdminCommandAsync(
@@ -302,28 +375,13 @@ public sealed class IoTCommandController : ControllerBase
         await LogDeviceActionAsync(device, $"admin_{command.ToLowerInvariant()}_requested", "received", booking.BookingId,
             $"adminUserId={adminId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; validation override requested.");
 
-        // Admin commands bypass renter eligibility and GPS/BLE checks, but the physical lock
-        // obstacle interlock remains mandatory for every LOCK request.
-        if (command == "LOCK")
-        {
-            var lockSafetyError = await ValidateLockClearanceAsync(device.IoTDeviceId, cancellationToken);
-            if (lockSafetyError is not null)
-            {
-                await LogDeviceActionAsync(device, "admin_lock_sensor_check", "rejected", booking.BookingId,
-                    DescribeResult(lockSafetyError));
-                return lockSafetyError;
-            }
-            await LogDeviceActionAsync(device, "admin_lock_sensor_check", "passed", booking.BookingId,
-                "Latest HC-SR04 reading was greater than 50 cm.");
-        }
+        // The ESP32 performs the live HC-SR04 obstacle interlock immediately before moving the servo.
 
+        MqttCommandResult commandResult;
         try
         {
-            await _mqtt.PublishCommandAsync(device.Esp32Serial, $"{command}|{booking.BookingId}", cancellationToken);
-            await LogDeviceActionAsync(device, $"admin_mqtt_{command.ToLowerInvariant()}_command", "published", booking.BookingId,
-                $"adminUserId={adminId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; renter eligibility and GPS/BLE checks bypassed.");
-            await _accessLogs.LogAsync(adminId, $"Admin bollard {command} command", true,
-                $"Published for device {device.Esp32Serial}; validation override used.", booking.BookingId, device.IoTDeviceId);
+            commandResult = await _mqtt.PublishCommandAndWaitForAckAsync(
+                device.Esp32Serial, booking.BookingId, command, cancellationToken);
         }
         catch (InvalidOperationException)
         {
@@ -335,19 +393,17 @@ public sealed class IoTCommandController : ControllerBase
                 new { success = false, errorCode = "MQTT_UNAVAILABLE", message = "The device control service is temporarily unavailable." });
         }
 
-        return Accepted(new
-        {
-            success = true,
-            message = $"Admin bollard {command.ToLowerInvariant()} command sent.",
-            data = new
-            {
-                bookingId = booking.BookingId,
-                deviceUuid = device.Esp32Serial,
-                command,
-                validationOverride = true,
-                executionStatus = "awaiting_device_ack"
-            }
-        });
+        var commandSucceeded = IsSuccessfulDeviceAck(commandResult, command);
+        var resultDetails = commandResult.Message ?? commandResult.ErrorCode ?? commandResult.Result ?? commandResult.WaitStatus.ToString();
+        await LogDeviceActionAsync(device, $"admin_mqtt_{command.ToLowerInvariant()}_command",
+            commandSucceeded ? "acknowledged_success" : commandResult.WaitStatus == MqttCommandWaitStatus.TimedOut ? "ack_timeout" : "acknowledged_failure",
+            booking.BookingId,
+            $"adminUserId={adminId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; validationOverride=true; result={commandResult.Result ?? "none"}; errorCode={commandResult.ErrorCode ?? "none"}; message={resultDetails}");
+        await _accessLogs.LogAsync(adminId, $"Admin bollard {command} command", commandSucceeded,
+            $"Device result: {resultDetails}; validation override used.", booking.BookingId, device.IoTDeviceId);
+
+        return CreateDeviceCommandResponse(commandResult, command, booking.BookingId, device.Esp32Serial,
+            locationVerified: false, distanceMeters: null, isAdmin: true);
     }
 
     private Task<Booking?> LoadOwnedBookingAsync(int bookingId, int userId, CancellationToken cancellationToken)
@@ -356,13 +412,201 @@ public sealed class IoTCommandController : ControllerBase
                 .ThenInclude(p => p.Property)
             .Include(b => b.ParkingSpot)
                 .ThenInclude(p => p.IoTDevice)
+            .Include(b => b.ParkingSpot)
+                .ThenInclude(p => p.ParkingAvailabilities)
             .FirstOrDefaultAsync(b => b.BookingId == bookingId && b.RenterId == userId, cancellationToken);
+
+    private static bool IsSuccessfulDeviceAck(MqttCommandResult result, string command)
+    {
+        var expectedPosition = command == "UNLOCK" ? "UNLOCKED" : "LOCKED";
+        return result.WaitStatus == MqttCommandWaitStatus.Acknowledged &&
+               string.Equals(result.Result, "SUCCESS", StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(result.BollardPosition, expectedPosition, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private IActionResult CreateDeviceCommandResponse(
+        MqttCommandResult result,
+        string command,
+        int bookingId,
+        string deviceUuid,
+        bool locationVerified,
+        double? distanceMeters,
+        bool isAdmin)
+    {
+        if (result.WaitStatus == MqttCommandWaitStatus.TimedOut)
+        {
+            return StatusCode(StatusCodes.Status504GatewayTimeout, new
+            {
+                success = false,
+                errorCode = "DEVICE_ACK_TIMEOUT",
+                message = $"No response was received from the bollard for {command}. Its execution status is unknown; the command may still have reached the device.",
+                data = new { bookingId, deviceUuid, command, executionStatus = "unknown" }
+            });
+        }
+
+        if (result.WaitStatus == MqttCommandWaitStatus.Busy)
+        {
+            return Conflict(new
+            {
+                success = false,
+                errorCode = "DEVICE_COMMAND_IN_PROGRESS",
+                message = result.Message ?? "A matching command is already awaiting the bollard response.",
+                data = new { bookingId, deviceUuid, command, executionStatus = "in_progress" }
+            });
+        }
+
+        if (IsSuccessfulDeviceAck(result, command))
+        {
+            return Ok(new
+            {
+                success = true,
+                message = $"Bollard {command.ToLowerInvariant()} confirmed by the device.",
+                data = new
+                {
+                    bookingId,
+                    deviceUuid,
+                    command,
+                    commandId = result.CommandId,
+                    locationVerified = locationVerified ? true : (bool?)null,
+                    bleVerified = locationVerified ? true : (bool?)null,
+                    distanceMeters = locationVerified ? Math.Round(distanceMeters ?? 0, 1) : (double?)null,
+                    validationOverride = isAdmin ? true : (bool?)null,
+                    executionStatus = "confirmed_success",
+                    deviceResult = result.Result,
+                    deviceMessage = result.Message,
+                    distanceCm = result.DistanceCm,
+                    bollardPosition = result.BollardPosition
+                }
+            });
+        }
+
+        var resultCode = result.Result?.Trim().ToUpperInvariant();
+        var expectedPosition = command == "UNLOCK" ? "UNLOCKED" : "LOCKED";
+        var deviceMessage = result.Message ?? result.ErrorCode ?? (resultCode switch
+        {
+            "OBSTACLE_DETECTED" => "Obstacle detected within 50 cm. The servo was not moved.",
+            "SENSOR_READING_UNAVAILABLE" => "The HC-SR04 could not read a distance, so the servo was not moved.",
+            "INVALID_COMMAND" => "The ESP32 rejected the command as invalid.",
+            "SUCCESS" => $"The device reported position '{result.BollardPosition ?? "unknown"}'; expected '{expectedPosition}'.",
+            _ => result.Result ?? "The bollard reported an unspecified failure."
+        });
+        var obstacleDetected = string.Equals(resultCode, "OBSTACLE_DETECTED", StringComparison.OrdinalIgnoreCase) ||
+                               $"{result.ErrorCode} {deviceMessage}".Contains("obstacle", StringComparison.OrdinalIgnoreCase);
+        var sensorFailure = string.Equals(resultCode, "SENSOR_READING_UNAVAILABLE", StringComparison.OrdinalIgnoreCase) ||
+                            $"{result.ErrorCode} {deviceMessage}".Contains("sensor", StringComparison.OrdinalIgnoreCase) ||
+                            $"{result.ErrorCode} {deviceMessage}".Contains("hc-sr04", StringComparison.OrdinalIgnoreCase);
+        var errorCode = obstacleDetected ? "OBSTACLE_DETECTED" : sensorFailure ? "DISTANCE_SENSOR_FAILED" : "DEVICE_COMMAND_FAILED";
+        var httpStatus = obstacleDetected ? StatusCodes.Status409Conflict : sensorFailure
+            ? StatusCodes.Status503ServiceUnavailable
+            : StatusCodes.Status502BadGateway;
+        return StatusCode(httpStatus, new
+        {
+            success = false,
+            errorCode,
+            message = $"Bollard {command.ToLowerInvariant()} failed: {deviceMessage}",
+            data = new
+            {
+                bookingId,
+                deviceUuid,
+                command,
+                commandId = result.CommandId,
+                executionStatus = "confirmed_failure",
+                deviceResult = result.Result,
+                deviceErrorCode = result.ErrorCode,
+                deviceMessage,
+                distanceCm = result.DistanceCm,
+                bollardPosition = result.BollardPosition,
+                validationOverride = isAdmin ? true : (bool?)null
+            }
+        });
+    }
 
     private Task<Booking?> LoadBookingWithDeviceAsync(int bookingId, CancellationToken cancellationToken)
         => _db.Bookings
             .Include(b => b.ParkingSpot)
                 .ThenInclude(p => p.IoTDevice)
             .FirstOrDefaultAsync(b => b.BookingId == bookingId, cancellationToken);
+
+    private async Task<IActionResult?> SettlePendingOverstayPenaltiesAsync(
+        Booking booking,
+        IoTDevice device,
+        CancellationToken cancellationToken)
+    {
+        await using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var renterWallet = await _db.Wallets
+            // WalletStatus is configured as a string in ApplicationDbContext.
+            .FromSqlInterpolated($"SELECT * FROM [Wallets] WITH (UPDLOCK, HOLDLOCK) WHERE [UserId] = {booking.RenterId} AND [Status] = {nameof(WalletStatus.Active)}")
+            .FirstOrDefaultAsync(cancellationToken);
+        var pending = await _db.Transactions
+            .Where(t => t.BookingId != null && t.TransactionType == TransactionType.OverstayPenalty &&
+                        t.TransactionStatus == TransactionStatus.Pending && t.Amount < 0 &&
+                        t.Booking!.RenterId == booking.RenterId)
+            .Include(t => t.Booking!)
+                .ThenInclude(b => b.ParkingSpot)
+            .OrderBy(t => t.CreatedAt)
+            .ToListAsync(cancellationToken);
+        if (pending.Count == 0)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+        var due = pending.Sum(t => -t.Amount);
+        if (renterWallet is null || renterWallet.Balance < due)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            await LogDeviceActionAsync(device, "overstay_penalty_settlement", "insufficient_balance", booking.BookingId,
+                $"due=RM{due:F2}; balance=RM{renterWallet?.Balance ?? 0:F2}");
+            return new ObjectResult(new
+            {
+                success = false,
+                errorCode = "PENALTY_DUE",
+                message = "Unpaid overstay penalties must be paid before the next bollard unlock. Please top up your wallet.",
+                data = new { dueAmount = due, walletBalance = renterWallet?.Balance ?? 0m }
+            }) { StatusCode = StatusCodes.Status402PaymentRequired };
+        }
+
+        var ownerIds = pending.Select(t => t.Booking!.ParkingSpot.OwnerId).Distinct().ToList();
+        var ownerWallets = await _db.Wallets
+            .Where(w => ownerIds.Contains(w.UserId) && w.Status == WalletStatus.Active)
+            .ToDictionaryAsync(w => w.UserId, cancellationToken);
+        if (pending.Any(t => !ownerWallets.ContainsKey(t.Booking!.ParkingSpot.OwnerId)))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Error(StatusCodes.Status503ServiceUnavailable, "PENALTY_SETTLEMENT_UNAVAILABLE",
+                "The penalty payment cannot be settled right now. Please try again later.");
+        }
+
+        var now = DateTime.UtcNow;
+        renterWallet.Balance -= due;
+        renterWallet.UpdatedAt = now;
+        foreach (var item in pending)
+        {
+            var fee = -item.Amount;
+            var ownerWallet = ownerWallets[item.Booking!.ParkingSpot.OwnerId];
+            ownerWallet.Balance += fee;
+            ownerWallet.UpdatedAt = now;
+            item.TransactionStatus = TransactionStatus.Completed;
+            item.UpdatedAt = now;
+            _db.Transactions.Add(new Transaction
+            {
+                WalletId = ownerWallet.WalletId,
+                BookingId = item.BookingId,
+                TransactionType = TransactionType.OverstayPenalty,
+                Amount = fee,
+                PaymentMethod = PaymentMethod.Wallet,
+                TransactionStatus = TransactionStatus.Completed,
+                ReferenceNumber = $"SETTLE-{item.ReferenceNumber}",
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+        }
+
+        IoTDeviceLogWriter.Add(_db, device, "overstay_penalty_settlement", "completed", now, booking.BookingId,
+            $"settledAmount=RM{due:F2}; pendingTransactions={pending.Count}");
+        await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return null;
+    }
 
     private async Task LogDeviceActionAsync(
         IoTDevice? device,
@@ -390,54 +634,6 @@ public sealed class IoTCommandController : ControllerBase
             ? JsonSerializer.Serialize(objectResult.Value)
             : result.GetType().Name;
 
-    private async Task<IActionResult?> ValidateLockClearanceAsync(int deviceId, CancellationToken cancellationToken)
-    {
-        var latest = await _db.IoTStatusLogs
-            .AsNoTracking()
-            .Where(log => log.IoTDeviceId == deviceId && log.Topic != null && log.Topic.EndsWith("/telemetry"))
-            .OrderByDescending(log => log.LoggedAt)
-            .Select(log => new { log.Message, log.LoggedAt })
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var readingAge = latest is null ? TimeSpan.MaxValue : DateTime.UtcNow - latest.LoggedAt;
-        if (latest is null || readingAge < TimeSpan.Zero || readingAge > TimeSpan.FromMinutes(6) || string.IsNullOrWhiteSpace(latest.Message))
-            return Error(StatusCodes.Status409Conflict, "SENSOR_READING_UNAVAILABLE",
-                "A fresh HC-SR04 reading is not available. The bollard was not locked.");
-
-        try
-        {
-            using var document = JsonDocument.Parse(latest.Message);
-            if (!document.RootElement.TryGetProperty("distanceCm", out var distanceElement) ||
-                distanceElement.ValueKind != JsonValueKind.Number || !distanceElement.TryGetDouble(out var distanceCm) ||
-                !double.IsFinite(distanceCm))
-            {
-                return Error(StatusCodes.Status409Conflict, "SENSOR_READING_UNAVAILABLE",
-                    "The HC-SR04 could not confirm a clear path. The bollard was not locked.");
-            }
-
-            if (distanceCm <= 50)
-            {
-                return new ObjectResult(new
-                {
-                    success = false,
-                    errorCode = "OBSTACLE_DETECTED",
-                    message = "Obstacle detected within 50 cm. Move it clear before locking the bollard.",
-                    data = new { distanceCm = Math.Round(distanceCm, 1), thresholdCm = 50 }
-                })
-                {
-                    StatusCode = StatusCodes.Status409Conflict
-                };
-            }
-        }
-        catch (JsonException)
-        {
-            return Error(StatusCodes.Status409Conflict, "SENSOR_READING_UNAVAILABLE",
-                "The latest HC-SR04 reading could not be read. The bollard was not locked.");
-        }
-
-        return null;
-    }
-
     private IActionResult? ValidateBookingAndDevice(Booking booking, DateTimeOffset now, bool requireAccessWindow)
     {
         if (booking.BookingStatus is not (BookingStatus.Confirmed or BookingStatus.Active))
@@ -447,10 +643,43 @@ public sealed class IoTCommandController : ControllerBase
         if (device is null || !device.IsAssigned || string.IsNullOrWhiteSpace(device.Esp32Serial))
             return Error(StatusCodes.Status409Conflict, "DEVICE_NOT_ASSIGNED", "No assigned IoT device is available for this booking.");
 
-        if (requireAccessWindow && (now.UtcDateTime < AsUtc(booking.StartDate) || now.UtcDateTime > AsUtc(booking.EndDate)))
-            return Error(StatusCodes.Status409Conflict, "BOOKING_NOT_ELIGIBLE", "The booking is outside its bollard access window.");
+        if (requireAccessWindow)
+        {
+            // Booking dates and availability rules are calendar values in Malaysia time.
+            // Do not label the stored midnight date boundaries as UTC; doing so shifts them by eight hours.
+            var malaysiaNow = now.ToOffset(TimeSpan.FromHours(8));
+            var localDate = DateOnly.FromDateTime(malaysiaNow.DateTime);
+            var bookingStartDate = DateOnly.FromDateTime(booking.StartDate);
+            var bookingEndDateExclusive = DateOnly.FromDateTime(booking.EndDate);
+
+            if (localDate < bookingStartDate || localDate >= bookingEndDateExclusive)
+                return Error(StatusCodes.Status409Conflict, "BOOKING_NOT_ELIGIBLE", "The current Malaysia date is outside the booking dates.");
+
+            var localTime = TimeOnly.FromDateTime(malaysiaNow.DateTime);
+            if (!IsWithinAvailabilityWindow(booking.ParkingSpot.ParkingAvailabilities, localDate, localTime))
+                return Error(StatusCodes.Status409Conflict, "BOOKING_ACCESS_WINDOW_CLOSED", "The bollard can only be unlocked during the parking spot's scheduled days and hours in Malaysia time.");
+        }
 
         return null;
+    }
+
+    private static bool IsWithinAvailabilityWindow(
+        IEnumerable<Availability> rules,
+        DateOnly localDate,
+        TimeOnly localTime)
+    {
+        return rules.Any(rule =>
+            (!rule.EffectiveFrom.HasValue || localDate >= rule.EffectiveFrom.Value) &&
+            (!rule.EffectiveUntil.HasValue || localDate <= rule.EffectiveUntil.Value) &&
+            (rule.DayType == DayType.Everyday ||
+             (rule.DayType == DayType.Weekday && localDate.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) ||
+             (rule.DayType == DayType.Weekend && localDate.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)) &&
+            localTime >= rule.StartTime &&
+            (localTime < rule.EndTime ||
+             // Owner availability rules use HH:mm and cannot represent 24:00. Treat 00:00–23:59
+             // as an all-day window through the final minute; a matching rule on the next day
+             // keeps overnight stays valid for 24-hour listings.
+             (rule.StartTime == TimeOnly.MinValue && rule.EndTime == new TimeOnly(23, 59) && localTime.Hour == 23 && localTime.Minute == 59)));
     }
 
     private IActionResult? ValidateLocation(UnlockLocation? location, Property property, DateTimeOffset now, out double? distanceMeters)
@@ -508,9 +737,6 @@ public sealed class IoTCommandController : ControllerBase
             : Error(StatusCodes.Status403Forbidden, "BLE_VERIFICATION_FAILED", "The BLE challenge response could not be verified.");
     }
 
-    private static DateTime AsUtc(DateTime value)
-        => value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
-
     private static double HaversineMeters(double latitude1, double longitude1, double latitude2, double longitude2)
     {
         const double earthRadiusMeters = 6_371_000;
@@ -536,28 +762,48 @@ public sealed class BollardCommandRequest
 {
     // Omitted command means UNLOCK on /api/bookings/{id}/unlock; existing /command callers
     // should continue to send LOCK or UNLOCK.
+    /// <summary>Optional command for legacy /command callers. The dedicated booking unlock route defaults to UNLOCK.</summary>
     public string? Command { get; set; }
+
+    /// <summary>Single-use challenge identifier returned by the unlock challenge endpoint.</summary>
     public string? ChallengeId { get; set; }
+
+    /// <summary>Fresh client GPS coordinates and timestamp.</summary>
     public UnlockLocation? Location { get; set; }
+
+    /// <summary>HMAC proof returned by the assigned ESP32 over BLE. Never contains the device secret.</summary>
     public BleVerification? BleVerification { get; set; }
 }
 
 public sealed class UnlockLocation
 {
+    /// <summary>Latitude in decimal degrees.</summary>
     public double? Latitude { get; set; }
+
+    /// <summary>Longitude in decimal degrees.</summary>
     public double? Longitude { get; set; }
+
+    /// <summary>Client-reported GPS accuracy in metres.</summary>
     public double? AccuracyMeters { get; set; }
+
+    /// <summary>GPS reading timestamp as an ISO 8601 value with a UTC offset.</summary>
     public DateTimeOffset? Timestamp { get; set; }
 }
 
 public sealed class BleVerification
 {
+    /// <summary>UUID of the assigned ESP32 that generated the BLE proof.</summary>
     public string? DeviceUuid { get; set; }
+
+    /// <summary>Base64-encoded HMAC-SHA256 response produced by the ESP32.</summary>
     public string? ChallengeResponse { get; set; }
+
+    /// <summary>Optional BLE signal strength in dBm. Informational only; it does not prove physical distance.</summary>
     public int? Rssi { get; set; }
 }
 
 public sealed class UnlockChallengeRequest
 {
+    /// <summary>Fresh GPS reading used to verify location before generating a challenge.</summary>
     public UnlockLocation? Location { get; set; }
 }
