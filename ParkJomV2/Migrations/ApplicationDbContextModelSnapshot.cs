@@ -955,7 +955,23 @@ namespace ParkJomV2.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("EvChargingSpeed")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("HasCctv")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("HasEvCharging")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsConfigurationComplete")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsCovered")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsHandicapAccessible")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsPublished")
@@ -1278,6 +1294,9 @@ namespace ParkJomV2.Migrations
                     b.Property<int>("ParkingSpotId")
                         .HasColumnType("int");
 
+                    b.Property<string>("PhotosJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("Rating")
                         .HasColumnType("int");
 
@@ -1297,6 +1316,81 @@ namespace ParkJomV2.Migrations
                     b.HasIndex("ReviewerId");
 
                     b.ToTable("Reviews");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.ReviewReport", b =>
+                {
+                    b.Property<int>("ReviewReportId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReviewReportId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("ReporterId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ResolvedByAdminId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReviewId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("ReviewReportId");
+
+                    b.HasIndex("ReporterId");
+
+                    b.HasIndex("ResolvedByAdminId");
+
+                    b.HasIndex("ReviewId");
+
+                    b.ToTable("ReviewReports");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.RevokedToken", b =>
+                {
+                    b.Property<int>("RevokedTokenId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RevokedTokenId"));
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("RevokedTokenId");
+
+                    b.ToTable("RevokedTokens");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Station", b =>
@@ -2480,6 +2574,32 @@ namespace ParkJomV2.Migrations
                     b.Navigation("ParkingSpot");
 
                     b.Navigation("Reviewer");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.ReviewReport", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "Reporter")
+                        .WithMany()
+                        .HasForeignKey("ReporterId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("ParkJomV2.Models.User", "ResolvedByAdmin")
+                        .WithMany()
+                        .HasForeignKey("ResolvedByAdminId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("ParkJomV2.Models.Review", "Review")
+                        .WithMany()
+                        .HasForeignKey("ReviewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Reporter");
+
+                    b.Navigation("ResolvedByAdmin");
+
+                    b.Navigation("Review");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.SupportAttachment", b =>
