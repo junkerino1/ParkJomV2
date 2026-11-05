@@ -42,7 +42,6 @@ public class SupportContextDto
     public decimal WalletBalance { get; set; }
 
     public SupportBookingSummaryDto? ActiveBooking { get; set; }
-    public bool CanSelfUnlockGate { get; set; }
     public List<QuickIssueTemplateDto> QuickIssueTemplates { get; set; } = new();
 
     public List<SupportBookingSummaryDto> RecentBookings { get; set; } = new();
@@ -62,27 +61,6 @@ public class QuickIssueTemplateDto
     public string EstimatedResponseTime { get; set; } = "Within 30 minutes";
     public bool RequiresBooking { get; set; }
     public bool SuggestPhotoUpload { get; set; }
-    public bool SupportsSelfUnlock { get; set; }
-}
-
-public class SelfUnlockGateRequestDto
-{
-    public int? BookingId { get; set; }
-    public string Action { get; set; } = "Enter"; // Enter or Exit
-}
-
-public class SelfUnlockGateResultDto
-{
-    public bool Success { get; set; }
-    public string CommandId { get; set; } = string.Empty;
-    public string Message { get; set; } = string.Empty;
-    public int BookingId { get; set; }
-    public string BookingReference { get; set; } = string.Empty;
-    public string ParkingSpotName { get; set; } = string.Empty;
-    public int? IoTDeviceId { get; set; }
-    public string? IoTDeviceStatus { get; set; }
-    public bool SuggestUrgentTicket { get; set; }
-    public DateTime ExecutedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class SupportBookingSummaryDto
@@ -219,7 +197,6 @@ public class SupportTicketDto
     public string? ParkingSpotName { get; set; }
     public int? VehicleId { get; set; }
     public string? VehiclePlate { get; set; }
-    public bool CanSelfUnlockGate { get; set; }
 
     public int? OperationalIncidentId { get; set; }
     public string? IncidentReference { get; set; }

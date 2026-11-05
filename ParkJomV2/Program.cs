@@ -9,9 +9,18 @@ using ParkJomV2.Models;
 using ParkJomV2.Services;
 using ParkJomV2.Services.Support;
 using ParkJomV2.Services.Support.Workers;
+using ParkJomV2.Controllers;
+using ParkJomV2.Services.Copilot;
+using ParkJomV2.Services.Notifications;
+using ParkJomV2.Services.Notifications.Channels;
+using ParkJomV2.Services.Notifications.Workers;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -81,7 +90,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 var accessToken = context.Request.Query["access_token"].FirstOrDefault()
                                   ?? context.Request.Query["token"].FirstOrDefault();
                 var path = context.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && (path.StartsWithSegments("/hubs/support") || path.StartsWithSegments("/api/support/ws")))
+                if (!string.IsNullOrEmpty(accessToken) && (path.StartsWithSegments("/hubs/support") || path.StartsWithSegments("/hubs/notifications") || path.StartsWithSegments("/api/support/ws")))
                 {
                     context.Token = accessToken;
                 }
@@ -203,9 +212,75 @@ builder.Services.AddScoped<IncidentService>();
 builder.Services.AddScoped<DisputeService>();
 builder.Services.AddScoped<SupportOnCallService>();
 
+// AI Transit Copilot (Gemini function calling). The API key comes from configuration
+// ("Gemini:ApiKey") — use dotnet user-secrets locally and App Settings in Azure.
+builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Gemini"));
+builder.Services.AddHttpClient<GeminiClient>(client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(45);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    ConnectTimeout = TimeSpan.FromSeconds(8),
+    ConnectCallback = async (context, cancellationToken) =>
+    {
+        var addresses = await System.Net.Dns.GetHostAddressesAsync(
+            context.DnsEndPoint.Host,
+            System.Net.Sockets.AddressFamily.InterNetwork,
+            cancellationToken);
+        var socket = new System.Net.Sockets.Socket(
+            System.Net.Sockets.SocketType.Stream,
+            System.Net.Sockets.ProtocolType.Tcp)
+        {
+            NoDelay = true
+        };
+        try
+        {
+            await socket.ConnectAsync(addresses, context.DnsEndPoint.Port, cancellationToken);
+            return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+});
+builder.Services.AddScoped<CopilotToolExecutor>();
+builder.Services.AddScoped<CopilotService>();
+builder.Services.AddScoped<ParkJomV2.Services.Vision.VehicleVisionService>();
+builder.Services.AddScoped<ParkJomV2.Services.Pricing.DynamicPricingService>();
+builder.Services.AddScoped<ParkJomV2.Services.Prediction.WeatherForecastService>();
+builder.Services.AddScoped<ParkJomV2.Services.Prediction.ParkingPredictorService>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(CopilotController.RateLimitPolicy, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
+
 // Background Hosted Services
 builder.Services.AddHostedService<IncidentEscalationWorker>();
 builder.Services.AddHostedService<SupportSlaWorker>();
+
+// Notification Module Services
+builder.Services.AddSingleton<INotificationQueue, NotificationQueue>();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<IWebPushSender, WebPushSender>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddHostedService<NotificationDispatchWorker>();
+builder.Services.AddHostedService<BookingReminderWorker>();
+builder.Services.AddHostedService<NotificationCleanupWorker>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -236,6 +311,101 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 
 builder.Services.AddHttpClient();
 
+// Swagger Documentation & Automatic Module Grouping
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "ParkJom V2 API Documentation",
+        Version = "v1",
+        Description = "RESTful APIs for ParkJom smart transit and parking platform (organized by business module)."
+    });
+
+    // Avoid SchemaId conflicts across controllers with similarly named DTOs
+    options.CustomSchemaIds(type => type.FullName?.Replace("+", ".") ?? type.Name);
+
+    // Automatically categorize all 42 controllers into 9 core business modules (English only)
+    options.TagActionsBy(api =>
+    {
+        var controller = api.ActionDescriptor.RouteValues["controller"] ?? "Unknown";
+
+        var module = controller switch
+        {
+            // 01. Auth & Users
+            "Auth" or "User" or "Vehicle" or "AccessLog" or "Media"
+                => "01. Auth & Users",
+
+            // 02. Owner Portal
+            var c when c.StartsWith("Owner")
+                => "02. Owner Portal",
+
+            // 06. Support & Disputes (prioritize before Admin because of AdminSupport*)
+            var c when c.StartsWith("AdminSupport") || c.StartsWith("Support")
+                => "06. Support & Disputes",
+
+            // 08. Admin Operations
+            var c when c.StartsWith("Admin")
+                => "08. Admin Operations",
+
+            // 04. Booking & Checkout (handles CommuterBookings, BookingCheckout, etc.)
+            var c when c.Contains("Booking")
+                => "04. Booking & Checkout",
+
+            // 05. Wallet & Payment
+            var c when c.StartsWith("Wallet") || c is "Payment" or "Refund" or "Stripe"
+                => "05. Wallet & Payment",
+
+            // 07. GTFS & Transit
+            var c when c.StartsWith("Gtfs")
+                => "07. GTFS & Transit",
+
+            // 09. Copilot & Notifications
+            "Copilot" or "Notifications"
+                => "09. Copilot & Notifications",
+
+            // 03. Parking & Search (handles Parking, ParkingSearch, ParkingPrediction, Property, Station, etc.)
+            var c when c.Contains("Parking") || c is "Property" or "Station" or "Favorites" or "Reviews"
+                => "03. Parking & Search",
+
+            _ => $"99. Other Endpoints ({controller})"
+        };
+
+        return new[] { module };
+    });
+
+    // Enforce tag sorting in the generated OpenAPI specification
+    options.DocumentFilter<SwaggerTagOrderFilter>();
+
+    options.OrderActionsBy(apiDesc => $"{apiDesc.ActionDescriptor.RouteValues["controller"]}_{apiDesc.HttpMethod}");
+
+    // Integrated JWT Bearer authorization support
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter your JWT token (no need to include 'Bearer ' prefix)."
+    });
+
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend",
@@ -254,10 +424,73 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Ensure property names and addresses in DB are consistent (fixes PV18 Residences having PV9 Residences address)
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var pv18 = await db.Properties.FirstOrDefaultAsync(p => p.PropertyId == 31);
+        if (pv18 != null && pv18.PropertyName.Contains("PV18", StringComparison.OrdinalIgnoreCase) &&
+            pv18.Address != null && pv18.Address.Contains("PV9", StringComparison.OrdinalIgnoreCase))
+        {
+            pv18.Address = "PV18 Residences, Jalan Langkawi, Setapak, Kuala Lumpur, Malaysia";
+            pv18.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var pv18Test = await db.Properties.FirstOrDefaultAsync(p => p.PropertyId == 26);
+        if (pv18Test != null && pv18Test.Address == "testing")
+        {
+            pv18Test.PropertyName = "PV18 Residences";
+            pv18Test.Address = "PV18 Residences, Jalan Langkawi, Setapak, Kuala Lumpur, Malaysia";
+            pv18Test.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var pv128 = await db.Properties.FirstOrDefaultAsync(p => p.PropertyId == 33);
+        if (pv128 != null && pv128.Address == "Jalan Langkawi")
+        {
+            pv128.Address = "PV128, Jalan Genting Kelang, Setapak, Kuala Lumpur, Malaysia";
+            pv128.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Recalculate realistic pedestrian walking times (12.5 min/km = 80 m/min)
+        var allProps = await db.Properties.ToListAsync();
+        foreach (var p in allProps)
+        {
+            var distKm = (double)p.DistanceToStation;
+            if (distKm > 0)
+            {
+                var walkMin = (decimal)Math.Round(distKm * 12.5, 1);
+                if (p.TimeToStation != walkMin)
+                {
+                    p.TimeToStation = walkMin;
+                }
+            }
+        }
+
+        await db.SaveChangesAsync();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Property address normalization check skipped.");
+    }
+}
+
 app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// Swagger Documentation Middleware
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "ParkJom V2 API v1");
+    c.RoutePrefix = "swagger";
+    c.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None); // 默认折叠所有模块，方便快速翻阅
+    c.DisplayRequestDuration(); // 显示接口响应耗时
+    c.ConfigObject.AdditionalItems["tagsSorter"] = "alpha";
+});
 
 app.UseWebSockets();
 app.UseMiddleware<SupportWebSocketMiddleware>();
@@ -265,7 +498,28 @@ app.UseMiddleware<SupportWebSocketMiddleware>();
 app.UseAuthentication();   
 app.UseAuthorization();
 
+app.UseRateLimiter();
+
 app.MapControllers();
 app.MapHub<SupportHub>("/hubs/support");
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();
+
+/// <summary>
+/// Orders OpenAPI tags alphabetically (e.g. 01, 02, 03...) across the document.
+/// </summary>
+public class SwaggerTagOrderFilter : IDocumentFilter
+{
+    public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
+    {
+        swaggerDoc.Tags = swaggerDoc.Paths
+            .SelectMany(p => p.Value.Operations.Values)
+            .SelectMany(op => op.Tags)
+            .Select(t => t.Name)
+            .Distinct()
+            .OrderBy(name => name)
+            .Select(name => new OpenApiTag { Name = name })
+            .ToList();
+    }
+}

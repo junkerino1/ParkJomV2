@@ -7,6 +7,7 @@ using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using System.ComponentModel.DataAnnotations;
+using ParkJomV2.Services.Notifications;
 
 namespace ParkJomV2.Controllers;
 
@@ -19,17 +20,20 @@ public class ReviewsController : ControllerBase
     private readonly CurrentUserService _currentUser;
     private readonly AccessLogService _accessLogService;
     private readonly ILogger<ReviewsController> _logger;
+    private readonly INotificationService _notificationService;
 
     public ReviewsController(
         ApplicationDbContext context,
         CurrentUserService currentUser,
         AccessLogService accessLogService,
-        ILogger<ReviewsController> logger)
+        ILogger<ReviewsController> logger,
+        INotificationService notificationService)
     {
         _context = context;
         _currentUser = currentUser;
         _accessLogService = accessLogService;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
     /// <summary>Creates a review for an authenticated commuter's completed booking.</summary>
@@ -100,6 +104,37 @@ public class ReviewsController : ControllerBase
             await _context.SaveChangesAsync();
             await _accessLogService.LogAsync(User, "CreateReview", true,
                 $"ReviewId={review.ReviewId}, BookingId={booking.BookingId}");
+
+            // Notify spot owner about new review
+            try
+            {
+                var spot = await _context.ParkingSpots
+                    .Include(s => s.Property)
+                    .FirstOrDefaultAsync(s => s.ParkingSpotId == booking.ParkingSpotId);
+
+                if (spot != null)
+                {
+                    var spotLabel = spot.ParkingLabel ?? spot.Property?.PropertyName ?? $"Spot #{spot.ParkingSpotId}";
+                    await _notificationService.PublishAsync(new NotificationPublishRequest(
+                        spot.OwnerId,
+                        "review.received",
+                        new Dictionary<string, object?>
+                        {
+                            ["rating"] = review.Rating,
+                            ["spotName"] = spotLabel,
+                            ["reviewId"] = review.ReviewId,
+                            ["bookingId"] = booking.BookingId
+                        },
+                        entityType: "Review",
+                        entityId: review.ReviewId.ToString(),
+                        actionUrl: "/owner/reviews"
+                    ));
+                }
+            }
+            catch (Exception notifEx)
+            {
+                _logger.LogWarning(notifEx, "Failed to publish review.received notification for ReviewId={ReviewId}", review.ReviewId);
+            }
 
             var createdReview = await ReviewQuery()
                 .SingleAsync(item => item.ReviewId == review.ReviewId);
@@ -441,6 +476,28 @@ public class ReviewsController : ControllerBase
 
             await _accessLogService.LogAsync(User, "UpsertOwnerReply", true,
                 $"ReviewId={reviewId}, ParkingSpotId={review.ParkingSpotId}");
+
+            // Notify commuter about host reply
+            try
+            {
+                var spotLabel = review.ParkingSpot?.ParkingLabel ?? review.ParkingSpot?.Property?.PropertyName ?? "Parking Spot";
+                await _notificationService.PublishAsync(new NotificationPublishRequest(
+                    review.ReviewerId,
+                    "review.replied",
+                    new Dictionary<string, object?>
+                    {
+                        ["spotName"] = spotLabel,
+                        ["reviewId"] = review.ReviewId
+                    },
+                    entityType: "Review",
+                    entityId: review.ReviewId.ToString(),
+                    actionUrl: "/commuter/reviews"
+                ));
+            }
+            catch (Exception notifEx)
+            {
+                _logger.LogWarning(notifEx, "Failed to publish review.replied notification for ReviewId={ReviewId}", review.ReviewId);
+            }
 
             return Ok(new ReviewResponse
             {

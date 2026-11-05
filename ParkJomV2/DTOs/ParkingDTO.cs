@@ -200,6 +200,11 @@ public class DisplayParkingSpotDTO
 {
     public int ParkingSpotId { get; set; }
     public int PropertyId { get; set; }
+    public string? PropertyName { get; set; }
+    public string? StationName { get; set; }
+    public string? Address { get; set; }
+    public decimal? DistanceToStation { get; set; }
+    public decimal? TimeToStation { get; set; }
     public int OwnerId { get; set; }
     public string? ParkingLabel { get; set; }
     public string AvailabilityStatus { get; set; } = string.Empty;
@@ -209,6 +214,8 @@ public class DisplayParkingSpotDTO
     public bool IsPublished { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public int ActiveBookingCount { get; set; }
+    public bool HasActiveBookings { get; set; }
 }
 
 public class DisplayMyParkingResponse
