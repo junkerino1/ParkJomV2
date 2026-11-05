@@ -69,6 +69,8 @@ public class ParkingSearchResultDTO
     public bool IsCovered { get; set; }
     public bool IsHandicapAccessible { get; set; }
     public bool HasCctv { get; set; }
+    public int MatchScore { get; set; } = 100;
+    public string? MatchReason { get; set; }
 }
 
 public class SearchParkingResponse
@@ -80,6 +82,8 @@ public class SearchParkingResponse
     public int TotalCount { get; set; }
     public int Page { get; set; }
     public int PageSize { get; set; }
+    public List<string> Suggestions { get; set; } = new();
+    public string? DidYouMean { get; set; }
 }
 
 public class CreateParkingSpotRequest

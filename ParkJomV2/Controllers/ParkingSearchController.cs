@@ -39,7 +39,7 @@ public class ParkingSearchController : ControllerBase
     {
         try
         {
-            var queryable = _context.ParkingSpots
+            var allSpots = await _context.ParkingSpots
                 .Include(ps => ps.Property)
                     .ThenInclude(p => p.Station)
                 .Include(ps => ps.VerificationRequests.Where(vr => vr.IsCurrent))
@@ -51,90 +51,62 @@ public class ParkingSearchController : ControllerBase
                         ps.Owner.AccountStatus != "Suspended" &&
                         ps.Owner.AccountStatus != "Deactivated" &&
                         ps.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved))
-                .AsQueryable();
-
-            // Filter by text query — searches Property table for property name
-            // and Station table for station name, then finds matching parking spots
-            if (!string.IsNullOrWhiteSpace(query))
-            {
-                var q = query.Trim().ToLower();
-
-                // 1) Find property IDs matching the property name
-                var propertyIdsByName = await _context.Properties
-                    .Where(p => p.PropertyName.ToLower().Contains(q))
-                    .Select(p => p.PropertyId)
-                    .ToListAsync();
-
-                // 2) Find station IDs matching the station name
-                var stationIdsByName = await _context.Stations
-                    .Where(s => s.StationName.ToLower().Contains(q))
-                    .Select(s => s.StationId)
-                    .ToListAsync();
-
-                // 3) Find property IDs whose nearest station matches
-                var propertyIdsByStation = await _context.Properties
-                    .Where(p => stationIdsByName.Contains(p.NearestStationId))
-                    .Select(p => p.PropertyId)
-                    .ToListAsync();
-
-                // 4) Combine all matching property IDs
-                var matchingPropertyIds = propertyIdsByName
-                    .Union(propertyIdsByStation)
-                    .ToList();
-
-                // 5) Filter parking spots by those property IDs
-                queryable = queryable.Where(ps => matchingPropertyIds.Contains(ps.PropertyId));
-            }
-
-            var totalCount = await queryable.CountAsync();
-
-            var spots = await queryable
-                .OrderByDescending(ps => ps.CreatedAt)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
                 .ToListAsync();
 
-            var result = spots.Select((ps, idx) => new ParkingSearchResultDTO
+            var searchResult = ParkingFuzzySearchService.Search(allSpots, query);
+            var totalCount = searchResult.Matches.Count;
+
+            var pagedMatches = searchResult.Matches
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            var result = pagedMatches.Select(m => new ParkingSearchResultDTO
             {
-                ParkingSpotId = ps.ParkingSpotId,
-                ParkingLabel = ps.ParkingLabel,
-                PropertyId = ps.PropertyId,
-                PropertyName = ps.Property?.PropertyName,
-                Address = ps.Property?.Address,
-                Latitude = ps.Property?.Latitude ?? 0,
-                Longitude = ps.Property?.Longitude ?? 0,
-                StationName = ps.Property?.Station?.StationName,
-                DistanceToStation = ps.Property?.DistanceToStation ?? 0,
-                TimeToStationInMinutes = ps.Property?.TimeToStation ?? 0,
-                AvailabilityStatus = ps.AvailabilityStatus.ToString(),
-                MonthlyRate = ps.MonthlyRate,
-                DailyRate = ps.DailyRate,
-                HasEvCharging = ps.HasEvCharging,
-                EvChargingSpeed = ps.EvChargingSpeed,
-                IsCovered = ps.IsCovered,
-                IsHandicapAccessible = ps.IsHandicapAccessible,
-                HasCctv = ps.HasCctv,
-                PrimaryImageUrl = ps.ParkingSpotImages
+                ParkingSpotId = m.Spot.ParkingSpotId,
+                ParkingLabel = m.Spot.ParkingLabel,
+                PropertyId = m.Spot.PropertyId,
+                PropertyName = m.Spot.Property?.PropertyName,
+                Address = m.Spot.Property?.Address,
+                Latitude = m.Spot.Property?.Latitude ?? 0,
+                Longitude = m.Spot.Property?.Longitude ?? 0,
+                StationName = m.Spot.Property?.Station?.StationName,
+                DistanceToStation = m.Spot.Property?.DistanceToStation ?? 0,
+                TimeToStationInMinutes = m.Spot.Property?.TimeToStation ?? 0,
+                AvailabilityStatus = m.Spot.AvailabilityStatus.ToString(),
+                MonthlyRate = m.Spot.MonthlyRate,
+                DailyRate = m.Spot.DailyRate,
+                HasEvCharging = m.Spot.HasEvCharging,
+                EvChargingSpeed = m.Spot.EvChargingSpeed,
+                IsCovered = m.Spot.IsCovered,
+                IsHandicapAccessible = m.Spot.IsHandicapAccessible,
+                HasCctv = m.Spot.HasCctv,
+                MatchScore = m.Score,
+                MatchReason = m.MatchReason,
+                PrimaryImageUrl = m.Spot.ParkingSpotImages
                     .Where(psi => psi.IsPrimary)
                     .Select(psi => psi.MediaFile?.SecureUrl)
                     .FirstOrDefault()
             }).ToList();
 
-            _logger.LogInformation("Search returned {Count} results (total {TotalCount})", result.Count, totalCount);
+            _logger.LogInformation("Fuzzy search for '{Query}' returned {Count} results (total {TotalCount})", query, result.Count, totalCount);
 
             return Ok(new SearchParkingResponse
             {
                 Code = StatusCodes.Status200OK,
                 Success = true,
-                Message = $"Found {totalCount} parking spot(s)",
+                Message = totalCount > 0 ? $"Found {totalCount} parking spot(s)" : "No parking spots found matching your search",
                 Data = result,
                 TotalCount = totalCount,
                 Page = page,
-                PageSize = pageSize
+                PageSize = pageSize,
+                Suggestions = searchResult.Suggestions,
+                DidYouMean = searchResult.DidYouMean
             });
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error searching parking spots");
             return StatusCode(StatusCodes.Status500InternalServerError, new ErrorResponse
             {
                 Code = StatusCodes.Status500InternalServerError,
@@ -143,7 +115,6 @@ public class ParkingSearchController : ControllerBase
             });
         }
     }
-
     /// <summary>
     /// Find parking spots near a geographic location using OSRM walking distance
     /// </summary>
