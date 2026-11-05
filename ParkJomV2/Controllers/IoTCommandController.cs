@@ -208,6 +208,8 @@ public sealed class IoTCommandController : ControllerBase
     /// <response code="409">No assigned device is available, another identical command is in progress, or the ESP32 blocked locking because it detected an obstacle.</response>
     /// <response code="504">The command was published but no device acknowledgement arrived before timeout.</response>
     /// <response code="503">MQTT is unavailable or the distance sensor failed.</response>
+    /// <param name="bookingId">The database ID of the booking assigned to the target bollard.</param>
+    /// <param name="cancellationToken">Cancels the request if the caller disconnects.</param>
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
@@ -221,18 +223,194 @@ public sealed class IoTCommandController : ControllerBase
     /// <summary>Requests a bollard unlock as an administrator.</summary>
     /// <remarks>Admin unlock bypasses renter, GPS, BLE, and booking-window checks, but waits for the ESP32 acknowledgement before returning. Use only for operational recovery.</remarks>
     /// <response code="200">ESP32 confirmed that the bollard was unlocked.</response>
+    /// <response code="401">The caller is not authenticated.</response>
+    /// <response code="403">The caller is not an administrator.</response>
     /// <response code="409">No assigned device is available, another identical command is in progress, or the ESP32 rejected the command due to an obstacle.</response>
     /// <response code="504">The command was published but no device acknowledgement arrived before timeout.</response>
     /// <response code="503">MQTT is unavailable or the distance sensor failed.</response>
+    /// <param name="bookingId">The booking whose assigned bollard will be unlocked.</param>
+    /// <param name="cancellationToken">Cancels the request if the caller disconnects.</param>
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [Authorize(Policy = "AdminOnly")]
+    [HttpPost("~/api/admin/iot/bookings/{bookingId:int}/unlock")]
     [HttpPost("~/api/admin/iot/{bookingId:int}/unlock")]
     public Task<IActionResult> AdminUnlockBooking(int bookingId, CancellationToken cancellationToken)
         => SendAdminCommandAsync(bookingId, "UNLOCK", cancellationToken);
+
+    /// <summary>Unlocks a bollard at a parking spot owned by the authenticated property owner.</summary>
+    /// <remarks>The ESP32 performs a fresh HC-SR04 reading and blocks the unlock if an obstacle is within 50 cm. This owner operation is not tied to a renter booking and does not create renter entry history.</remarks>
+    /// <response code="200">The device confirmed the bollard unlocked.</response>
+    /// <response code="401">The caller is not authenticated.</response>
+    /// <response code="403">The caller is not a property owner or does not own the parking spot.</response>
+    /// <response code="404">The parking spot was not found.</response>
+    /// <response code="409">The spot has no assigned device, or the device blocked the command because of an obstacle.</response>
+    /// <response code="502">The device reported an execution failure.</response>
+    /// <response code="503">MQTT is unavailable or the distance sensor could not obtain a reading.</response>
+    /// <response code="504">No device acknowledgement arrived before timeout.</response>
+    /// <param name="parkingSpotId">The parking spot ID that must belong to the signed-in property owner.</param>
+    /// <param name="cancellationToken">Cancels the request if the caller disconnects.</param>
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    [HttpPost("~/api/owner/iot/parking-spots/{parkingSpotId:int}/unlock")]
+    public async Task<IActionResult> OwnerUnlockParkingSpot(
+        int parkingSpotId,
+        CancellationToken cancellationToken)
+    {
+        var owner = await _currentUser.GetCurrentUserAsync();
+        if (owner is null) return Unauthorized();
+        if (owner.UserType != UserType.PropertyOwner)
+            return Error(StatusCodes.Status403Forbidden, "OWNER_ROLE_REQUIRED", "Only a property owner can use this endpoint.");
+
+        var spot = await _db.ParkingSpots
+            .Include(item => item.IoTDevice)
+            .FirstOrDefaultAsync(item => item.ParkingSpotId == parkingSpotId, cancellationToken);
+        if (spot is null)
+            return Error(StatusCodes.Status404NotFound, "PARKING_SPOT_NOT_FOUND", "Parking spot was not found.");
+        if (spot.OwnerId != owner.UserId)
+        {
+            await _accessLogs.LogAsync(owner.UserId, "Owner bollard UNLOCK", false,
+                $"Owner attempted to unlock a spot they do not own. parkingSpotId={parkingSpotId}");
+            return Error(StatusCodes.Status403Forbidden, "PARKING_SPOT_NOT_OWNED", "You can only unlock a bollard assigned to your own parking spot.");
+        }
+
+        if (spot.IoTDevice is not { IsAssigned: true } device || string.IsNullOrWhiteSpace(device.Esp32Serial))
+            return Error(StatusCodes.Status409Conflict, "DEVICE_NOT_ASSIGNED", "No assigned IoT device is available for this parking spot.");
+
+        return await SendUnassociatedCommandAsync(
+            device, parkingSpotId, "owner", owner.UserId, "UNLOCK", isAdmin: false, cancellationToken);
+    }
+
+    /// <summary>Unlocks a bollard by parking spot ID as an administrator.</summary>
+    /// <remarks>Bypasses renter, booking, GPS, BLE, and owner checks. The ESP32 obstacle interlock still applies. The operation is not tied to a booking.</remarks>
+    /// <response code="200">The device confirmed the bollard unlocked.</response>
+    /// <response code="401">The caller is not authenticated.</response>
+    /// <response code="403">The caller is not an administrator.</response>
+    /// <response code="404">No assigned device was found for the parking spot.</response>
+    /// <response code="409">Another command is in progress, or the device blocked the command because of an obstacle.</response>
+    /// <response code="502">The device reported an execution failure.</response>
+    /// <response code="503">MQTT is unavailable or the distance sensor could not obtain a reading.</response>
+    /// <response code="504">No device acknowledgement arrived before timeout.</response>
+    /// <param name="parkingSpotId">The database ID of the parking spot with an assigned bollard.</param>
+    /// <param name="cancellationToken">Cancels the request if the caller disconnects.</param>
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    [Authorize(Policy = "AdminOnly")]
+    [HttpPost("~/api/admin/iot/parking-spots/{parkingSpotId:int}/unlock")]
+    public async Task<IActionResult> AdminUnlockParkingSpot(
+        int parkingSpotId,
+        CancellationToken cancellationToken)
+    {
+        var device = await _db.IoTDevices.FirstOrDefaultAsync(
+            item => item.ParkingSpotId == parkingSpotId && item.IsAssigned,
+            cancellationToken);
+        if (device is null || string.IsNullOrWhiteSpace(device.Esp32Serial))
+            return Error(StatusCodes.Status404NotFound, "DEVICE_NOT_FOUND", "No assigned IoT device was found for this parking spot.");
+
+        return await SendUnassociatedCommandAsync(
+            device, parkingSpotId, "admin", _currentUser.UserId, "UNLOCK", isAdmin: true, cancellationToken);
+    }
+
+    /// <summary>Unlocks a bollard by IoT device ID as an administrator.</summary>
+    /// <remarks>Bypasses renter, booking, GPS, BLE, and owner checks. The ESP32 obstacle interlock still applies. The operation is not tied to a booking.</remarks>
+    /// <response code="200">The device confirmed the bollard unlocked.</response>
+    /// <response code="401">The caller is not authenticated.</response>
+    /// <response code="403">The caller is not an administrator.</response>
+    /// <response code="404">The IoT device was not found or is not assigned.</response>
+    /// <response code="409">Another command is in progress, or the device blocked the command because of an obstacle.</response>
+    /// <response code="502">The device reported an execution failure.</response>
+    /// <response code="503">MQTT is unavailable or the distance sensor could not obtain a reading.</response>
+    /// <response code="504">No device acknowledgement arrived before timeout.</response>
+    /// <param name="iotDeviceId">The database IoTDeviceId of the assigned bollard.</param>
+    /// <param name="cancellationToken">Cancels the request if the caller disconnects.</param>
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
+    [Authorize(Policy = "AdminOnly")]
+    [HttpPost("~/api/admin/iot/devices/{iotDeviceId:int}/unlock")]
+    public async Task<IActionResult> AdminUnlockIoTDevice(
+        int iotDeviceId,
+        CancellationToken cancellationToken)
+    {
+        var device = await _db.IoTDevices.FirstOrDefaultAsync(
+            item => item.IoTDeviceId == iotDeviceId && item.IsAssigned && item.ParkingSpotId != null,
+            cancellationToken);
+        if (device is null || string.IsNullOrWhiteSpace(device.Esp32Serial))
+            return Error(StatusCodes.Status404NotFound, "DEVICE_NOT_FOUND", "The assigned IoT device was not found.");
+
+        return await SendUnassociatedCommandAsync(
+            device, device.ParkingSpotId, "admin", _currentUser.UserId, "UNLOCK", isAdmin: true, cancellationToken);
+    }
+
+    private async Task<IActionResult> SendUnassociatedCommandAsync(
+        IoTDevice device,
+        int? parkingSpotId,
+        string actor,
+        int? actorUserId,
+        string command,
+        bool isAdmin,
+        CancellationToken cancellationToken)
+    {
+        await LogDeviceActionAsync(device, $"{actor}_{command.ToLowerInvariant()}_requested", "received",
+            details: $"actorUserId={actorUserId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; parkingSpotId={parkingSpotId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; bookingId=unassociated");
+
+        MqttCommandResult commandResult;
+        try
+        {
+            // Negative IDs are reserved for operations that must not update booking check-in/out state.
+            commandResult = await _mqtt.PublishCommandAndWaitForAckAsync(
+                device.Esp32Serial, -1, command, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            await LogDeviceActionAsync(device, $"{actor}_mqtt_{command.ToLowerInvariant()}_command", "failed",
+                details: $"actorUserId={actorUserId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; parkingSpotId={parkingSpotId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; MQTT unavailable.");
+            await _accessLogs.LogAsync(actorUserId, $"{actor} bollard {command} command", false,
+                "MQTT unavailable.", iotDeviceId: device.IoTDeviceId);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { success = false, errorCode = "MQTT_UNAVAILABLE", message = "The device control service is temporarily unavailable." });
+        }
+
+        var commandSucceeded = IsSuccessfulDeviceAck(commandResult, command);
+        var resultDetails = commandResult.Message ?? commandResult.ErrorCode ?? commandResult.Result ?? commandResult.WaitStatus.ToString();
+        await LogDeviceActionAsync(device, $"{actor}_mqtt_{command.ToLowerInvariant()}_command",
+            commandSucceeded ? "acknowledged_success" : commandResult.WaitStatus == MqttCommandWaitStatus.TimedOut ? "ack_timeout" : "acknowledged_failure",
+            details: $"actorUserId={actorUserId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; parkingSpotId={parkingSpotId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; result={commandResult.Result ?? "none"}; errorCode={commandResult.ErrorCode ?? "none"}; message={resultDetails}; distanceCm={commandResult.DistanceCm?.ToString("F1", CultureInfo.InvariantCulture) ?? "unknown"}");
+        await _accessLogs.LogAsync(actorUserId, $"{actor} bollard {command} command", commandSucceeded,
+            $"ParkingSpotId={parkingSpotId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}; device result: {resultDetails}",
+            iotDeviceId: device.IoTDeviceId);
+
+        return CreateDeviceCommandResponse(
+            commandResult,
+            command,
+            bookingId: null,
+            deviceUuid: device.Esp32Serial,
+            locationVerified: false,
+            distanceMeters: null,
+            isAdmin: isAdmin);
+    }
 
     private async Task<IActionResult> SendRenterCommandAsync(
         int bookingId,
@@ -427,7 +605,7 @@ public sealed class IoTCommandController : ControllerBase
     private IActionResult CreateDeviceCommandResponse(
         MqttCommandResult result,
         string command,
-        int bookingId,
+        int? bookingId,
         string deviceUuid,
         bool locationVerified,
         double? distanceMeters,
