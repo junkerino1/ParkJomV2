@@ -14,9 +14,11 @@ public interface IEmailSender
 public class EmailSendResult
 {
     public bool Success { get; set; }
+    public bool Simulated { get; set; }
     public string? MessageId { get; set; }
     public string? Error { get; set; }
 
-    public static EmailSendResult Succeeded(string? messageId = null) => new() { Success = true, MessageId = messageId };
+    public static EmailSendResult Succeeded(string? messageId = null, bool simulated = false)
+        => new() { Success = true, MessageId = messageId, Simulated = simulated };
     public static EmailSendResult Failed(string error) => new() { Success = false, Error = error };
 }

@@ -49,4 +49,6 @@ public class Property
     public Station Station { get; set; } = null!;
 
     public ICollection<ParkingSpot> ParkingSpots { get; set; } = new List<ParkingSpot>();
+
+    public ICollection<PropertyManagement> PropertyManagements { get; set; } = new List<PropertyManagement>();
 }

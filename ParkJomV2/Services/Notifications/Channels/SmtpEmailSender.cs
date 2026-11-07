@@ -35,12 +35,12 @@ public class SmtpEmailSender : IEmailSender
             // If SMTP host or password is not configured, run in simulation mode
             if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(pass))
             {
+                // The body can contain security-sensitive links, so never include it in logs.
                 _logger.LogInformation(
-                    "[EMAIL SIMULATION] To: {RecipientEmail} ({RecipientName}) | Subject: {Subject}\nBody snippet: {Snippet}",
-                    recipientEmail, recipientName, subject,
-                    textBody.Length > 120 ? textBody[..120] + "..." : textBody);
+                    "[EMAIL SIMULATION] To: {RecipientEmail} ({RecipientName}) | Subject: {Subject}",
+                    recipientEmail, recipientName, subject);
 
-                return EmailSendResult.Succeeded($"sim-{Guid.NewGuid():N}");
+                return EmailSendResult.Succeeded($"sim-{Guid.NewGuid():N}", simulated: true);
             }
 
             var port = int.TryParse(portText, out var p) ? p : 587;

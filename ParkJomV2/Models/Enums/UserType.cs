@@ -4,6 +4,7 @@
     {
         Admin = 1,
         PropertyOwner = 2,
-        Renter = 3
+        Renter = 3,
+        PropertyManagement = 4
     }
 }

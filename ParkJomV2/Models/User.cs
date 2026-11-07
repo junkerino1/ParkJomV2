@@ -70,4 +70,5 @@ public class User
     public ICollection<NotificationPreference> NotificationPreferences { get; set; } = new List<NotificationPreference>();
 
     public ICollection<PushSubscription> PushSubscriptions { get; set; } = new List<PushSubscription>();
+
 }
