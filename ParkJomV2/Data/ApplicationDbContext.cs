@@ -13,6 +13,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<Property> Properties => Set<Property>();
+    public DbSet<PropertyManagement> PropertyManagements => Set<PropertyManagement>();
 
     public DbSet<Station> Stations => Set<Station>();
     public DbSet<ParkingSpot> ParkingSpots => Set<ParkingSpot>();
@@ -76,6 +77,19 @@ public class ApplicationDbContext : DbContext
             .HasOne(u => u.Wallet)
             .WithOne(w => w.User)
             .HasForeignKey<Wallet>(w => w.UserId);
+
+        modelBuilder.Entity<PropertyManagement>()
+            .HasOne(account => account.Property)
+            .WithMany(property => property.PropertyManagements)
+            .HasForeignKey(account => account.PropertyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PropertyManagement>()
+            .HasIndex(account => account.PropertyId);
+
+        modelBuilder.Entity<PropertyManagement>()
+            .HasIndex(account => account.Email)
+            .IsUnique();
 
         // =========================
         // Vehicle

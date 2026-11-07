@@ -6,6 +6,7 @@ using ParkJomV2.Data;
 using ParkJomV2.Hubs;
 using ParkJomV2.Middleware;
 using ParkJomV2.Models;
+using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using ParkJomV2.Services.Support;
 using ParkJomV2.Services.Support.Workers;
@@ -122,6 +123,48 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 var dbContext = context.HttpContext.RequestServices
                     .GetRequiredService<ApplicationDbContext>();
+                var userTypeClaim = context.Principal?.FindFirst("UserType")?.Value;
+                if (string.Equals(userTypeClaim, UserType.PropertyManagement.ToString(), StringComparison.Ordinal))
+                {
+                    if (string.Equals(context.Principal?.FindFirst("purpose")?.Value,
+                            "management-invitation", StringComparison.Ordinal))
+                    {
+                        context.Fail("An invitation token cannot be used as an API access token.");
+                        return;
+                    }
+
+                    var tokenCredentialVersion = context.Principal?.FindFirst("CredentialVersion")?.Value;
+                    if (!int.TryParse(tokenCredentialVersion, out var parsedCredentialVersion))
+                    {
+                        context.Fail("The property management credential is invalid.");
+                        return;
+                    }
+
+                    var managementAccount = await dbContext.PropertyManagements
+                        .AsNoTracking()
+                        .Where(account => account.ManagementAccountId == userId)
+                        .Select(account => new { account.CredentialVersion, account.AccountStatus })
+                        .FirstOrDefaultAsync();
+
+                    if (managementAccount is null || managementAccount.CredentialVersion != parsedCredentialVersion)
+                    {
+                        context.Fail("The property management credentials have changed. Please log in again.");
+                        return;
+                    }
+
+                    if (string.Equals(managementAccount.AccountStatus, "Suspended", StringComparison.OrdinalIgnoreCase))
+                    {
+                        context.HttpContext.Items["SuspendedAccount"] = true;
+                        context.Fail("The account is suspended.");
+                    }
+                    else if (string.Equals(managementAccount.AccountStatus, "Deactivated", StringComparison.OrdinalIgnoreCase))
+                    {
+                        context.HttpContext.Items["DeactivatedAccount"] = true;
+                        context.Fail("The account is deactivated.");
+                    }
+                    return;
+                }
+
                 var accountStatus = await dbContext.Users
                     .AsNoTracking()
                     .Where(user => user.UserId == userId)
@@ -200,6 +243,11 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireAuthenticatedUser();
         policy.RequireClaim("UserType", "Admin");
+    });
+    options.AddPolicy("PropertyManagementOnly", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim("UserType", UserType.PropertyManagement.ToString());
     });
 });
 
@@ -526,6 +574,61 @@ app.UseWebSockets();
 app.UseMiddleware<SupportWebSocketMiddleware>();
 
 app.UseAuthentication();   
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+    var isManagementEndpoint = path.StartsWithSegments("/api/management") || path.StartsWithSegments("/api/auth/management");
+    if (!isManagementEndpoint)
+    {
+        await next();
+        return;
+    }
+
+    async Task WriteManagementAuditAsync(bool succeeded, string? detail = null)
+    {
+        if (context.Items.ContainsKey("PropertyManagementAuditRecorded")) return;
+
+        var managerIdText = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                            ?? context.User.FindFirstValue("sub");
+        var isManagerToken = string.Equals(context.User.FindFirst("UserType")?.Value,
+            UserType.PropertyManagement.ToString(), StringComparison.Ordinal);
+        int? managerId = isManagerToken && int.TryParse(managerIdText, out var parsedId) ? parsedId : null;
+        int? propertyId = null;
+        if (managerId.HasValue)
+        {
+            var db = context.RequestServices.GetRequiredService<ApplicationDbContext>();
+            propertyId = await db.PropertyManagements.AsNoTracking()
+                .Where(account => account.ManagementAccountId == managerId.Value)
+                .Select(account => (int?)account.PropertyId)
+                .FirstOrDefaultAsync(context.RequestAborted);
+        }
+
+        var statusCode = context.Response.StatusCode;
+        var action = $"{context.Request.Method} {path}";
+        var auditDetails = $"httpStatus={statusCode}; traceId={context.TraceIdentifier}";
+        if (!string.IsNullOrWhiteSpace(detail)) auditDetails += $"; {detail}";
+        var audit = context.RequestServices.GetRequiredService<AccessLogService>();
+        await audit.LogManagementAsync(managerId, propertyId, action, succeeded, auditDetails);
+    }
+
+    try
+    {
+        await next();
+        var recordedResult = context.Items.TryGetValue("PropertyManagementAuditSuccess", out var outcome)
+            ? outcome is true
+            : context.Response.StatusCode < StatusCodes.Status400BadRequest;
+        var detail = context.Items.TryGetValue("PropertyManagementAuditDetail", out var auditDetail)
+            ? auditDetail as string
+            : null;
+        await WriteManagementAuditAsync(recordedResult, detail);
+    }
+    catch (Exception)
+    {
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        await WriteManagementAuditAsync(false, "request failed with an unhandled server exception");
+        throw;
+    }
+});
 app.UseAuthorization();
 
 app.UseRateLimiter();

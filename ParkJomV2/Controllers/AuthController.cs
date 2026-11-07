@@ -298,6 +298,17 @@ namespace ParkJomV2.Controllers
                 });
             }
 
+            if (user.UserType == UserType.PropertyManagement || request.UserType == UserType.PropertyManagement)
+            {
+                await _accessLogService.LogAsync(User, "CompleteProfile", false, $"PropertyManagement role rejected: UserId={user.UserId}");
+                return BadRequest(new AuthResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "PropertyManagement accounts can only be created by an administrator."
+                });
+            }
+
             user.PhoneNumber = request.PhoneNumber;
             user.IsProfileComplete = true;
             user.UpdatedAt = DateTime.UtcNow;

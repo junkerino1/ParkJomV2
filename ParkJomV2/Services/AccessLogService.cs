@@ -71,4 +71,22 @@ public class AccessLogService
             _logger.LogError(ex, "Failed to write access log: {Action}", action);
         }
     }
+
+    /// <summary>Audits actions by standalone PropertyManagement accounts without linking them to Users.</summary>
+    public Task LogManagementAsync(
+        int? managementAccountId,
+        int? propertyId,
+        string action,
+        bool success,
+        string? detail = null,
+        int? bookingId = null,
+        int? iotDeviceId = null)
+    {
+        var actor = managementAccountId.HasValue
+            ? $"managementAccountId={managementAccountId.Value}"
+            : "managementAccountId=unknown";
+        var property = propertyId.HasValue ? $"; propertyId={propertyId.Value}" : string.Empty;
+        var auditDetail = $"{actor}{property}" + (string.IsNullOrWhiteSpace(detail) ? string.Empty : $"; {detail}");
+        return LogAsync((int?)null, $"PropertyManagement:{action}", success, auditDetail, bookingId, iotDeviceId);
+    }
 }
