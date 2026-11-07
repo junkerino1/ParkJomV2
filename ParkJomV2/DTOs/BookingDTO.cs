@@ -39,8 +39,16 @@ public class BookingResponseDTO
     public DateTime EndDate { get; set; }
     public string BookingStatus { get; set; } = string.Empty;
     public decimal TotalAmount { get; set; }
+    public int BookedDays { get; set; }
+    public decimal RatePerDay { get; set; }
+    public decimal RentalSubtotal { get; set; }
+    public decimal PlatformFee { get; set; }
     public string? CancellationReason { get; set; }
     public DateTime? CancelledAt { get; set; }
+    public DateTime? CheckedInAt { get; set; }
+    public DateTime? ActualExitAt { get; set; }
+    public bool HasOpenedBollard { get; set; }
+    public bool CanCancel { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -87,6 +95,7 @@ public class BookingLastDayData
     public DateOnly CheckedLocalDate { get; set; }
     public DateOnly LastAvailableDate { get; set; }
     public bool IsLastDay { get; set; }
+    public bool IsComplete { get; set; }
     public bool CanReview { get; set; }
 }
 
@@ -152,6 +161,15 @@ public class ActiveBookingDTO
     public string VehiclePlate { get; set; } = string.Empty;
     public string Status { get; set; } = "Active";
     public decimal TotalPaid { get; set; }
+    public int BookedDays { get; set; }
+    public decimal RatePerDay { get; set; }
+    public decimal RentalSubtotal { get; set; }
+    public decimal PlatformFee { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? CheckedInAt { get; set; }
+    public DateTime? ActualExitAt { get; set; }
+    public bool HasOpenedBollard { get; set; }
+    public bool CanCancel { get; set; }
     public ActiveBookingSpotDTO Spot { get; set; } = new();
 }
 

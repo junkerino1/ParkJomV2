@@ -234,10 +234,6 @@ public class CommuterBookingsController : ControllerBase
     }
 
 
-    /// <summary>
-    /// GET /api/commuter/bookings/active
-    /// Retrieves the commuter's currently active or upcoming reservation across devices.
-    /// </summary>
     /// <summary>Checks whether today is the final scheduled parking day for a booking.</summary>
     /// <remarks>
     /// Use this after a successful bollard exit to decide whether the app should offer the renter a review.
@@ -250,6 +246,9 @@ public class CommuterBookingsController : ControllerBase
     /// <response code="403">The booking belongs to another renter.</response>
     /// <response code="404">The booking or authenticated user was not found.</response>
     [HttpGet("~/api/bookings/{bookingNumber}/isLastDay")]
+    [HttpGet("~/api/booking/{bookingNumber}/isLastDay")]
+    [HttpGet("~/api/bookings/{bookingNumber}/isComplete")]
+    [HttpGet("~/api/booking/{bookingNumber}/isComplete")]
     [ProducesResponseType(typeof(BookingLastDayResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
@@ -303,6 +302,8 @@ public class CommuterBookingsController : ControllerBase
             .AsNoTracking()
             .AnyAsync(review => review.BookingId == booking.BookingId && review.ReviewerId == booking.RenterId,
                 cancellationToken);
+        var isLastDay = malaysiaToday >= lastAvailableDate;
+        var isComplete = booking.BookingStatus == BookingStatus.Completed || isLastDay;
 
         return Ok(new BookingLastDayResponse
         {
@@ -316,8 +317,9 @@ public class CommuterBookingsController : ControllerBase
                 BookingStatus = booking.BookingStatus.ToString(),
                 CheckedLocalDate = malaysiaToday,
                 LastAvailableDate = lastAvailableDate,
-                IsLastDay = malaysiaToday >= lastAvailableDate,
-                CanReview = booking.BookingStatus == BookingStatus.Completed && !hasReview
+                IsLastDay = isLastDay,
+                IsComplete = isComplete,
+                CanReview = (booking.BookingStatus == BookingStatus.Completed || isLastDay) && !hasReview
             }
         });
     }
@@ -521,26 +523,6 @@ public class CommuterBookingsController : ControllerBase
                 return Conflict(Error(StatusCodes.Status409Conflict, "The selected period is no longer available."));
             }
 
-            var hasUserOverlap = await _context.Bookings.AnyAsync(item =>
-                item.RenterId == userId &&
-                (item.BookingStatus == BookingStatus.Confirmed || item.BookingStatus == BookingStatus.Active) &&
-                item.StartDate < quote.EndDate && item.EndDate > quote.StartDate,
-                cancellationToken);
-            if (hasUserOverlap)
-            {
-                return Conflict(Error(StatusCodes.Status409Conflict, "You already have an active or confirmed reservation that overlaps with the selected period."));
-            }
-
-            var hasVehicleOverlap = await _context.Bookings.AnyAsync(item =>
-                item.VehicleId == request.VehicleId &&
-                (item.BookingStatus == BookingStatus.Confirmed || item.BookingStatus == BookingStatus.Active) &&
-                item.StartDate < quote.EndDate && item.EndDate > quote.StartDate,
-                cancellationToken);
-            if (hasVehicleOverlap)
-            {
-                return Conflict(Error(StatusCodes.Status409Conflict, "This vehicle is already assigned to another active or confirmed reservation during the selected period."));
-            }
-
             // lock wallet to prevent race conditions when multiple bookings are being processed at the same time
             var lockedWallets = await _context.Wallets
                 .FromSqlInterpolated($"SELECT * FROM [Wallets] WITH (UPDLOCK, HOLDLOCK) WHERE [UserId] IN ({userId}, {lockedSpot.OwnerId}) AND [Status] = {WalletStatus.Active.ToString()}")
@@ -692,6 +674,7 @@ public class CommuterBookingsController : ControllerBase
     /// <summary>
     /// Cancels one of the authenticated commuter's bookings.
     /// Only the booking's renter or an admin may cancel it.
+    /// Cancellation is only allowed if the bollard has never opened and within 24 hours of booking creation.
     /// </summary>
     [HttpPost("cancel")]
     [ProducesResponseType(typeof(CancelBookingResponse), StatusCodes.Status200OK)]
@@ -767,16 +750,41 @@ public class CommuterBookingsController : ControllerBase
             var now = DateTime.UtcNow;
             var malaysiaToday = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8));
             var bookingStartDate = DateOnly.FromDateTime(booking.StartDate);
-            if (booking.BookingStatus == BookingStatus.Active ||
-                booking.BookingStatus == BookingStatus.Expired ||
-                malaysiaToday >= bookingStartDate)
+
+            if (booking.BookingStatus == BookingStatus.Expired)
             {
-                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Cannot cancel started or expired booking (bookingId={request.BookingId})");
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Cannot cancel expired booking (bookingId={request.BookingId})");
                 return BadRequest(new ErrorResponse
                 {
                     Code = StatusCodes.Status400BadRequest,
                     Success = false,
-                    Message = "Bookings cannot be cancelled once the booking period has started."
+                    Message = "Expired bookings cannot be cancelled."
+                });
+            }
+
+            var hasOpenedBollard = booking.CheckedInAt.HasValue ||
+                booking.BookingStatus == BookingStatus.Active;
+
+            if (hasOpenedBollard)
+            {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Cannot cancel after bollard opened (bookingId={request.BookingId})");
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Bookings cannot be cancelled once the bollard has been unlocked."
+                });
+            }
+
+            var within24Hours = (now - booking.CreatedAt).TotalHours <= 24.0;
+            if (!within24Hours)
+            {
+                await _accessLogService.LogAsync(User, "CancelBooking", false, $"Cannot cancel after 24 hours from creation (bookingId={request.BookingId})");
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Bookings can only be cancelled within 24 hours of booking creation."
                 });
             }
 
@@ -831,8 +839,6 @@ public class CommuterBookingsController : ControllerBase
                     var effectiveRatio = booking.TotalAmount > 0 ? refundAmount / booking.TotalAmount : 0m;
                     var ownerPayout = Math.Min(ownerWallet.OnHold, Math.Round(booking.OwnerPayoutAmount * effectiveRatio, 2, MidpointRounding.AwayFromZero));
                     var commission = Math.Round(booking.PlatformCommissionAmount * effectiveRatio, 2, MidpointRounding.AwayFromZero);
-
-
 
                     // 1) Refund the renter's wallet balance.
                     _walletService.Refund(renterWallet, refundAmount, now);
@@ -1102,6 +1108,11 @@ public class CommuterBookingsController : ControllerBase
 
     private static BookingResponseDTO MapToBookingResponseDTO(Booking booking)
     {
+        var hasOpenedBollard = booking.CheckedInAt.HasValue || booking.BookingStatus == BookingStatus.Active;
+        var canCancel = !hasOpenedBollard &&
+                        booking.BookingStatus == BookingStatus.Confirmed &&
+                        (DateTime.UtcNow - booking.CreatedAt).TotalHours <= 24.0;
+
         return new BookingResponseDTO
         {
             BookingId = booking.BookingId,
@@ -1114,8 +1125,16 @@ public class CommuterBookingsController : ControllerBase
             EndDate = booking.EndDate,
             BookingStatus = booking.BookingStatus.ToString(),
             TotalAmount = booking.TotalAmount,
+            BookedDays = booking.BookedDays,
+            RatePerDay = booking.RatePerDaySnapshot,
+            RentalSubtotal = booking.RentalSubtotal,
+            PlatformFee = booking.PlatformCommissionAmount,
             CancellationReason = booking.CancellationReason,
             CancelledAt = booking.CancelledAt,
+            CheckedInAt = booking.CheckedInAt,
+            ActualExitAt = booking.ActualExitAt,
+            HasOpenedBollard = hasOpenedBollard,
+            CanCancel = canCancel,
             CreatedAt = booking.CreatedAt
         };
     }
@@ -1166,6 +1185,10 @@ public class CommuterBookingsController : ControllerBase
         var primaryImg = booking.ParkingSpot.ParkingSpotImages.FirstOrDefault()?.MediaFile?.SecureUrl;
         var spot = booking.ParkingSpot;
         var property = spot.Property;
+        var hasOpenedBollard = booking.CheckedInAt.HasValue || booking.BookingStatus == BookingStatus.Active;
+        var canCancel = !hasOpenedBollard &&
+                        booking.BookingStatus == BookingStatus.Confirmed &&
+                        (DateTime.UtcNow - booking.CreatedAt).TotalHours <= 24.0;
 
         return new ActiveBookingDTO
         {
@@ -1176,6 +1199,15 @@ public class CommuterBookingsController : ControllerBase
             VehiclePlate = booking.Vehicle?.NumberPlate ?? string.Empty,
             Status = booking.BookingStatus.ToString(),
             TotalPaid = booking.TotalAmount,
+            BookedDays = booking.BookedDays,
+            RatePerDay = booking.RatePerDaySnapshot,
+            RentalSubtotal = booking.RentalSubtotal,
+            PlatformFee = booking.PlatformCommissionAmount,
+            CreatedAt = booking.CreatedAt,
+            CheckedInAt = booking.CheckedInAt,
+            ActualExitAt = booking.ActualExitAt,
+            HasOpenedBollard = hasOpenedBollard,
+            CanCancel = canCancel,
             Spot = new ActiveBookingSpotDTO
             {
                 ParkingSpotId = spot.ParkingSpotId,
