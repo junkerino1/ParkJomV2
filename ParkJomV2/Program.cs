@@ -33,6 +33,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddScoped<GoogleAuthService>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
+builder.Services.AddHttpClient<Sms360Service>(client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<StripeService>();
 // Registration, OTP lifecycle, and spot binding share one scoped business service.
@@ -165,20 +166,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     return;
                 }
 
-                var accountStatus = await dbContext.Users
+                var accountState = await dbContext.Users
                     .AsNoTracking()
                     .Where(user => user.UserId == userId)
-                    .Select(user => user.AccountStatus)
+                    .Select(user => new { user.AccountStatus, user.IsProfileComplete })
                     .FirstOrDefaultAsync();
 
-                if (accountStatus == null)
+                if (accountState == null)
                 {
                     context.Fail("The authenticated account no longer exists.");
                     return;
                 }
 
                 if (string.Equals(
-                    accountStatus,
+                    accountState.AccountStatus,
                     "Suspended",
                     StringComparison.OrdinalIgnoreCase))
                 {
@@ -186,7 +187,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     context.Fail("The account is suspended.");
                 }
                 else if (string.Equals(
-                    accountStatus,
+                    accountState.AccountStatus,
                     "Deactivated",
                     StringComparison.OrdinalIgnoreCase))
                 {
@@ -200,6 +201,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                         context.Fail("The account is deactivated.");
                     }
                 }
+
+                if (accountState.IsProfileComplete == false
+                    && !string.Equals(userTypeClaim, UserType.Admin.ToString(), StringComparison.Ordinal)
+                    && !IsPhoneOnboardingEndpoint(context.HttpContext.Request.Path))
+                {
+                    context.HttpContext.Items["IncompleteProfile"] = true;
+                    context.Fail("Phone verification is required before using ParkJom.");
+                }
             },
             OnChallenge = context =>
             {
@@ -208,11 +217,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
                 var isSuspendedAccount = context.HttpContext.Items.ContainsKey("SuspendedAccount");
                 var isDeactivatedAccount = context.HttpContext.Items.ContainsKey("DeactivatedAccount");
+                var isIncompleteProfile = context.HttpContext.Items.ContainsKey("IncompleteProfile");
 
                 var (statusCode, message) = isSuspendedAccount
                     ? (StatusCodes.Status403Forbidden, "Your account is suspended. Please contact support.")
                     : isDeactivatedAccount
                         ? (StatusCodes.Status403Forbidden, "Your account is deactivated. Please contact support to reactivate.")
+                        : isIncompleteProfile
+                            ? (StatusCodes.Status403Forbidden, "Verify your phone number before using ParkJom.")
                         : context.AuthenticateFailure switch
                 {
                     SecurityTokenExpiredException => (StatusCodes.Status401Unauthorized, "Your session has expired. Please log in again."),
@@ -638,6 +650,11 @@ app.MapHub<SupportHub>("/hubs/support");
 app.MapHub<NotificationHub>("/hubs/notifications");
 
 app.Run();
+
+static bool IsPhoneOnboardingEndpoint(PathString path)
+    => path.StartsWithSegments("/api/auth/complete-profile")
+       || path.StartsWithSegments("/api/auth/phone/otp/status")
+       || path.StartsWithSegments("/api/auth/logout");
 
 /// <summary>
 /// Orders OpenAPI tags alphabetically (e.g. 01, 02, 03...) across the document.

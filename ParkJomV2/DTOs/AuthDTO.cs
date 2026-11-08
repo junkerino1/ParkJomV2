@@ -21,6 +21,39 @@ public class CompleteProfileRequest
     public UserType? UserType { get; set; }
 }
 
+public sealed class VerifyPhoneOtpRequest
+{
+    [Required, RegularExpression("^\\d{6}$", ErrorMessage = "OTP must contain exactly six digits.")]
+    public string Otp { get; set; } = string.Empty;
+}
+
+public sealed class PhoneOtpFlowResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public PhoneOtpFlowData Data { get; set; } = new();
+}
+
+public sealed class PhoneOtpFlowData
+{
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string VerificationStatus { get; set; } = string.Empty;
+    public string SmsDeliveryStatus { get; set; } = string.Empty;
+    public string? SmsErrorCode { get; set; }
+    public string? SmsErrorDescription { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public int ResendAfterSeconds { get; set; }
+}
+
+public sealed class PhoneOtpStatusResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public PhoneOtpFlowData? Data { get; set; }
+}
+
 public class UserDTO
 {
     public int UserId { get; set; }
