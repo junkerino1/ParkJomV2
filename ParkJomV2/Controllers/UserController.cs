@@ -184,25 +184,31 @@ public class UserController : ControllerBase
                     Message = "Phone number cannot be empty."
                 });
             }
+            if (user.IsProfileComplete && !string.Equals(user.PhoneNumber, trimmedPhone, StringComparison.Ordinal))
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Changing a verified phone number requires phone verification."
+                });
+            }
             user.PhoneNumber = trimmedPhone;
         }
 
-        if (!string.IsNullOrWhiteSpace(user.FirstName) && !string.IsNullOrWhiteSpace(user.PhoneNumber))
+        // A profile must not become complete merely because a phone number was entered.
+        // Phone verification in AuthController is the only normal user path that completes it.
+        if (user.IsProfileComplete && user.Wallet == null)
         {
-            user.IsProfileComplete = true;
-
-            if (user.Wallet == null)
+            _context.Wallets.Add(new Wallet
             {
-                _context.Wallets.Add(new Wallet
-                {
-                    UserId = user.UserId,
-                    Status = WalletStatus.Active,
-                    Balance = 0m,
-                    OnHold = 0m,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                });
-            }
+                UserId = user.UserId,
+                Status = WalletStatus.Active,
+                Balance = 0m,
+                OnHold = 0m,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
         }
 
         user.UpdatedAt = DateTime.UtcNow;

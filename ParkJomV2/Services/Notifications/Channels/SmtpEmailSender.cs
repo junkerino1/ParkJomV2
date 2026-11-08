@@ -1,6 +1,7 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
+using System.Net.Sockets;
 
 namespace ParkJomV2.Services.Notifications.Channels;
 
@@ -32,15 +33,17 @@ public class SmtpEmailSender : IEmailSender
             var pass = emailConfig["Smtp:Password"];
             var from = emailConfig["From"] ?? "ParkJom <no-reply@parkjom.com>";
 
-            // If SMTP host or password is not configured, run in simulation mode
-            if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(pass))
+            // Never report a successful send when SMTP is not configured. Invitation
+            // creation depends on the email being deliverable.
+            var missingSettings = new List<string>();
+            if (string.IsNullOrWhiteSpace(host)) missingSettings.Add("Notifications:Email:Smtp:Host");
+            if (string.IsNullOrWhiteSpace(user)) missingSettings.Add("Notifications:Email:Smtp:User");
+            if (string.IsNullOrWhiteSpace(pass)) missingSettings.Add("Notifications:Email:Smtp:Password");
+            if (missingSettings.Count > 0)
             {
-                // The body can contain security-sensitive links, so never include it in logs.
-                _logger.LogInformation(
-                    "[EMAIL SIMULATION] To: {RecipientEmail} ({RecipientName}) | Subject: {Subject}",
-                    recipientEmail, recipientName, subject);
-
-                return EmailSendResult.Succeeded($"sim-{Guid.NewGuid():N}", simulated: true);
+                var error = $"SMTP is not configured. Missing required setting(s): {string.Join(", ", missingSettings)}.";
+                _logger.LogError("{Error}", error);
+                return EmailSendResult.Failed(error, "SMTP_CONFIGURATION_MISSING");
             }
 
             var port = int.TryParse(portText, out var p) ? p : 587;
@@ -70,7 +73,7 @@ public class SmtpEmailSender : IEmailSender
             message.Body = builder.ToMessageBody();
 
             using var client = new SmtpClient();
-            await client.ConnectAsync(host, port, socketOptions, ct);
+            await client.ConnectAsync(host!, port, socketOptions, ct);
 
             if (!string.IsNullOrWhiteSpace(user) && !string.IsNullOrWhiteSpace(pass))
             {
@@ -85,10 +88,30 @@ public class SmtpEmailSender : IEmailSender
 
             return EmailSendResult.Succeeded($"smtp-{DateTime.UtcNow.Ticks}");
         }
+        catch (MailKit.Security.AuthenticationException ex)
+        {
+            _logger.LogError(ex, "Failed to send email to {RecipientEmail} | Subject: {Subject}", recipientEmail, subject);
+            return EmailSendResult.Failed("The SMTP server rejected authentication. Verify the Brevo SMTP login and SMTP key (not the API key).", "SMTP_AUTHENTICATION_FAILED");
+        }
+        catch (SmtpCommandException ex)
+        {
+            _logger.LogError(ex, "SMTP rejected email delivery to {RecipientEmail} | Subject: {Subject} | Status: {StatusCode}", recipientEmail, subject, ex.StatusCode);
+            return EmailSendResult.Failed($"The SMTP server rejected the message (status {(int)ex.StatusCode} {ex.StatusCode}). Check the verified sender address and Brevo SMTP permissions.", "SMTP_MESSAGE_REJECTED");
+        }
+        catch (SmtpProtocolException ex)
+        {
+            _logger.LogError(ex, "SMTP protocol error sending email to {RecipientEmail} | Subject: {Subject}", recipientEmail, subject);
+            return EmailSendResult.Failed("The SMTP connection was established, but the server returned an unexpected SMTP response. Check the host, port, and TLS mode.", "SMTP_PROTOCOL_ERROR");
+        }
+        catch (SocketException ex)
+        {
+            _logger.LogError(ex, "Could not connect to SMTP server for {RecipientEmail} | Subject: {Subject}", recipientEmail, subject);
+            return EmailSendResult.Failed("Could not connect to the SMTP server. Check the host, port, TLS mode, and outbound network access.", "SMTP_CONNECTION_FAILED");
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send email to {RecipientEmail} | Subject: {Subject}", recipientEmail, subject);
-            return EmailSendResult.Failed(ex.Message);
+            return EmailSendResult.Failed($"SMTP delivery failed ({ex.GetType().Name}). Check the application logs for the detailed exception.", "SMTP_SEND_FAILED");
         }
     }
 }

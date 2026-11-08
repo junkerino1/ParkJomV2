@@ -11,6 +11,7 @@ public class ApplicationDbContext : DbContext
     }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<PhoneOtpVerification> PhoneOtpVerifications => Set<PhoneOtpVerification>();
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<Property> Properties => Set<Property>();
     public DbSet<PropertyManagement> PropertyManagements => Set<PropertyManagement>();
@@ -72,6 +73,20 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<User>()
             .HasIndex(u => u.Email)
             .IsUnique();
+
+        modelBuilder.Entity<PhoneOtpVerification>()
+            .HasIndex(otp => new { otp.UserId, otp.CreatedAtUtc });
+
+        modelBuilder.Entity<PhoneOtpVerification>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(otp => otp.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PhoneOtpVerification>()
+            .HasIndex(otp => otp.ProviderMessageId)
+            .IsUnique()
+            .HasFilter("[ProviderMessageId] IS NOT NULL");
 
         modelBuilder.Entity<User>()
             .HasOne(u => u.Wallet)
