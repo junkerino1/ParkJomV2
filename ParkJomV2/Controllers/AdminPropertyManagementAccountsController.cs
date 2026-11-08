@@ -61,7 +61,23 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         var email = request.Email.Trim();
         var emailExists = await _db.PropertyManagements.AnyAsync(item => item.Email == email, cancellationToken);
         if (emailExists)
-            return BadRequest(Error(StatusCodes.Status400BadRequest, "EMAIL_ALREADY_IN_USE", "An account with this email already exists."));
+            return BadRequest(Error(StatusCodes.Status400BadRequest, "EMAIL_ALREADY_IN_USE", "An account with this email already exists in Property Management."));
+
+        var existingUser = await _db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower(), cancellationToken);
+        if (existingUser is not null)
+        {
+            var roleLabel = existingUser.UserType switch
+            {
+                UserType.Admin => "Admin",
+                UserType.PropertyOwner => "Property Owner",
+                UserType.Renter => "Commuter",
+                _ => existingUser.UserType.ToString()
+            };
+            return BadRequest(Error(StatusCodes.Status400BadRequest, "EMAIL_ALREADY_HAS_ROLE",
+                $"This email is already registered as a {roleLabel} account. An email with an existing role cannot be invited to Property Management."));
+        }
 
         var property = await _db.Properties
             .AsNoTracking()
@@ -87,12 +103,12 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
 
         _db.PropertyManagements.Add(account);
         await _db.SaveChangesAsync(cancellationToken);
-        var emailStatus = await SendInvitationEmailAsync(account, cancellationToken);
+        var (emailStatus, smtpError, invitationUrl) = await SendInvitationEmailAsync(account, cancellationToken);
         await _accessLogs.LogAsync(User, "CreatePropertyManagementAccount", true,
-            $"ManagerAccountId={account.ManagementAccountId}; PropertyId={property.PropertyId}; InvitationEmailStatus={emailStatus}.");
+            $"ManagerAccountId={account.ManagementAccountId}; PropertyId={property.PropertyId}; InvitationEmailStatus={emailStatus}; SmtpError={smtpError ?? "none"}.");
 
         return CreatedAtAction(nameof(GetById), new { managementAccountId = account.ManagementAccountId },
-            MapMutation(account, property, emailStatus));
+            MapMutation(account, property, emailStatus, invitationUrl, smtpError));
     }
 
     /// <summary>Lists PropertyManagement accounts with optional property/status filters and pagination.</summary>
@@ -145,6 +161,35 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         return Ok(Map(account, account.Property));
     }
 
+    /// <summary>Generates or retrieves a 14-day invitation link for an account with MustChangePassword=true.</summary>
+    [HttpGet("{managementAccountId:int}/invitation-link")]
+    [ProducesResponseType(typeof(PropertyManagementInvitationLinkResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PropertyManagementInvitationLinkResponse>> GetInvitationLink(
+        int managementAccountId,
+        CancellationToken cancellationToken)
+    {
+        var account = await LoadAccountAsync(managementAccountId, cancellationToken);
+        if (account is null) return NotFound(Error(StatusCodes.Status404NotFound, "ACCOUNT_NOT_FOUND", "PropertyManagement account was not found."));
+
+        if (!account.MustChangePassword)
+            return BadRequest(Error(StatusCodes.Status400BadRequest, "ACCOUNT_ALREADY_ACTIVATED", "This account has already completed password activation."));
+
+        var invitationUrl = BuildInvitationUrl(account, out var expiresAt);
+        await _accessLogs.LogAsync(User, "GenerateManagementInvitationLink", true,
+            $"ManagerAccountId={managementAccountId}; PropertyId={account.PropertyId}; ExpiresAtUtc={expiresAt:u}");
+
+        return Ok(new PropertyManagementInvitationLinkResponse
+        {
+            Code = StatusCodes.Status200OK,
+            Success = true,
+            Message = "Invitation link generated successfully.",
+            InvitationLink = invitationUrl,
+            ExpiresAtUtc = expiresAt
+        });
+    }
+
     /// <summary>Updates a manager's email, username, assigned property, or status; can resend a first-time invitation.</summary>
     /// <remarks>Set resendInvitation to true to invalidate previous invitation links and email a fresh 14-day link. If a pending account's email address changes, a replacement invitation is sent to the new address.</remarks>
     [HttpPost("{managementAccountId:int}")]
@@ -172,7 +217,23 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         {
             var email = request.Email.Trim();
             var emailExists = await _db.PropertyManagements.AnyAsync(item => item.ManagementAccountId != managementAccountId && item.Email == email, cancellationToken);
-            if (emailExists) return BadRequest(Error(StatusCodes.Status400BadRequest, "EMAIL_ALREADY_IN_USE", "An account with this email already exists."));
+            if (emailExists) return BadRequest(Error(StatusCodes.Status400BadRequest, "EMAIL_ALREADY_IN_USE", "An account with this email already exists in Property Management."));
+
+            var existingUser = await _db.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == email.ToLower(), cancellationToken);
+            if (existingUser is not null)
+            {
+                var roleLabel = existingUser.UserType switch
+                {
+                    UserType.Admin => "Admin",
+                    UserType.PropertyOwner => "Property Owner",
+                    UserType.Renter => "Commuter",
+                    _ => existingUser.UserType.ToString()
+                };
+                return BadRequest(Error(StatusCodes.Status400BadRequest, "EMAIL_ALREADY_HAS_ROLE",
+                    $"This email is already registered as a {roleLabel} account. An email with an existing role cannot be assigned to Property Management."));
+            }
             emailChanged = !string.Equals(account.Email, email, StringComparison.OrdinalIgnoreCase);
             account.Email = email;
         }
@@ -202,11 +263,19 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
             account.CredentialVersion++;
         account.UpdatedAt = now;
         await _db.SaveChangesAsync(cancellationToken);
-        var emailStatus = issueInvitation ? await SendInvitationEmailAsync(account, cancellationToken) : null;
+
+        string? emailStatus = null;
+        string? smtpError = null;
+        string? invitationUrl = null;
+        if (issueInvitation)
+        {
+            (emailStatus, smtpError, invitationUrl) = await SendInvitationEmailAsync(account, cancellationToken);
+        }
+
         await _accessLogs.LogAsync(User, "UpdatePropertyManagementAccount", true,
-            $"ManagerAccountId={managementAccountId}; PropertyId={account.PropertyId}; InvitationEmailStatus={emailStatus ?? "not_requested"}.");
+            $"ManagerAccountId={managementAccountId}; PropertyId={account.PropertyId}; InvitationEmailStatus={emailStatus ?? "not_requested"}; SmtpError={smtpError ?? "none"}.");
         await _db.Entry(account).Reference(item => item.Property).LoadAsync(cancellationToken);
-        return Ok(MapMutation(account, account.Property, emailStatus));
+        return Ok(MapMutation(account, account.Property, emailStatus, invitationUrl, smtpError));
     }
 
     private Task<PropertyManagement?> LoadAccountAsync(int managementAccountId, CancellationToken cancellationToken)
@@ -231,7 +300,9 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
     private static PropertyManagementAccountMutationDTO MapMutation(
         PropertyManagement account,
         Property property,
-        string? invitationEmailStatus)
+        string? invitationEmailStatus,
+        string? invitationLink = null,
+        string? smtpErrorMessage = null)
     {
         var mapped = Map(account, property);
         return new PropertyManagementAccountMutationDTO
@@ -245,7 +316,9 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
             MustChangePassword = mapped.MustChangePassword,
             CreatedAt = mapped.CreatedAt,
             LastLoginAt = mapped.LastLoginAt,
-            InvitationEmailStatus = invitationEmailStatus
+            InvitationEmailStatus = invitationEmailStatus,
+            InvitationLink = invitationLink,
+            SmtpErrorMessage = smtpErrorMessage
         };
     }
 
@@ -255,9 +328,9 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         return _passwordHasher.HashPassword(account, unknownSecret);
     }
 
-    private async Task<string> SendInvitationEmailAsync(PropertyManagement account, CancellationToken cancellationToken)
+    private string BuildInvitationUrl(PropertyManagement account, out DateTime expiresAt)
     {
-        var token = _jwt.GenerateManagementInvitationToken(account, out var expiresAt);
+        var token = _jwt.GenerateManagementInvitationToken(account, out expiresAt);
         var invitationPageUrl = _configuration["PropertyManagement:InvitationPageUrl"];
         if (string.IsNullOrWhiteSpace(invitationPageUrl))
         {
@@ -268,7 +341,14 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         }
 
         var separator = invitationPageUrl.Contains('?') ? "&" : "?";
-        var invitationUrl = $"{invitationPageUrl}{separator}token={Uri.EscapeDataString(token)}";
+        return $"{invitationPageUrl}{separator}token={Uri.EscapeDataString(token)}";
+    }
+
+    private async Task<(string Status, string? Error, string InvitationUrl)> SendInvitationEmailAsync(
+        PropertyManagement account,
+        CancellationToken cancellationToken)
+    {
+        var invitationUrl = BuildInvitationUrl(account, out var expiresAt);
         var safeName = WebUtility.HtmlEncode(account.Username);
         var safeEmail = WebUtility.HtmlEncode(account.Email);
         var safeUrl = WebUtility.HtmlEncode(invitationUrl);
@@ -286,11 +366,16 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         try
         {
             var result = await _emailSender.SendEmailAsync(account.Email, account.Username, subject, htmlBody, textBody, cancellationToken);
-            return result.Simulated ? "simulated" : result.Success ? "sent" : "failed";
+            if (result.Simulated)
+                return ("simulated", null, invitationUrl);
+            if (result.Success)
+                return ("sent", null, invitationUrl);
+
+            return ("failed", result.Error, invitationUrl);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return "failed";
+            return ("failed", ex.Message, invitationUrl);
         }
     }
 

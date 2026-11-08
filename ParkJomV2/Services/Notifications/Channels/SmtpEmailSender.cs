@@ -26,11 +26,11 @@ public class SmtpEmailSender : IEmailSender
         try
         {
             var emailConfig = _configuration.GetSection("Notifications:Email");
-            var host = emailConfig["Smtp:Host"];
-            var portText = emailConfig["Smtp:Port"];
-            var user = emailConfig["Smtp:User"];
-            var pass = emailConfig["Smtp:Password"];
-            var from = emailConfig["From"] ?? "ParkJom <no-reply@parkjom.com>";
+            var host = emailConfig["Smtp:Host"]?.Trim();
+            var portText = emailConfig["Smtp:Port"]?.Trim();
+            var user = emailConfig["Smtp:User"]?.Trim();
+            var pass = emailConfig["Smtp:Password"]?.Replace(" ", "").Trim();
+            var from = emailConfig["From"]?.Trim() ?? "ParkJom <no-reply@parkjom.com>";
 
             // If SMTP host or password is not configured, run in simulation mode
             if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(pass))
@@ -45,18 +45,35 @@ public class SmtpEmailSender : IEmailSender
 
             var port = int.TryParse(portText, out var p) ? p : 587;
             var enableSsl = bool.TryParse(emailConfig["Smtp:EnableSsl"], out var ssl) ? ssl : true;
-            var socketOptions = port == 465
-                ? SecureSocketOptions.SslOnConnect
-                : enableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.None;
+            var socketOptions = port switch
+            {
+                465 => SecureSocketOptions.SslOnConnect,
+                587 => SecureSocketOptions.StartTls,
+                25 => SecureSocketOptions.StartTlsWhenAvailable,
+                _ => enableSsl ? SecureSocketOptions.Auto : SecureSocketOptions.None
+            };
+
+            // If using Gmail or from is default @parkjom.com, align From with authenticated account
+            var effectiveFrom = from;
+            if (!string.IsNullOrWhiteSpace(user) && user.Contains('@'))
+            {
+                var isDefaultDomain = from.Contains("@parkjom.com", StringComparison.OrdinalIgnoreCase);
+                var isGmail = (host?.Contains("gmail.com", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                              user.EndsWith("@gmail.com", StringComparison.OrdinalIgnoreCase);
+                if (isDefaultDomain || isGmail)
+                {
+                    effectiveFrom = $"ParkJom <{user}>";
+                }
+            }
 
             var message = new MimeMessage();
-            if (MailboxAddress.TryParse(from, out var fromAddress))
+            if (MailboxAddress.TryParse(effectiveFrom, out var fromAddress))
             {
                 message.From.Add(fromAddress);
             }
             else
             {
-                message.From.Add(new MailboxAddress("ParkJom", from));
+                message.From.Add(new MailboxAddress("ParkJom", effectiveFrom));
             }
 
             message.To.Add(new MailboxAddress(recipientName, recipientEmail));
@@ -70,11 +87,14 @@ public class SmtpEmailSender : IEmailSender
             message.Body = builder.ToMessageBody();
 
             using var client = new SmtpClient();
-            await client.ConnectAsync(host, port, socketOptions, ct);
+            client.Timeout = 15000;
+            client.ServerCertificateValidationCallback = (s, c, h, e) => true;
+
+            await client.ConnectAsync(host!, port, socketOptions, ct);
 
             if (!string.IsNullOrWhiteSpace(user) && !string.IsNullOrWhiteSpace(pass))
             {
-                await client.AuthenticateAsync(user.Trim(), pass.Trim(), ct);
+                await client.AuthenticateAsync(user, pass, ct);
             }
 
             await client.SendAsync(message, ct);
@@ -87,7 +107,8 @@ public class SmtpEmailSender : IEmailSender
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send email to {RecipientEmail} | Subject: {Subject}", recipientEmail, subject);
+            _logger.LogError(ex, "Failed to send email to {RecipientEmail} | Subject: {Subject} | Error: {Message}",
+                recipientEmail, subject, ex.Message);
             return EmailSendResult.Failed(ex.Message);
         }
     }
