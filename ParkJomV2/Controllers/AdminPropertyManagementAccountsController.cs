@@ -43,7 +43,8 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
 
     /// <summary>Creates a PropertyManagement account assigned to one property.</summary>
     /// <remarks>Admin only. The server sends a 14-day, single-use invitation link to the new management account's email. The recipient sets their password through the existing frontend, which posts the invitation token and chosen password to POST /api/management/invitation/activate.</remarks>
-    /// <response code="201">Account created; invitationEmailStatus is sent, simulated, or failed.</response>
+    /// <response code="201">Account created and invitation email accepted by the SMTP server.</response>
+    /// <response code="502">Invitation email could not be sent; the account was not created.</response>
     /// <response code="400">The request is invalid or the email is already in use.</response>
     /// <response code="401">Authentication is required.</response>
     /// <response code="403">The caller is not an administrator.</response>
@@ -54,6 +55,7 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(InvitationDeliveryErrorResponse), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<PropertyManagementAccountMutationDTO>> Create(
         [FromBody] PropertyManagementAccountCreateRequest request,
         CancellationToken cancellationToken)
@@ -85,14 +87,27 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         // unrecoverable value keeps a non-empty hash without creating a temp password.
         account.PasswordHash = HashUninitializedPassword(account);
 
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         _db.PropertyManagements.Add(account);
         await _db.SaveChangesAsync(cancellationToken);
-        var emailStatus = await SendInvitationEmailAsync(account, cancellationToken);
+        var emailResult = await SendInvitationEmailAsync(account, cancellationToken);
+        if (!emailResult.Success || emailResult.Simulated)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _db.Entry(account).State = EntityState.Detached;
+            var errorCode = emailResult.ErrorCode ?? (emailResult.Simulated ? "SMTP_SIMULATED" : "INVITATION_EMAIL_FAILED");
+            var details = emailResult.Error ?? "The email sender did not confirm delivery.";
+            await _accessLogs.LogAsync(User, "CreatePropertyManagementAccount", false,
+                $"PropertyId={property.PropertyId}; InvitationEmailErrorCode={errorCode}; Details={details}");
+            return StatusCode(StatusCodes.Status502BadGateway, InvitationError(errorCode, details));
+        }
+
+        await transaction.CommitAsync(cancellationToken);
         await _accessLogs.LogAsync(User, "CreatePropertyManagementAccount", true,
-            $"ManagerAccountId={account.ManagementAccountId}; PropertyId={property.PropertyId}; InvitationEmailStatus={emailStatus}.");
+            $"ManagerAccountId={account.ManagementAccountId}; PropertyId={property.PropertyId}; InvitationEmailStatus=sent.");
 
         return CreatedAtAction(nameof(GetById), new { managementAccountId = account.ManagementAccountId },
-            MapMutation(account, property, emailStatus));
+            MapMutation(account, property, "sent"));
     }
 
     /// <summary>Lists PropertyManagement accounts with optional property/status filters and pagination.</summary>
@@ -152,6 +167,7 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(InvitationDeliveryErrorResponse), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<PropertyManagementAccountMutationDTO>> Update(
         int managementAccountId,
         [FromBody] PropertyManagementAccountUpdateRequest request,
@@ -159,6 +175,8 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
     {
         var account = await LoadAccountAsync(managementAccountId, cancellationToken);
         if (account is null) return NotFound(Error(StatusCodes.Status404NotFound, "ACCOUNT_NOT_FOUND", "PropertyManagement account was not found."));
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
 
         if (request.PropertyId.HasValue)
         {
@@ -202,7 +220,19 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
             account.CredentialVersion++;
         account.UpdatedAt = now;
         await _db.SaveChangesAsync(cancellationToken);
-        var emailStatus = issueInvitation ? await SendInvitationEmailAsync(account, cancellationToken) : null;
+        var emailResult = issueInvitation ? await SendInvitationEmailAsync(account, cancellationToken) : null;
+        if (emailResult is not null && (!emailResult.Success || emailResult.Simulated))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _db.ChangeTracker.Clear();
+            var errorCode = emailResult.ErrorCode ?? (emailResult.Simulated ? "SMTP_SIMULATED" : "INVITATION_EMAIL_FAILED");
+            var details = emailResult.Error ?? "The email sender did not confirm delivery.";
+            await _accessLogs.LogAsync(User, "UpdatePropertyManagementAccount", false,
+                $"ManagerAccountId={managementAccountId}; InvitationEmailErrorCode={errorCode}; Details={details}");
+            return StatusCode(StatusCodes.Status502BadGateway, InvitationError(errorCode, details));
+        }
+        await transaction.CommitAsync(cancellationToken);
+        var emailStatus = emailResult is null ? null : "sent";
         await _accessLogs.LogAsync(User, "UpdatePropertyManagementAccount", true,
             $"ManagerAccountId={managementAccountId}; PropertyId={account.PropertyId}; InvitationEmailStatus={emailStatus ?? "not_requested"}.");
         await _db.Entry(account).Reference(item => item.Property).LoadAsync(cancellationToken);
@@ -255,7 +285,7 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         return _passwordHasher.HashPassword(account, unknownSecret);
     }
 
-    private async Task<string> SendInvitationEmailAsync(PropertyManagement account, CancellationToken cancellationToken)
+    private async Task<EmailSendResult> SendInvitationEmailAsync(PropertyManagement account, CancellationToken cancellationToken)
     {
         var token = _jwt.GenerateManagementInvitationToken(account, out var expiresAt);
         var invitationPageUrl = _configuration["PropertyManagement:InvitationPageUrl"];
@@ -283,16 +313,28 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
             """;
         var textBody = $"Hello {account.Username},\n\nAn administrator created a ParkJom property management account for you.\n\nAccept the invitation and set your password: {invitationUrl}\n\nThis link expires on {expiresAt:yyyy-MM-dd HH:mm} UTC and can only be used once.\nAccount: {account.Email}\n";
 
+        Console.WriteLine($"[DEBUG] Sending invitation email to {account.Email} with link: {invitationUrl}");
+
         try
         {
             var result = await _emailSender.SendEmailAsync(account.Email, account.Username, subject, htmlBody, textBody, cancellationToken);
-            return result.Simulated ? "simulated" : result.Success ? "sent" : "failed";
+            return result;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return "failed";
+            return EmailSendResult.Failed($"Invitation email failed ({ex.GetType().Name}). Check the application logs for details.", "INVITATION_EMAIL_FAILED");
         }
     }
+
+    private static InvitationDeliveryErrorResponse InvitationError(string errorCode, string details)
+        => new()
+        {
+            Code = StatusCodes.Status502BadGateway,
+            Success = false,
+            ErrorCode = errorCode,
+            Message = "The invitation email could not be sent. The account change was rolled back.",
+            Details = details
+        };
 
     private static bool TryNormalizeStatus(string? status, out string? normalized)
     {

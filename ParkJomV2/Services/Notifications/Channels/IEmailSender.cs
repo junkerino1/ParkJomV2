@@ -16,9 +16,11 @@ public class EmailSendResult
     public bool Success { get; set; }
     public bool Simulated { get; set; }
     public string? MessageId { get; set; }
+    public string? ErrorCode { get; set; }
     public string? Error { get; set; }
 
     public static EmailSendResult Succeeded(string? messageId = null, bool simulated = false)
         => new() { Success = true, MessageId = messageId, Simulated = simulated };
-    public static EmailSendResult Failed(string error) => new() { Success = false, Error = error };
+    public static EmailSendResult Failed(string error, string errorCode = "EMAIL_SEND_FAILED")
+        => new() { Success = false, ErrorCode = errorCode, Error = error };
 }

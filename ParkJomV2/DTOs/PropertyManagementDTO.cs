@@ -80,6 +80,15 @@ public sealed class PropertyManagementAccountMutationDTO : PropertyManagementAcc
     public string? InvitationEmailStatus { get; set; }
 }
 
+public sealed class InvitationDeliveryErrorResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string ErrorCode { get; set; } = "INVITATION_EMAIL_FAILED";
+    public string Message { get; set; } = string.Empty;
+    public string Details { get; set; } = string.Empty;
+}
+
 public sealed class PropertyManagementAccountListResponse
 {
     public int Code { get; set; }
