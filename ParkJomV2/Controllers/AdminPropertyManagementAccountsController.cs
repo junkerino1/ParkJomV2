@@ -41,35 +41,70 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         _configuration = configuration;
     }
 
-    /// <summary>Creates a PropertyManagement account assigned to one property.</summary>
-    /// <remarks>Admin only. The server sends a 14-day, single-use invitation link to the new management account's email. The recipient sets their password through the existing frontend, which posts the invitation token and chosen password to POST /api/management/invitation/activate.</remarks>
+    /// <summary>Creates a PropertyManagement account, or sends a fresh activation/password-reset link if the same account already exists for that property.</summary>
+    /// <remarks>Admin only. A duplicate email and matching property reissues a 14-day single-use link. For an already activated account, this starts a password reset and invalidates existing sessions. The recipient uses the existing frontend and POST /api/management/invitation/activate.</remarks>
+    /// <response code="200">The existing account was sent a fresh activation or password-reset link.</response>
     /// <response code="201">Account created and invitation email accepted by the SMTP server.</response>
     /// <response code="502">Invitation email could not be sent; the account was not created.</response>
-    /// <response code="400">The request is invalid or the email is already in use.</response>
+    /// <response code="400">The request is invalid.</response>
+    /// <response code="409">The email belongs to an account assigned to another property or an inactive account.</response>
     /// <response code="401">Authentication is required.</response>
     /// <response code="403">The caller is not an administrator.</response>
     /// <response code="404">The property was not found.</response>
     [HttpPost]
+    [ProducesResponseType(typeof(PropertyManagementAccountMutationDTO), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(PropertyManagementAccountMutationDTO), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(InvitationDeliveryErrorResponse), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<PropertyManagementAccountMutationDTO>> Create(
         [FromBody] PropertyManagementAccountCreateRequest request,
         CancellationToken cancellationToken)
     {
         var email = request.Email.Trim();
-        var emailExists = await _db.PropertyManagements.AnyAsync(item => item.Email == email, cancellationToken);
-        if (emailExists)
-            return BadRequest(Error(StatusCodes.Status400BadRequest, "EMAIL_ALREADY_IN_USE", "An account with this email already exists."));
-
         var property = await _db.Properties
             .AsNoTracking()
             .FirstOrDefaultAsync(item => item.PropertyId == request.PropertyId, cancellationToken);
         if (property is null)
             return NotFound(Error(StatusCodes.Status404NotFound, "PROPERTY_NOT_FOUND", "The selected property was not found."));
+
+        var existingAccount = await _db.PropertyManagements
+            .FirstOrDefaultAsync(item => item.Email == email, cancellationToken);
+        if (existingAccount is not null)
+        {
+            if (existingAccount.PropertyId != property.PropertyId)
+                return Conflict(Error(StatusCodes.Status409Conflict, "EMAIL_ALREADY_IN_USE", "This email already belongs to a management account assigned to another property."));
+            if (!string.Equals(existingAccount.AccountStatus, "Active", StringComparison.OrdinalIgnoreCase))
+                return Conflict(Error(StatusCodes.Status409Conflict, "ACCOUNT_NOT_ACTIVE", "The management account is not active, so an activation or reset link cannot be sent."));
+
+            var isPasswordReset = !existingAccount.MustChangePassword;
+            await using var resetTransaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+            existingAccount.PasswordHash = HashUninitializedPassword(existingAccount);
+            existingAccount.MustChangePassword = true;
+            existingAccount.CredentialVersion++;
+            existingAccount.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
+
+            var duplicateEmailResult = await SendInvitationEmailAsync(existingAccount, cancellationToken, isPasswordReset);
+            if (!duplicateEmailResult.Success || duplicateEmailResult.Simulated)
+            {
+                await resetTransaction.RollbackAsync(cancellationToken);
+                _db.ChangeTracker.Clear();
+                var errorCode = duplicateEmailResult.ErrorCode ?? (duplicateEmailResult.Simulated ? "SMTP_SIMULATED" : "INVITATION_EMAIL_FAILED");
+                var details = duplicateEmailResult.Error ?? "The email sender did not confirm delivery.";
+                await _accessLogs.LogAsync(User, "ResendManagementAccountAccessLink", false,
+                    $"ManagerAccountId={existingAccount.ManagementAccountId}; ErrorCode={errorCode}; Details={details}");
+                return StatusCode(StatusCodes.Status502BadGateway, InvitationError(errorCode, details));
+            }
+
+            await resetTransaction.CommitAsync(cancellationToken);
+            await _accessLogs.LogAsync(User, isPasswordReset ? "ResetManagementAccountPasswordByEmail" : "ResendManagementAccountInvitation", true,
+                $"ManagerAccountId={existingAccount.ManagementAccountId}; PropertyId={property.PropertyId}; InvitationEmailStatus=sent.");
+            return Ok(MapMutation(existingAccount, property, "sent"));
+        }
 
         var now = DateTime.UtcNow;
         var account = new PropertyManagement
@@ -210,6 +245,7 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         if (issueInvitation && !string.Equals(account.AccountStatus, "Active", StringComparison.OrdinalIgnoreCase))
             return Conflict(Error(StatusCodes.Status409Conflict, "ACCOUNT_NOT_ACTIVE", "Activate the management account before sending an invitation."));
 
+        var isPasswordReset = issueInvitation && !account.MustChangePassword;
         if (issueInvitation)
         {
             account.PasswordHash = HashUninitializedPassword(account);
@@ -220,7 +256,7 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
             account.CredentialVersion++;
         account.UpdatedAt = now;
         await _db.SaveChangesAsync(cancellationToken);
-        var emailResult = issueInvitation ? await SendInvitationEmailAsync(account, cancellationToken) : null;
+        var emailResult = issueInvitation ? await SendInvitationEmailAsync(account, cancellationToken, isPasswordReset) : null;
         if (emailResult is not null && (!emailResult.Success || emailResult.Simulated))
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -285,7 +321,10 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         return _passwordHasher.HashPassword(account, unknownSecret);
     }
 
-    private async Task<EmailSendResult> SendInvitationEmailAsync(PropertyManagement account, CancellationToken cancellationToken)
+    private async Task<EmailSendResult> SendInvitationEmailAsync(
+        PropertyManagement account,
+        CancellationToken cancellationToken,
+        bool isPasswordReset = false)
     {
         var token = _jwt.GenerateManagementInvitationToken(account, out var expiresAt);
         var invitationPageUrl = _configuration["PropertyManagement:InvitationPageUrl"];
@@ -302,18 +341,88 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         var safeName = WebUtility.HtmlEncode(account.Username);
         var safeEmail = WebUtility.HtmlEncode(account.Email);
         var safeUrl = WebUtility.HtmlEncode(invitationUrl);
-        var subject = "Your ParkJom PropertyManagement invitation";
+        var subject = isPasswordReset
+            ? "Reset your ParkJom Property Management password"
+            : "You’re invited to ParkJom Property Management";
+        var expiryText = $"{expiresAt:dd MMM yyyy, HH:mm} UTC";
+        var preheader = isPasswordReset
+            ? "A password reset link for your ParkJom management account."
+            : "Your ParkJom property management account is ready to activate.";
+        var emailLabel = isPasswordReset ? "Password reset" : "Account invitation";
+        var heading = isPasswordReset ? "Reset your password" : "You’re invited to ParkJom";
+        var intro = isPasswordReset
+            ? "An administrator requested a password reset for your property management account. Use the secure link below to choose a new password. This will sign out existing sessions."
+            : "An administrator created a property management account for you. Set your password to activate your access to property bookings and parking access activity.";
+        var buttonText = isPasswordReset ? "Set a new password" : "Accept invitation";
+        var unexpectedMessage = isPasswordReset
+            ? "If you weren’t expecting this reset, contact your ParkJom administrator. You’ll need to set a new password before signing in again."
+            : "If you weren’t expecting this invitation, you can ignore this email. Your account won’t be activated until you set a password.";
         var htmlBody = $"""
-            <p>Hello {safeName},</p>
-            <p>An administrator created a ParkJom property management account for you.</p>
-            <p><a href="{safeUrl}">Accept invitation and set your password</a></p>
-            <p>This invitation link expires on {expiresAt:yyyy-MM-dd HH:mm} UTC and can only be used once.</p>
-            <p>Account: {safeEmail}</p>
-            <p>If you were not expecting this invitation, you can ignore this email.</p>
+            <!doctype html>
+            <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width,initial-scale=1">
+              <meta name="color-scheme" content="light">
+              <title>ParkJom invitation</title>
+            </head>
+            <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#172033;">
+              <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+                {preheader}
+              </div>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f1f5f9;padding:32px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+                      <tr>
+                        <td style="padding:22px 30px;background-color:#102a27;">
+                          <div style="font-size:22px;line-height:28px;font-weight:700;letter-spacing:-0.4px;color:#ffffff;">Park<span style="color:#34d399;">Jom</span></div>
+                          <div style="margin-top:4px;font-size:12px;line-height:18px;letter-spacing:1.2px;text-transform:uppercase;color:#b8d2ca;">Property Management</div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:34px 30px 30px;">
+                          <div style="display:inline-block;padding:6px 10px;border-radius:999px;background-color:#ecfdf5;color:#047857;font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;">{emailLabel}</div>
+                          <h1 style="margin:18px 0 12px;font-size:26px;line-height:34px;font-weight:700;letter-spacing:-0.5px;color:#102a27;">{heading}</h1>
+                          <p style="margin:0 0 14px;font-size:15px;line-height:24px;color:#334155;">Hello {safeName},</p>
+                          <p style="margin:0 0 22px;font-size:15px;line-height:24px;color:#475569;">{intro}</p>
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
+                            <tr>
+                              <td style="padding:14px 16px;">
+                                <div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#64748b;">Your account</div>
+                                <div style="margin-top:4px;font-size:14px;line-height:21px;font-weight:600;color:#172033;">{safeEmail}</div>
+                              </td>
+                            </tr>
+                          </table>
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 22px;">
+                            <tr>
+                              <td align="center" style="border-radius:9px;background-color:#059669;">
+                                <a href="{safeUrl}" target="_blank" style="display:inline-block;padding:14px 26px;border:1px solid #059669;border-radius:9px;color:#ffffff;text-decoration:none;font-size:15px;line-height:20px;font-weight:700;">{buttonText}&nbsp;&nbsp;→</a>
+                              </td>
+                            </tr>
+                          </table>
+                          <p style="margin:0 0 8px;text-align:center;font-size:13px;line-height:20px;color:#64748b;">This link can be used once and expires on <strong style="color:#334155;">{expiryText}</strong>.</p>
+                          <p style="margin:0 0 8px;text-align:center;font-size:12px;line-height:19px;color:#64748b;">If the button doesn’t work, copy this link into your browser:</p>
+                          <p style="margin:0 0 22px;text-align:center;font-size:12px;line-height:19px;word-break:break-all;"><a href="{safeUrl}" style="color:#047857;text-decoration:underline;">{safeUrl}</a></p>
+                          <div style="height:1px;background-color:#e2e8f0;margin:0 0 18px;"></div>
+                          <p style="margin:0;font-size:13px;line-height:20px;color:#64748b;">{unexpectedMessage}</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding:18px 30px;background-color:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;">
+                          <p style="margin:0;font-size:12px;line-height:18px;color:#94a3b8;">ParkJom · Smart parking, made simpler</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
             """;
-        var textBody = $"Hello {account.Username},\n\nAn administrator created a ParkJom property management account for you.\n\nAccept the invitation and set your password: {invitationUrl}\n\nThis link expires on {expiresAt:yyyy-MM-dd HH:mm} UTC and can only be used once.\nAccount: {account.Email}\n";
-
-        Console.WriteLine($"[DEBUG] Sending invitation email to {account.Email} with link: {invitationUrl}");
+        var textBody = isPasswordReset
+            ? $"PARKJOM — PASSWORD RESET\n\nHello {account.Username},\n\nAn administrator requested a password reset for your property management account. Use this secure link to choose a new password: {invitationUrl}\n\nThis link can be used once and expires on {expiryText}. Completing the reset signs out existing sessions.\nAccount: {account.Email}\n\nIf you weren’t expecting this request, contact ParkJom support.\n"
+            : $"PARKJOM — PROPERTY MANAGEMENT INVITATION\n\nHello {account.Username},\n\nAn administrator created a property management account for you. Set your password to activate access to property bookings and parking access activity.\n\nAccept invitation: {invitationUrl}\n\nThis link can be used once and expires on {expiryText}.\nAccount: {account.Email}\n\nIf you weren’t expecting this invitation, you can ignore this email.\n";
 
         try
         {

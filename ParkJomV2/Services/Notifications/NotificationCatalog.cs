@@ -198,6 +198,7 @@ public static class NotificationCatalog
             Category = NotificationCategory.Wallet,
             DefaultPriority = NotificationPriority.Normal,
             DefaultChannels = new() { NotificationChannel.InApp, NotificationChannel.Email },
+            IsMandatory = true,
             Formatter = data =>
             {
                 var amount = GetString(data, "amount", "RM 0.00");
@@ -267,6 +268,7 @@ public static class NotificationCatalog
             Category = NotificationCategory.Wallet,
             DefaultPriority = NotificationPriority.Normal,
             DefaultChannels = new() { NotificationChannel.InApp, NotificationChannel.Email },
+            IsMandatory = true,
             Formatter = data =>
             {
                 var status = GetString(data, "status", "Processed") ?? "Processed";
