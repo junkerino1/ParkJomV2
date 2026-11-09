@@ -47,7 +47,7 @@ public sealed class PropertyManagementInvitationActivationRequest
     [Required, StringLength(4096)]
     public string InvitationToken { get; set; } = string.Empty;
 
-    [Required, MinLength(12), MaxLength(128)]
+    [Required, MinLength(8), MaxLength(20)]
     public string NewPassword { get; set; } = string.Empty;
 }
 
