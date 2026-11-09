@@ -341,6 +341,12 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
         var safeName = WebUtility.HtmlEncode(account.Username);
         var safeEmail = WebUtility.HtmlEncode(account.Email);
         var safeUrl = WebUtility.HtmlEncode(invitationUrl);
+        var apiBaseUrl = _configuration["ApiBaseUrl"]?.TrimEnd('/')
+                         ?? $"{Request.Scheme}://{Request.Host}";
+        var logoUrl = _configuration["PropertyManagement:EmailLogoUrl"];
+        if (string.IsNullOrWhiteSpace(logoUrl))
+            logoUrl = $"{apiBaseUrl}/images/parking_app_logo_transparent.png";
+        var safeLogoUrl = WebUtility.HtmlEncode(logoUrl);
         var subject = isPasswordReset
             ? "Reset your ParkJom Property Management password"
             : "You’re invited to ParkJom Property Management";
@@ -363,54 +369,54 @@ public sealed class AdminPropertyManagementAccountsController : ControllerBase
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width,initial-scale=1">
-              <meta name="color-scheme" content="light">
-              <title>ParkJom invitation</title>
+              <meta name="color-scheme" content="dark">
+              <title>ParkJom account access</title>
             </head>
-            <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#172033;">
+            <body style="margin:0;padding:0;background-color:#080d1b;font-family:Arial,Helvetica,sans-serif;color:#e8eefc;">
               <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
                 {preheader}
               </div>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f1f5f9;padding:32px 12px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#080d1b;padding:32px 12px;">
                 <tr>
                   <td align="center">
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#111a2e;border:1px solid #263451;border-radius:16px;overflow:hidden;">
                       <tr>
-                        <td style="padding:22px 30px;background-color:#102a27;">
-                          <div style="font-size:22px;line-height:28px;font-weight:700;letter-spacing:-0.4px;color:#ffffff;">Park<span style="color:#34d399;">Jom</span></div>
-                          <div style="margin-top:4px;font-size:12px;line-height:18px;letter-spacing:1.2px;text-transform:uppercase;color:#b8d2ca;">Property Management</div>
+                        <td align="center" style="padding:25px 30px 22px;background-color:#0b1224;border-bottom:1px solid #1d2a44;">
+                          <img src="{safeLogoUrl}" alt="ParkJom" width="88" height="88" style="display:block;width:88px;height:88px;margin:0 auto 10px;border:0;outline:none;text-decoration:none;">
+                          <div style="font-size:12px;line-height:18px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#9fb5d8;">Property Management</div>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding:34px 30px 30px;">
-                          <div style="display:inline-block;padding:6px 10px;border-radius:999px;background-color:#ecfdf5;color:#047857;font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;">{emailLabel}</div>
-                          <h1 style="margin:18px 0 12px;font-size:26px;line-height:34px;font-weight:700;letter-spacing:-0.5px;color:#102a27;">{heading}</h1>
-                          <p style="margin:0 0 14px;font-size:15px;line-height:24px;color:#334155;">Hello {safeName},</p>
-                          <p style="margin:0 0 22px;font-size:15px;line-height:24px;color:#475569;">{intro}</p>
-                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
+                          <div style="display:inline-block;padding:6px 10px;border-radius:999px;background-color:#10294d;color:#60a5fa;font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;">{emailLabel}</div>
+                          <h1 style="margin:18px 0 12px;font-size:26px;line-height:34px;font-weight:700;letter-spacing:-0.5px;color:#f8fbff;">{heading}</h1>
+                          <p style="margin:0 0 14px;font-size:15px;line-height:24px;color:#d9e3f5;">Hello {safeName},</p>
+                          <p style="margin:0 0 22px;font-size:15px;line-height:24px;color:#afbdd5;">{intro}</p>
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background-color:#0c1427;border:1px solid #263451;border-radius:10px;">
                             <tr>
                               <td style="padding:14px 16px;">
-                                <div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#64748b;">Your account</div>
-                                <div style="margin-top:4px;font-size:14px;line-height:21px;font-weight:600;color:#172033;">{safeEmail}</div>
+                                <div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#8ba1c4;">Your account</div>
+                                <div style="margin-top:4px;font-size:14px;line-height:21px;font-weight:600;color:#eff6ff;">{safeEmail}</div>
                               </td>
                             </tr>
                           </table>
                           <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 auto 22px;">
                             <tr>
-                              <td align="center" style="border-radius:9px;background-color:#059669;">
-                                <a href="{safeUrl}" target="_blank" style="display:inline-block;padding:14px 26px;border:1px solid #059669;border-radius:9px;color:#ffffff;text-decoration:none;font-size:15px;line-height:20px;font-weight:700;">{buttonText}&nbsp;&nbsp;→</a>
+                              <td align="center" style="border-radius:9px;background-color:#2563eb;">
+                                <a href="{safeUrl}" target="_blank" style="display:inline-block;padding:14px 26px;border:1px solid #3b82f6;border-radius:9px;color:#ffffff;text-decoration:none;font-size:15px;line-height:20px;font-weight:700;">{buttonText}&nbsp;&nbsp;→</a>
                               </td>
                             </tr>
                           </table>
-                          <p style="margin:0 0 8px;text-align:center;font-size:13px;line-height:20px;color:#64748b;">This link can be used once and expires on <strong style="color:#334155;">{expiryText}</strong>.</p>
-                          <p style="margin:0 0 8px;text-align:center;font-size:12px;line-height:19px;color:#64748b;">If the button doesn’t work, copy this link into your browser:</p>
-                          <p style="margin:0 0 22px;text-align:center;font-size:12px;line-height:19px;word-break:break-all;"><a href="{safeUrl}" style="color:#047857;text-decoration:underline;">{safeUrl}</a></p>
-                          <div style="height:1px;background-color:#e2e8f0;margin:0 0 18px;"></div>
-                          <p style="margin:0;font-size:13px;line-height:20px;color:#64748b;">{unexpectedMessage}</p>
+                          <p style="margin:0 0 8px;text-align:center;font-size:13px;line-height:20px;color:#9aabc5;">This link can be used once and expires on <strong style="color:#e2eaff;">{expiryText}</strong>.</p>
+                          <p style="margin:0 0 8px;text-align:center;font-size:12px;line-height:19px;color:#91a3c0;">If the button doesn’t work, copy this link into your browser:</p>
+                          <p style="margin:0 0 22px;text-align:center;font-size:12px;line-height:19px;word-break:break-all;"><a href="{safeUrl}" style="color:#38bdf8;text-decoration:underline;">{safeUrl}</a></p>
+                          <div style="height:1px;background-color:#263451;margin:0 0 18px;"></div>
+                          <p style="margin:0;font-size:13px;line-height:20px;color:#91a3c0;">{unexpectedMessage}</p>
                         </td>
                       </tr>
                       <tr>
-                        <td style="padding:18px 30px;background-color:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;">
-                          <p style="margin:0;font-size:12px;line-height:18px;color:#94a3b8;">ParkJom · Smart parking, made simpler</p>
+                        <td style="padding:18px 30px;background-color:#0b1224;border-top:1px solid #1d2a44;text-align:center;">
+                          <p style="margin:0;font-size:12px;line-height:18px;color:#7184a4;">ParkJom · Smart parking, made simpler</p>
                         </td>
                       </tr>
                     </table>
