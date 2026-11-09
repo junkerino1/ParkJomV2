@@ -1131,6 +1131,85 @@ namespace ParkJomV2.Migrations
                     b.ToTable("Payments");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.PhoneOtpVerification", b =>
+                {
+                    b.Property<int>("PhoneOtpVerificationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PhoneOtpVerificationId"));
+
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("GeneratedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("MobileOperator")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("OtpHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateTime?>("SmsDeliveredAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SmsDeliveryStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("SmsErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("SmsErrorDescription")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("VerifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PhoneOtpVerificationId");
+
+                    b.HasIndex("ProviderMessageId")
+                        .IsUnique()
+                        .HasFilter("[ProviderMessageId] IS NOT NULL");
+
+                    b.HasIndex("UserId", "CreatedAtUtc");
+
+                    b.ToTable("PhoneOtpVerifications");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.PlatformWallet", b =>
                 {
                     b.Property<int>("PlatformWalletId")
@@ -2581,6 +2660,15 @@ namespace ParkJomV2.Migrations
                     b.Navigation("User");
 
                     b.Navigation("Wallet");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.PhoneOtpVerification", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Property", b =>

@@ -47,7 +47,7 @@ public sealed class PropertyManagementInvitationActivationRequest
     [Required, StringLength(4096)]
     public string InvitationToken { get; set; } = string.Empty;
 
-    [Required, MinLength(12), MaxLength(128)]
+    [Required, MinLength(8), MaxLength(20)]
     public string NewPassword { get; set; } = string.Empty;
 }
 
@@ -89,6 +89,15 @@ public sealed class PropertyManagementInvitationLinkResponse
     public string Message { get; set; } = string.Empty;
     public string InvitationLink { get; set; } = string.Empty;
     public DateTime ExpiresAtUtc { get; set; }
+}
+
+public sealed class InvitationDeliveryErrorResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string ErrorCode { get; set; } = "INVITATION_EMAIL_FAILED";
+    public string Message { get; set; } = string.Empty;
+    public string Details { get; set; } = string.Empty;
 }
 
 public sealed class PropertyManagementAccountListResponse
