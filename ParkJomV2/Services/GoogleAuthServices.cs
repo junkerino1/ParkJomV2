@@ -20,13 +20,13 @@ public class GoogleAuthService
     {
         try
         {
-            var clientId = _configuration["GoogleOAuth:ClientId"];
+            var clientIds = GoogleOAuthConfiguration.GetAudiences(_configuration);
 
             var payload = await GoogleJsonWebSignature.ValidateAsync(
                 idToken,
                 new GoogleJsonWebSignature.ValidationSettings
                 {
-                    Audience = new[] { clientId }
+                    Audience = clientIds
                 });
 
             return new GoogleTokenValidationResponse
