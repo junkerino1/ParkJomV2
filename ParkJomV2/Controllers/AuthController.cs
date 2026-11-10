@@ -87,6 +87,20 @@ namespace ParkJomV2.Controllers
             // Step 3 - New user
             if (user == null)
             {
+                var googleEmailNorm = (googleUser.Email ?? "").Trim().ToLower();
+                var isManagementAccount = await _context.PropertyManagements
+                    .AnyAsync(pm => pm.Email.ToLower() == googleEmailNorm);
+                if (isManagementAccount)
+                {
+                    await _accessLogService.LogAsync(User, "GoogleLogin", false,
+                        $"PropertyManagement email blocked from Google sign-in: {googleUser.Email}");
+                    return BadRequest(new AuthResponse
+                    {
+                        Code = StatusCodes.Status400BadRequest,
+                        Success = false,
+                        Message = "This email is registered as a Property Management account and cannot be used for commuter or owner sign-in."
+                    });
+                }
                 var names = googleUser.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
                 var firstName = names.FirstOrDefault() ?? "";

@@ -78,6 +78,17 @@ public class PropertyManagementAccountDTO
 public sealed class PropertyManagementAccountMutationDTO : PropertyManagementAccountDTO
 {
     public string? InvitationEmailStatus { get; set; }
+    public string? InvitationLink { get; set; }
+    public string? SmtpErrorMessage { get; set; }
+}
+
+public sealed class PropertyManagementInvitationLinkResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string InvitationLink { get; set; } = string.Empty;
+    public DateTime ExpiresAtUtc { get; set; }
 }
 
 public sealed class InvitationDeliveryErrorResponse
