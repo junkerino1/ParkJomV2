@@ -470,6 +470,14 @@ builder.Services.AddSwaggerGen(options =>
             var c when c.StartsWith("IoT", StringComparison.OrdinalIgnoreCase)
                 => "10. IoT & Smart Bollard",
 
+            // 11. Property Management
+            var c when c.StartsWith("PropertyManagement")
+                => "11. Property Management",
+
+            // 12. System Jobs & Webhooks
+            "InternalCron" or "Sms360Webhook"
+                => "12. System Jobs & Webhooks",
+
             _ => $"99. Other Endpoints ({controller})"
         };
 
