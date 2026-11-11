@@ -1355,6 +1355,176 @@ namespace ParkJomV2.Migrations
                     b.ToTable("PropertyManagements");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.PublicParkingLot", b =>
+                {
+                    b.Property<int>("PublicParkingLotId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PublicParkingLotId"));
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("ClosingTime")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("DailyCapRate")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ExitGraceMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("FlatRatePerEntry")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal>("HourlyRate")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("InitialGraceMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal>("Latitude")
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<decimal>("Longitude")
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("LotName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("OpeningTime")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<int>("OperatingType")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("OvernightSurcharge")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int>("OwnerId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PropertyId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalCapacity")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PublicParkingLotId");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("PropertyId");
+
+                    b.ToTable("PublicParkingLots");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.PublicParkingSession", b =>
+                {
+                    b.Property<int>("PublicParkingSessionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PublicParkingSessionId"));
+
+                    b.Property<string>("CarPlateNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("EntryTimeUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ExitTimeUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("HourlyRateSnapshot")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<DateTime?>("PaidAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PaymentMethod")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("PublicParkingLotId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SessionCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StripePaymentIntentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("StripeSessionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("WalletTransactionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("PublicParkingSessionId");
+
+                    b.HasIndex("SessionCode")
+                        .IsUnique();
+
+                    b.HasIndex("StripeSessionId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("WalletTransactionId");
+
+                    b.HasIndex("CarPlateNumber", "Status");
+
+                    b.HasIndex("PublicParkingLotId", "Status");
+
+                    b.ToTable("PublicParkingSessions");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.PushSubscription", b =>
                 {
                     b.Property<int>("PushSubscriptionId")
@@ -2693,6 +2863,49 @@ namespace ParkJomV2.Migrations
                     b.Navigation("Property");
                 });
 
+            modelBuilder.Entity("ParkJomV2.Models.PublicParkingLot", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("ParkJomV2.Models.Property", "Property")
+                        .WithMany()
+                        .HasForeignKey("PropertyId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Owner");
+
+                    b.Navigation("Property");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.PublicParkingSession", b =>
+                {
+                    b.HasOne("ParkJomV2.Models.PublicParkingLot", "ParkingLot")
+                        .WithMany("Sessions")
+                        .HasForeignKey("PublicParkingLotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ParkJomV2.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("ParkJomV2.Models.Transaction", "WalletTransaction")
+                        .WithMany()
+                        .HasForeignKey("WalletTransactionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ParkingLot");
+
+                    b.Navigation("User");
+
+                    b.Navigation("WalletTransaction");
+                });
+
             modelBuilder.Entity("ParkJomV2.Models.PushSubscription", b =>
                 {
                     b.HasOne("ParkJomV2.Models.User", "User")
@@ -3084,6 +3297,11 @@ namespace ParkJomV2.Migrations
                     b.Navigation("ParkingSpots");
 
                     b.Navigation("PropertyManagements");
+                });
+
+            modelBuilder.Entity("ParkJomV2.Models.PublicParkingLot", b =>
+                {
+                    b.Navigation("Sessions");
                 });
 
             modelBuilder.Entity("ParkJomV2.Models.Station", b =>

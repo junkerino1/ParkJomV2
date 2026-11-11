@@ -36,6 +36,7 @@ builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 builder.Services.AddHttpClient<Sms360Service>(client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddScoped<CloudinaryService>();
 builder.Services.AddScoped<StripeService>();
+builder.Services.AddScoped<PublicParkingService>();
 // Registration, OTP lifecycle, and spot binding share one scoped business service.
 builder.Services.AddScoped<IoTDeviceService>();
 // Unlock verification challenges intentionally stay in process memory: no database schema change.
@@ -411,10 +412,21 @@ builder.Services.AddSwaggerGen(options =>
         options.IncludeXmlComments(xmlDocumentation, includeControllerXmlComments: true);
     }
 
-    // Automatically categorize all 42 controllers into 9 core business modules (English only)
+    // Automatically categorize all controllers into core business modules
     options.TagActionsBy(api =>
     {
         var controller = api.ActionDescriptor.RouteValues["controller"] ?? "Unknown";
+        var path = api.RelativePath ?? string.Empty;
+
+        if (path.StartsWith("api/owner", StringComparison.OrdinalIgnoreCase))
+        {
+            return new[] { "02. Owner Portal" };
+        }
+
+        if (controller == "PublicParkingLot")
+        {
+            return new[] { "03. Public Drive-In Parking" };
+        }
 
         var module = controller switch
         {
@@ -504,6 +516,9 @@ builder.Services.AddCors(options =>
             policy.WithOrigins(
                 "http://127.0.0.1:5500",
                 "http://localhost:3000",
+                "https://localhost:3000",
+                "http://127.0.0.1:3000",
+                "https://127.0.0.1:3000",
                 "https://united-perigee-400000.web.app"
             )
                   .AllowAnyHeader()
