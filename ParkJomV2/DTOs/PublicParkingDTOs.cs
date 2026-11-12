@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Http;
 using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.DTOs;
@@ -44,29 +45,48 @@ public class CreatePublicParkingLotRequest
     public int ExitGraceMinutes { get; set; } = 15;
 
     public string? Description { get; set; }
+
+    [StringLength(500)]
+    public string? VerificationDocumentUrl { get; set; }
+
+    [StringLength(100)]
+    public string? VerificationDocumentType { get; set; }
+
+    [StringLength(500)]
+    public string? FacilityPhotoUrl { get; set; }
+
+    [StringLength(500)]
+    public string? EntrancePhotoUrl { get; set; }
+
+    [StringLength(100)]
+    public string? NearestStationName { get; set; }
+
+    public int? DistanceToStation { get; set; }
 }
 
 public class UpdatePublicParkingLotRequest
 {
-    [Required]
     [StringLength(120)]
-    public string LotName { get; set; } = string.Empty;
+    public string? LotName { get; set; }
 
-    [Required]
     [StringLength(255)]
-    public string Address { get; set; } = string.Empty;
+    public string? Address { get; set; }
 
-    [Range(1, 1000)]
-    public int TotalCapacity { get; set; }
+    public double? Latitude { get; set; }
 
-    public PublicParkingOperatingType OperatingType { get; set; }
+    public double? Longitude { get; set; }
+
+    [Range(1, 5000)]
+    public int? TotalCapacity { get; set; }
+
+    public PublicParkingOperatingType? OperatingType { get; set; }
 
     public string? OpeningTime { get; set; }
 
     public string? ClosingTime { get; set; }
 
-    [Range(0.50, 100.00)]
-    public decimal HourlyRate { get; set; }
+    [Range(0.00, 500.00)]
+    public decimal? HourlyRate { get; set; }
 
     public decimal? DailyCapRate { get; set; }
 
@@ -74,13 +94,47 @@ public class UpdatePublicParkingLotRequest
 
     public decimal? OvernightSurcharge { get; set; }
 
-    public int InitialGraceMinutes { get; set; }
+    [Range(0, 120)]
+    public int? InitialGraceMinutes { get; set; }
 
-    public int ExitGraceMinutes { get; set; }
+    [Range(0, 120)]
+    public int? ExitGraceMinutes { get; set; }
 
-    public bool IsActive { get; set; }
+    public bool? IsActive { get; set; }
 
     public string? Description { get; set; }
+
+    [StringLength(500)]
+    public string? VerificationDocumentUrl { get; set; }
+
+    [StringLength(100)]
+    public string? VerificationDocumentType { get; set; }
+
+    [StringLength(500)]
+    public string? FacilityPhotoUrl { get; set; }
+
+    [StringLength(500)]
+    public string? EntrancePhotoUrl { get; set; }
+
+    [StringLength(100)]
+    public string? IotDeviceUuid { get; set; }
+
+    public bool? IsIotConnected { get; set; }
+
+    [StringLength(100)]
+    public string? NearestStationName { get; set; }
+
+    public int? DistanceToStation { get; set; }
+}
+
+public class ReviewPublicParkingLotRequest
+{
+    [Required]
+    public VerificationStatus Status { get; set; } // 2 = Approved, 3 = Rejected
+
+    public string? ReviewNotes { get; set; }
+
+    public string? IotDeviceUuid { get; set; }
 }
 
 public class PublicParkingLotDto
@@ -108,6 +162,16 @@ public class PublicParkingLotDto
     public int InitialGraceMinutes { get; set; }
     public int ExitGraceMinutes { get; set; }
     public bool IsActive { get; set; }
+    public VerificationStatus VerificationStatus { get; set; }
+    public string? VerificationDocumentUrl { get; set; }
+    public string? VerificationDocumentType { get; set; }
+    public string? FacilityPhotoUrl { get; set; }
+    public string? EntrancePhotoUrl { get; set; }
+    public string? IotDeviceUuid { get; set; }
+    public bool IsIotConnected { get; set; }
+    public string? NearestStationName { get; set; }
+    public int? DistanceToStation { get; set; }
+    public string? AdminReviewNotes { get; set; }
     public string? Description { get; set; }
     public DateTime CreatedAt { get; set; }
 }
@@ -173,4 +237,15 @@ public class PublicParkingCheckoutStripeResponse
 {
     public string CheckoutUrl { get; set; } = string.Empty;
     public string SessionId { get; set; } = string.Empty;
+}
+
+public class PublicParkingFileUploadRequest
+{
+    [Required]
+    public IFormFile File { get; set; } = null!;
+}
+
+public class PublicParkingUploadResponse
+{
+    public string Url { get; set; } = string.Empty;
 }

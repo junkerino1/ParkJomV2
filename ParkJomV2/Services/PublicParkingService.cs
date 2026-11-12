@@ -57,7 +57,70 @@ public class PublicParkingService
         return true;
     }
 
-    public async Task<List<PublicParkingLotDto>> GetLotsAsync(CancellationToken ct = default)
+    private static PublicParkingLotDto MapLotDto(PublicParkingLot l, DateTime now)
+    {
+        var occupied = l.Sessions.Count;
+        var available = Math.Max(0, l.TotalCapacity - occupied);
+        return new PublicParkingLotDto
+        {
+            PublicParkingLotId = l.PublicParkingLotId,
+            OwnerId = l.OwnerId,
+            OwnerName = $"{l.Owner?.FirstName} {l.Owner?.LastName}".Trim(),
+            PropertyId = l.PropertyId,
+            LotName = l.LotName,
+            Address = l.Address,
+            Latitude = l.Latitude,
+            Longitude = l.Longitude,
+            TotalCapacity = l.TotalCapacity,
+            OccupiedSpaces = occupied,
+            AvailableSpaces = available,
+            OperatingType = l.OperatingType,
+            OpeningTime = l.OpeningTime,
+            ClosingTime = l.ClosingTime,
+            IsCurrentlyOpen = IsLotCurrentlyOpen(l, now),
+            HourlyRate = l.HourlyRate,
+            DailyCapRate = l.DailyCapRate,
+            FlatRatePerEntry = l.FlatRatePerEntry,
+            OvernightSurcharge = l.OvernightSurcharge,
+            InitialGraceMinutes = l.InitialGraceMinutes,
+            ExitGraceMinutes = l.ExitGraceMinutes,
+            IsActive = l.IsActive,
+            VerificationStatus = l.VerificationStatus,
+            VerificationDocumentUrl = l.VerificationDocumentUrl,
+            VerificationDocumentType = l.VerificationDocumentType,
+            FacilityPhotoUrl = l.FacilityPhotoUrl,
+            EntrancePhotoUrl = l.EntrancePhotoUrl,
+            IotDeviceUuid = l.IotDeviceUuid,
+            IsIotConnected = l.IsIotConnected,
+            NearestStationName = l.NearestStationName,
+            DistanceToStation = l.DistanceToStation,
+            AdminReviewNotes = l.AdminReviewNotes,
+            Description = l.Description,
+            CreatedAt = l.CreatedAt
+        };
+    }
+
+    public async Task<List<PublicParkingLotDto>> GetLotsAsync(bool includeAll = false, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var query = _context.PublicParkingLots
+            .AsNoTracking()
+            .Include(l => l.Owner)
+            .Include(l => l.Sessions.Where(s =>
+                s.Status == PublicParkingSessionStatus.Parked ||
+                s.Status == PublicParkingSessionStatus.PaymentPending ||
+                s.Status == PublicParkingSessionStatus.Paid));
+
+        var lots = await (includeAll
+            ? query.OrderByDescending(l => l.CreatedAt).ToListAsync(ct)
+            : query.Where(l => l.IsActive && l.VerificationStatus == VerificationStatus.Approved)
+                   .OrderByDescending(l => l.CreatedAt)
+                   .ToListAsync(ct));
+
+        return lots.Select(l => MapLotDto(l, now)).ToList();
+    }
+
+    public async Task<List<PublicParkingLotDto>> GetLotsForOwnerAsync(int ownerId, CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
         var lots = await _context.PublicParkingLots
@@ -67,42 +130,11 @@ public class PublicParkingService
                 s.Status == PublicParkingSessionStatus.Parked ||
                 s.Status == PublicParkingSessionStatus.PaymentPending ||
                 s.Status == PublicParkingSessionStatus.Paid))
-            .Where(l => l.IsActive)
+            .Where(l => l.OwnerId == ownerId)
             .OrderByDescending(l => l.CreatedAt)
             .ToListAsync(ct);
 
-        return lots.Select(l =>
-        {
-            var occupied = l.Sessions.Count;
-            var available = Math.Max(0, l.TotalCapacity - occupied);
-            return new PublicParkingLotDto
-            {
-                PublicParkingLotId = l.PublicParkingLotId,
-                OwnerId = l.OwnerId,
-                OwnerName = $"{l.Owner?.FirstName} {l.Owner?.LastName}".Trim(),
-                PropertyId = l.PropertyId,
-                LotName = l.LotName,
-                Address = l.Address,
-                Latitude = l.Latitude,
-                Longitude = l.Longitude,
-                TotalCapacity = l.TotalCapacity,
-                OccupiedSpaces = occupied,
-                AvailableSpaces = available,
-                OperatingType = l.OperatingType,
-                OpeningTime = l.OpeningTime,
-                ClosingTime = l.ClosingTime,
-                IsCurrentlyOpen = IsLotCurrentlyOpen(l, now),
-                HourlyRate = l.HourlyRate,
-                DailyCapRate = l.DailyCapRate,
-                FlatRatePerEntry = l.FlatRatePerEntry,
-                OvernightSurcharge = l.OvernightSurcharge,
-                InitialGraceMinutes = l.InitialGraceMinutes,
-                ExitGraceMinutes = l.ExitGraceMinutes,
-                IsActive = l.IsActive,
-                Description = l.Description,
-                CreatedAt = l.CreatedAt
-            };
-        }).ToList();
+        return lots.Select(l => MapLotDto(l, now)).ToList();
     }
 
     public async Task<PublicParkingLotDto?> GetLotByIdAsync(int lotId, CancellationToken ct = default)
@@ -119,36 +151,7 @@ public class PublicParkingService
 
         if (lot == null) return null;
 
-        var occupied = lot.Sessions.Count;
-        var available = Math.Max(0, lot.TotalCapacity - occupied);
-
-        return new PublicParkingLotDto
-        {
-            PublicParkingLotId = lot.PublicParkingLotId,
-            OwnerId = lot.OwnerId,
-            OwnerName = $"{lot.Owner?.FirstName} {lot.Owner?.LastName}".Trim(),
-            PropertyId = lot.PropertyId,
-            LotName = lot.LotName,
-            Address = lot.Address,
-            Latitude = lot.Latitude,
-            Longitude = lot.Longitude,
-            TotalCapacity = lot.TotalCapacity,
-            OccupiedSpaces = occupied,
-            AvailableSpaces = available,
-            OperatingType = lot.OperatingType,
-            OpeningTime = lot.OpeningTime,
-            ClosingTime = lot.ClosingTime,
-            IsCurrentlyOpen = IsLotCurrentlyOpen(lot, now),
-            HourlyRate = lot.HourlyRate,
-            DailyCapRate = lot.DailyCapRate,
-            FlatRatePerEntry = lot.FlatRatePerEntry,
-            OvernightSurcharge = lot.OvernightSurcharge,
-            InitialGraceMinutes = lot.InitialGraceMinutes,
-            ExitGraceMinutes = lot.ExitGraceMinutes,
-            IsActive = lot.IsActive,
-            Description = lot.Description,
-            CreatedAt = lot.CreatedAt
-        };
+        return MapLotDto(lot, now);
     }
 
     public async Task<PublicParkingLotDto> CreateLotAsync(int ownerId, CreatePublicParkingLotRequest req, CancellationToken ct = default)
@@ -172,6 +175,14 @@ public class PublicParkingService
             InitialGraceMinutes = req.InitialGraceMinutes,
             ExitGraceMinutes = req.ExitGraceMinutes,
             IsActive = true,
+            VerificationStatus = VerificationStatus.Pending,
+            VerificationDocumentUrl = req.VerificationDocumentUrl?.Trim(),
+            VerificationDocumentType = req.VerificationDocumentType?.Trim(),
+            FacilityPhotoUrl = req.FacilityPhotoUrl?.Trim(),
+            EntrancePhotoUrl = req.EntrancePhotoUrl?.Trim(),
+            NearestStationName = req.NearestStationName?.Trim(),
+            DistanceToStation = req.DistanceToStation,
+            IsIotConnected = false,
             Description = req.Description?.Trim(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -183,29 +194,107 @@ public class PublicParkingService
         return (await GetLotByIdAsync(lot.PublicParkingLotId, ct))!;
     }
 
-    public async Task<PublicParkingLotDto?> UpdateLotAsync(int ownerId, int lotId, UpdatePublicParkingLotRequest req, CancellationToken ct = default)
+    public async Task<PublicParkingLotDto?> ReviewLotAsync(int lotId, ReviewPublicParkingLotRequest req, CancellationToken ct = default)
     {
-        var lot = await _context.PublicParkingLots.FirstOrDefaultAsync(l => l.PublicParkingLotId == lotId && l.OwnerId == ownerId, ct);
+        var lot = await _context.PublicParkingLots.FirstOrDefaultAsync(l => l.PublicParkingLotId == lotId, ct);
         if (lot == null) return null;
 
-        lot.LotName = req.LotName.Trim();
-        lot.Address = req.Address.Trim();
-        lot.TotalCapacity = req.TotalCapacity;
-        lot.OperatingType = req.OperatingType;
-        lot.OpeningTime = req.OpeningTime?.Trim();
-        lot.ClosingTime = req.ClosingTime?.Trim();
-        lot.HourlyRate = req.HourlyRate;
-        lot.DailyCapRate = req.DailyCapRate;
-        lot.FlatRatePerEntry = req.FlatRatePerEntry;
-        lot.OvernightSurcharge = req.OvernightSurcharge;
-        lot.InitialGraceMinutes = req.InitialGraceMinutes;
-        lot.ExitGraceMinutes = req.ExitGraceMinutes;
-        lot.IsActive = req.IsActive;
-        lot.Description = req.Description?.Trim();
+        lot.VerificationStatus = req.Status;
+        lot.AdminReviewNotes = req.ReviewNotes?.Trim();
+        if (req.Status == VerificationStatus.Approved)
+        {
+            lot.IsActive = true;
+            lot.IsIotConnected = true;
+            if (!string.IsNullOrWhiteSpace(req.IotDeviceUuid))
+            {
+                lot.IotDeviceUuid = req.IotDeviceUuid.Trim();
+            }
+            else if (string.IsNullOrWhiteSpace(lot.IotDeviceUuid))
+            {
+                lot.IotDeviceUuid = $"IOT-GATE-{lot.PublicParkingLotId:D4}";
+            }
+        }
+        else if (req.Status == VerificationStatus.Rejected)
+        {
+            lot.IsActive = false;
+            lot.IsIotConnected = false;
+        }
+
+        lot.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(ct);
+
+        return await GetLotByIdAsync(lotId, ct);
+    }
+
+    public async Task<PublicParkingLotDto?> UpdateLotAsync(int? ownerId, int lotId, UpdatePublicParkingLotRequest req, CancellationToken ct = default)
+    {
+        var query = _context.PublicParkingLots.AsQueryable();
+        if (ownerId.HasValue)
+        {
+            query = query.Where(l => l.PublicParkingLotId == lotId && l.OwnerId == ownerId.Value);
+        }
+        else
+        {
+            query = query.Where(l => l.PublicParkingLotId == lotId);
+        }
+
+        var lot = await query.FirstOrDefaultAsync(ct);
+        if (lot == null) return null;
+
+        if (!string.IsNullOrWhiteSpace(req.LotName)) lot.LotName = req.LotName.Trim();
+        if (!string.IsNullOrWhiteSpace(req.Address)) lot.Address = req.Address.Trim();
+        if (req.Latitude.HasValue && req.Latitude.Value != 0) lot.Latitude = (decimal)req.Latitude.Value;
+        if (req.Longitude.HasValue && req.Longitude.Value != 0) lot.Longitude = (decimal)req.Longitude.Value;
+        if (req.TotalCapacity.HasValue && req.TotalCapacity.Value > 0)
+        {
+            lot.TotalCapacity = req.TotalCapacity.Value;
+        }
+        if (req.OperatingType.HasValue) lot.OperatingType = req.OperatingType.Value;
+        if (req.OpeningTime != null) lot.OpeningTime = string.IsNullOrWhiteSpace(req.OpeningTime) ? null : req.OpeningTime.Trim();
+        if (req.ClosingTime != null) lot.ClosingTime = string.IsNullOrWhiteSpace(req.ClosingTime) ? null : req.ClosingTime.Trim();
+        if (req.HourlyRate.HasValue && req.HourlyRate.Value >= 0) lot.HourlyRate = req.HourlyRate.Value;
+        if (req.DailyCapRate.HasValue) lot.DailyCapRate = req.DailyCapRate.Value;
+        if (req.FlatRatePerEntry.HasValue) lot.FlatRatePerEntry = req.FlatRatePerEntry.Value;
+        if (req.OvernightSurcharge.HasValue) lot.OvernightSurcharge = req.OvernightSurcharge.Value;
+        if (req.InitialGraceMinutes.HasValue && req.InitialGraceMinutes.Value >= 0) lot.InitialGraceMinutes = req.InitialGraceMinutes.Value;
+        if (req.ExitGraceMinutes.HasValue && req.ExitGraceMinutes.Value >= 0) lot.ExitGraceMinutes = req.ExitGraceMinutes.Value;
+        if (req.IsActive.HasValue) lot.IsActive = req.IsActive.Value;
+        if (req.Description != null) lot.Description = req.Description.Trim();
+        if (!string.IsNullOrWhiteSpace(req.NearestStationName)) lot.NearestStationName = req.NearestStationName.Trim();
+        if (req.DistanceToStation.HasValue) lot.DistanceToStation = req.DistanceToStation.Value;
+        if (!string.IsNullOrWhiteSpace(req.FacilityPhotoUrl)) lot.FacilityPhotoUrl = req.FacilityPhotoUrl.Trim();
+        if (!string.IsNullOrWhiteSpace(req.EntrancePhotoUrl)) lot.EntrancePhotoUrl = req.EntrancePhotoUrl.Trim();
+        if (!string.IsNullOrWhiteSpace(req.VerificationDocumentUrl)) lot.VerificationDocumentUrl = req.VerificationDocumentUrl.Trim();
+        if (!string.IsNullOrWhiteSpace(req.IotDeviceUuid)) lot.IotDeviceUuid = req.IotDeviceUuid.Trim();
         lot.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync(ct);
         return await GetLotByIdAsync(lotId, ct);
+    }
+
+    public async Task<bool> DeleteLotAsync(int lotId, int? ownerId = null, CancellationToken ct = default)
+    {
+        var query = _context.PublicParkingLots.Include(l => l.Sessions).AsQueryable();
+        if (ownerId.HasValue)
+        {
+            query = query.Where(l => l.PublicParkingLotId == lotId && l.OwnerId == ownerId.Value);
+        }
+        else
+        {
+            query = query.Where(l => l.PublicParkingLotId == lotId);
+        }
+
+        var lot = await query.FirstOrDefaultAsync(ct);
+        if (lot == null) return false;
+
+        if (lot.Sessions.Count > 0)
+        {
+            _context.PublicParkingSessions.RemoveRange(lot.Sessions);
+        }
+
+        _context.PublicParkingLots.Remove(lot);
+        await _context.SaveChangesAsync(ct);
+        return true;
     }
 
     public async Task<PublicParkingSessionDto> RecordEntryAsync(PublicParkingEntryRequest req, int? userId = null, CancellationToken ct = default)

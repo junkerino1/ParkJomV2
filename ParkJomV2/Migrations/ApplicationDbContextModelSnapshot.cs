@@ -1368,6 +1368,10 @@ namespace ParkJomV2.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
+                    b.Property<string>("AdminReviewNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<string>("ClosingTime")
                         .HasMaxLength(10)
                         .HasColumnType("nvarchar(10)");
@@ -1382,8 +1386,19 @@ namespace ParkJomV2.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 
+                    b.Property<int?>("DistanceToStation")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EntrancePhotoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<int>("ExitGraceMinutes")
                         .HasColumnType("int");
+
+                    b.Property<string>("FacilityPhotoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<decimal?>("FlatRatePerEntry")
                         .HasColumnType("decimal(10,2)");
@@ -1394,7 +1409,14 @@ namespace ParkJomV2.Migrations
                     b.Property<int>("InitialGraceMinutes")
                         .HasColumnType("int");
 
+                    b.Property<string>("IotDeviceUuid")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsIotConnected")
                         .HasColumnType("bit");
 
                     b.Property<decimal>("Latitude")
@@ -1407,6 +1429,10 @@ namespace ParkJomV2.Migrations
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("NearestStationName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("OpeningTime")
                         .HasMaxLength(10)
@@ -1429,6 +1455,17 @@ namespace ParkJomV2.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("VerificationDocumentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("VerificationDocumentUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("VerificationStatus")
+                        .HasColumnType("int");
 
                     b.HasKey("PublicParkingLotId");
 

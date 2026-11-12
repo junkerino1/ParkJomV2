@@ -60,6 +60,34 @@ public class PublicParkingLot
 
     public bool IsActive { get; set; } = true;
 
+    [Required]
+    public VerificationStatus VerificationStatus { get; set; } = VerificationStatus.Pending;
+
+    [StringLength(500)]
+    public string? VerificationDocumentUrl { get; set; }
+
+    [StringLength(100)]
+    public string? VerificationDocumentType { get; set; }
+
+    [StringLength(500)]
+    public string? FacilityPhotoUrl { get; set; }
+
+    [StringLength(500)]
+    public string? EntrancePhotoUrl { get; set; }
+
+    [StringLength(100)]
+    public string? IotDeviceUuid { get; set; }
+
+    public bool IsIotConnected { get; set; } = false;
+
+    [StringLength(100)]
+    public string? NearestStationName { get; set; }
+
+    public int? DistanceToStation { get; set; }
+
+    [StringLength(1000)]
+    public string? AdminReviewNotes { get; set; }
+
     [StringLength(1000)]
     public string? Description { get; set; }
 
