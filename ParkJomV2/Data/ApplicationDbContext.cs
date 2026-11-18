@@ -49,6 +49,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<Review> Reviews => Set<Review>();
     public DbSet<ReviewReport> ReviewReports => Set<ReviewReport>();
 
+    // Public Drive-In Parking Module
+    public DbSet<PublicParkingLot> PublicParkingLots => Set<PublicParkingLot>();
+    public DbSet<PublicParkingSession> PublicParkingSessions => Set<PublicParkingSession>();
+
     // Support Module
     public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
     public DbSet<SupportTicketMessage> SupportTicketMessages => Set<SupportTicketMessage>();
@@ -778,6 +782,51 @@ public class ApplicationDbContext : DbContext
                 .WithMany(u => u.PushSubscriptions)
                 .HasForeignKey(s => s.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // =========================
+        // Public Drive-In Parking
+        // =========================
+        modelBuilder.Entity<PublicParkingLot>(entity =>
+        {
+            entity.HasKey(lot => lot.PublicParkingLotId);
+            entity.HasIndex(lot => lot.OwnerId);
+            entity.HasIndex(lot => lot.PropertyId);
+            entity.HasIndex(lot => lot.IsActive);
+
+            entity.HasOne(lot => lot.Owner)
+                .WithMany()
+                .HasForeignKey(lot => lot.OwnerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(lot => lot.Property)
+                .WithMany()
+                .HasForeignKey(lot => lot.PropertyId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<PublicParkingSession>(entity =>
+        {
+            entity.HasKey(s => s.PublicParkingSessionId);
+            entity.HasIndex(s => s.SessionCode).IsUnique();
+            entity.HasIndex(s => new { s.CarPlateNumber, s.Status });
+            entity.HasIndex(s => new { s.PublicParkingLotId, s.Status });
+            entity.HasIndex(s => s.StripeSessionId);
+
+            entity.HasOne(s => s.ParkingLot)
+                .WithMany(lot => lot.Sessions)
+                .HasForeignKey(s => s.PublicParkingLotId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(s => s.User)
+                .WithMany()
+                .HasForeignKey(s => s.UserId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(s => s.WalletTransaction)
+                .WithMany()
+                .HasForeignKey(s => s.WalletTransactionId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

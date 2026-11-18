@@ -321,6 +321,27 @@ public class StripeService
             return;
         }
 
+        // Handle Public Parking Session payment
+        if (session.Metadata != null &&
+            session.Metadata.TryGetValue("type", out var sessionType) &&
+            sessionType == "public_parking")
+        {
+            var publicSession = await _context.PublicParkingSessions
+                .FirstOrDefaultAsync(s => s.StripeSessionId == session.Id);
+
+            if (publicSession != null && publicSession.Status != PublicParkingSessionStatus.Paid)
+            {
+                publicSession.Status = PublicParkingSessionStatus.Paid;
+                publicSession.PaidAtUtc = DateTime.UtcNow;
+                publicSession.PaymentMethod = "Stripe";
+                publicSession.StripePaymentIntentId = session.PaymentIntentId;
+                publicSession.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Public parking session {SessionCode} marked as Paid via Stripe webhook.", publicSession.SessionCode);
+            }
+            return;
+        }
+
         Payment? payment = null;
         if (session.Metadata != null &&
             session.Metadata.TryGetValue("PaymentId", out var paymentIdText) &&
