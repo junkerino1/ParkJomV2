@@ -358,6 +358,7 @@ public class OwnerEarningsController : ControllerBase
         {
             BookingId = booking.BookingId,
             BookingReference = booking.BookingReference,
+            PropertyName = booking.ParkingSpot?.Property?.PropertyName,
             ParkingSpotId = booking.ParkingSpotId,
             ParkingLabel = booking.ParkingSpot?.ParkingLabel,
             StartDate = booking.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),

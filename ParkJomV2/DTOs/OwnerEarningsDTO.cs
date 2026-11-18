@@ -51,6 +51,7 @@ public class OwnerEarningsTransactionResponse
 {
     public int BookingId { get; set; }
     public string BookingReference { get; set; } = string.Empty;
+    public string? PropertyName { get; set; }
     public int ParkingSpotId { get; set; }
     public string? ParkingLabel { get; set; }
     public string StartDate { get; set; } = string.Empty;
