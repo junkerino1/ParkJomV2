@@ -12,8 +12,8 @@
 // 1. WI-FI CONFIGURATION
 // =============================================
 
-const char* ssid = "FBIVan@unifi";
-const char* password = "Pota+0CHIP";
+const char* ssid = "REDMI Turbo 4 Pro";
+const char* password = "12345678cj";
 
 // =============================================
 // 2. MQTT CONFIGURATION
