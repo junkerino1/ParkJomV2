@@ -6,7 +6,7 @@ using ParkJomV2.Services;
 
 namespace ParkJomV2.Controllers;
 
-/// <summary>HTTP boundary for prototype registration, OTP issuance, and owner device binding.</summary>
+/// <summary>HTTP endpoints for device inventory, registration, and owner device binding.</summary>
 [ApiController]
 [Route("api/iot")]
 public sealed class IoTDeviceController : ControllerBase
@@ -24,6 +24,40 @@ public sealed class IoTDeviceController : ControllerBase
         _currentUser = currentUser;
         _logger = logger;
     }
+
+    /// <summary>Lists bollards linked to parking bays owned by the signed-in property owner.</summary>
+    [Authorize(Policy = "PropertyOwnerOnly")]
+    [HttpGet("owner/devices")]
+    public async Task<ActionResult<IoTApiResponse<List<IoTDeviceListItem>>>> ListOwnerDevices(
+        CancellationToken cancellationToken)
+    {
+        if (_currentUser.UserId is not int ownerId)
+        {
+            return Unauthorized();
+        }
+
+        var devices = await _devices.ListForOwnerAsync(ownerId, cancellationToken);
+        return Ok(DeviceListResponse(devices));
+    }
+
+    /// <summary>Lists all registered bollards, including unassigned devices.</summary>
+    [Authorize(Policy = "AdminOnly")]
+    [HttpGet("admin/devices")]
+    public async Task<ActionResult<IoTApiResponse<List<IoTDeviceListItem>>>> ListAdminDevices(
+        CancellationToken cancellationToken)
+    {
+        var devices = await _devices.ListAllAsync(cancellationToken);
+        return Ok(DeviceListResponse(devices));
+    }
+
+    private static IoTApiResponse<List<IoTDeviceListItem>> DeviceListResponse(List<IoTDeviceListItem> devices)
+        => new()
+        {
+            Code = StatusCodes.Status200OK,
+            Success = true,
+            Message = "Bollards retrieved.",
+            Data = devices
+        };
 
     /// <summary>Registers a UUID once; repeat requests return the existing device without changing its assignment.</summary>
     [AllowAnonymous]

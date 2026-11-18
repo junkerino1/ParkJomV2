@@ -1049,9 +1049,9 @@ public class CommuterBookingsController : ControllerBase
 
     /// <summary>
     /// Generates a unique booking reference using a time-ordered UUIDv7.
-    /// Collision-free without a DB check; e.g. PJ-0193F2C4A0B1C2D3E4F5A6B7C8D9E0F1.
+    /// Collision-free without a DB check; e.g. 0193F2C4A0B1C2D3E4F5A6B7C8D9E0F1.
     /// </summary>
-    private static string GenerateBookingReference() => $"PJ-{Guid.CreateVersion7():N}";
+    private static string GenerateBookingReference() => $"{Guid.CreateVersion7():N}";
 
     /// <summary>
     /// Take the request's status string and parse it to the BookingStatus enum.

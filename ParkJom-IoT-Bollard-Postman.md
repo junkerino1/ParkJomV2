@@ -11,6 +11,7 @@ Open the collection's **Variables** tab and set:
 | `baseUrl` | Your API address, for example `http://localhost:5276` |
 | `bookingId` | Booking ID whose parking spot has the assigned ESP32, for example `13` |
 | `renterToken` | JWT for the renter who owns that booking |
+| `ownerToken` | JWT for the property owner listing their bollards |
 | `adminToken` | JWT for an account with the `AdminOnly` policy |
 | `latitude`, `longitude` | Current phone GPS coordinates near the property |
 | `accuracyMeters` | Phone-reported GPS accuracy |
@@ -18,6 +19,17 @@ Open the collection's **Variables** tab and set:
 | `bleChallengeResponse` | Base64 HMAC proof returned by the PWA after BLE communication |
 
 The challenge request updates `challengeId`, `nonce`, and `deviceUuid` automatically. `nonce` is informational for the BLE exchange; the PWA sends the challenge data to the ESP32 and supplies the returned HMAC proof. Never put the device secret in Postman or the PWA.
+
+## Smart bollard inventory
+
+| Request | Bearer token | Inventory |
+| --- | --- | --- |
+| `GET /api/iot/owner/devices` | `ownerToken` | Bollards linked to bays owned by the caller |
+| `GET /api/iot/admin/devices` | `adminToken` | All registered bollards, including unassigned devices |
+
+Both endpoints return `200` with `code`, `success`, `message`, and a `data` array sorted by `iotDeviceId`. The array is empty when no devices match. Each item returns `iotDeviceId`, `deviceUuid`, `deviceStatus` (last recorded status), `firmwareVersion`, `isAssigned`, `parkingSpotId`, `parkingLabel`, `propertyId`, `propertyName`, `ownerId`, `lastHeartbeatAt`, `createdAt`, and `updatedAt`. Unassigned devices have null bay, property, and owner fields. `lastHeartbeatAt` can be null.
+
+Requests without valid authentication return `401`. Authenticated callers without the required role receive `403`.
 
 ## 2. Renter unlock flow
 

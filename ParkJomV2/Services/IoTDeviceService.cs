@@ -30,6 +30,37 @@ public sealed class IoTDeviceService
         _otpPepper = Encoding.UTF8.GetBytes(pepper);
     }
 
+    public Task<List<IoTDeviceListItem>> ListForOwnerAsync(int ownerId, CancellationToken cancellationToken)
+        => ListDevicesAsync(
+            _db.IoTDevices.Where(d => d.ParkingSpot != null && d.ParkingSpot.OwnerId == ownerId),
+            cancellationToken);
+
+    public Task<List<IoTDeviceListItem>> ListAllAsync(CancellationToken cancellationToken)
+        => ListDevicesAsync(_db.IoTDevices, cancellationToken);
+
+    private static Task<List<IoTDeviceListItem>> ListDevicesAsync(
+        IQueryable<IoTDevice> devices,
+        CancellationToken cancellationToken)
+        => devices.AsNoTracking()
+            .OrderBy(d => d.IoTDeviceId)
+            .Select(d => new IoTDeviceListItem
+            {
+                IoTDeviceId = d.IoTDeviceId,
+                DeviceUuid = d.Esp32Serial,
+                DeviceStatus = d.DeviceStatus.ToString(),
+                FirmwareVersion = d.FirmwareVersion,
+                IsAssigned = d.IsAssigned,
+                ParkingSpotId = d.ParkingSpotId,
+                ParkingLabel = d.ParkingSpot == null ? null : d.ParkingSpot.ParkingLabel,
+                PropertyId = d.ParkingSpot == null ? null : d.ParkingSpot.PropertyId,
+                PropertyName = d.ParkingSpot == null ? null : d.ParkingSpot.Property.PropertyName,
+                OwnerId = d.ParkingSpot == null ? null : d.ParkingSpot.OwnerId,
+                LastHeartbeatAt = d.LastHeartbeatAt,
+                CreatedAt = d.CreatedAt,
+                UpdatedAt = d.UpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+
     /// <summary>Registers a UUID as an offline, unassigned device without changing an existing record.</summary>
     public async Task<(IoTDeviceResponse Device, bool Created)> RegisterAsync(string deviceUuid, CancellationToken cancellationToken)
     {

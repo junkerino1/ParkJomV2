@@ -262,6 +262,11 @@ builder.Services.AddAuthorization(options =>
         policy.RequireAuthenticatedUser();
         policy.RequireClaim("UserType", UserType.PropertyManagement.ToString());
     });
+    options.AddPolicy("PropertyOwnerOnly", policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireClaim("UserType", UserType.PropertyOwner.ToString());
+    });
 });
 
 // System-wide audit log service (write an AccessLog row per action from controllers).
