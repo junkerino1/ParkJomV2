@@ -1809,13 +1809,21 @@ public class OwnerParkingController : ControllerBase
     }
 
     /// <summary>
-    /// Lists every parking spot owned by the authenticated owner.
+    /// Lists the caller's non-deleted parking spots with property details, listing
+    /// configuration, availability rules, ordered listing images, and assigned bollards.
     /// </summary>
+    /// <remarks>
+    /// Requires a bearer token. The list includes unpublished spots and is empty if the caller owns no spots.
+    /// Images contain secure URLs in display order and identify the primary image with its IsPrimary flag.
+    /// Availability times use the returned time zone. Null rule dates indicate an open-ended boundary.
+    /// </remarks>
     [HttpGet("my-parking")]
     [ProducesResponseType(typeof(DisplayMyParkingResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking()
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<DisplayMyParkingResponse>> GetMyParking(CancellationToken cancellationToken)
     {
-        var user = await _currentUser.GetCurrentUserAsync();
+        var user = await _currentUser.GetCurrentUserAsync(cancellationToken);
         if (user == null || (user.UserType != UserType.PropertyOwner && user.UserType != UserType.Admin))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse
@@ -1828,21 +1836,33 @@ public class OwnerParkingController : ControllerBase
         var userId = user.UserId;
         var spots = await _context.ParkingSpots
             .AsNoTracking()
-            .Where(p => p.OwnerId == userId)
+            .AsSplitQuery()
+            .Where(p => p.OwnerId == userId && p.AvailabilityStatus != AvailabilityStatus.Deleted)
             .Include(p => p.Property)
                 .ThenInclude(prop => prop.Station)
-            .Where(p => p.AvailabilityStatus != AvailabilityStatus.Deleted)
             .Include(p => p.VerificationRequests.Where(v => v.IsCurrent))
-            .Include(p => p.Bookings)
+            .Include(p => p.ParkingSpotImages)
+                .ThenInclude(image => image.MediaFile)
+            .Include(p => p.ParkingAvailabilities)
+            .Include(p => p.IoTDevice)
             .OrderByDescending(p => p.CreatedAt)
-            .ToListAsync();
+            .ThenByDescending(p => p.ParkingSpotId)
+            .Select(p => new
+            {
+                Spot = p,
+                ActiveBookingCount = p.Bookings.Count(b =>
+                    b.BookingStatus == BookingStatus.Pending ||
+                    b.BookingStatus == BookingStatus.Confirmed ||
+                    b.BookingStatus == BookingStatus.Active)
+            })
+            .ToListAsync(cancellationToken);
 
         return Ok(new DisplayMyParkingResponse
         {
             Code = 200,
             Success = true,
             Message = spots.Count == 0 ? "No parking spots found." : "Parking spots retrieved successfully.",
-            Data = spots.Select(MapToDisplayParkingSpotDTO).ToList()
+            Data = spots.Select(row => MapToDisplayParkingSpotDTO(row.Spot, row.ActiveBookingCount)).ToList()
         });
     }
 
@@ -2922,38 +2942,78 @@ public class OwnerParkingController : ControllerBase
             .ToListAsync();
     }
 
-    private static DisplayParkingSpotDTO MapToDisplayParkingSpotDTO(ParkingSpot parkingSpot)
+    private static DisplayParkingSpotDTO MapToDisplayParkingSpotDTO(ParkingSpot parkingSpot, int activeBookingCount)
     {
+        var property = parkingSpot.Property;
+        var images = parkingSpot.ParkingSpotImages
+            .OrderBy(image => image.DisplayOrder)
+            .ThenBy(image => image.ParkingSpotImageId)
+            .Select(image => new OwnerParkingImageResponse
+            {
+                ParkingSpotImageId = image.ParkingSpotImageId,
+                MediaFileId = image.MediaFileId,
+                SecureUrl = image.MediaFile.SecureUrl,
+                OriginalFileName = image.MediaFile.OriginalFileName,
+                DisplayOrder = image.DisplayOrder,
+                IsPrimary = image.IsPrimary
+            })
+            .ToList();
+        var rules = parkingSpot.ParkingAvailabilities
+            .OrderBy(rule => rule.EffectiveFrom)
+            .ThenBy(rule => rule.StartTime)
+            .ThenBy(rule => rule.AvailabilityId)
+            .Select(rule => new OwnerParkingScheduleRule(
+                rule.AvailabilityId,
+                rule.DayType.ToString(),
+                rule.EffectiveFrom,
+                rule.EffectiveUntil,
+                rule.StartTime.ToString("HH:mm", CultureInfo.InvariantCulture),
+                rule.EndTime.ToString("HH:mm", CultureInfo.InvariantCulture)))
+            .ToList();
+
         return new DisplayParkingSpotDTO
         {
             ParkingSpotId = parkingSpot.ParkingSpotId,
-            PropertyId = parkingSpot.PropertyId,
-            PropertyName = !string.IsNullOrWhiteSpace(parkingSpot.Property?.PropertyName)
-                ? parkingSpot.Property.PropertyName
-                : (!string.IsNullOrWhiteSpace(parkingSpot.Property?.Address)
-                    ? parkingSpot.Property.Address
-                    : $"Property #{parkingSpot.PropertyId}"),
-            StationName = parkingSpot.Property?.Station?.StationName ?? "—",
-            Address = parkingSpot.Property?.Address,
-            DistanceToStation = parkingSpot.Property?.DistanceToStation,
-            TimeToStation = parkingSpot.Property?.TimeToStation,
             OwnerId = parkingSpot.OwnerId,
             ParkingLabel = parkingSpot.ParkingLabel,
             AvailabilityStatus = parkingSpot.AvailabilityStatus.ToString(),
             VerificationStatus = parkingSpot.VerificationRequests.FirstOrDefault()?.VerificationStatus.ToString()
                 ?? VerificationStatus.Pending.ToString(),
-            MonthlyRate = parkingSpot.MonthlyRate,
-            DailyRate = parkingSpot.DailyRate,
             IsPublished = parkingSpot.IsPublished,
-            HasEvCharging = parkingSpot.HasEvCharging,
-            EvChargingSpeed = parkingSpot.EvChargingSpeed,
-            IsCovered = parkingSpot.IsCovered,
-            IsHandicapAccessible = parkingSpot.IsHandicapAccessible,
-            HasCctv = parkingSpot.HasCctv,
             CreatedAt = parkingSpot.CreatedAt,
             UpdatedAt = parkingSpot.UpdatedAt,
-            ActiveBookingCount = parkingSpot.Bookings?.Count(b => b.BookingStatus is BookingStatus.Pending or BookingStatus.Confirmed or BookingStatus.Active) ?? 0,
-            HasActiveBookings = (parkingSpot.Bookings?.Count(b => b.BookingStatus is BookingStatus.Pending or BookingStatus.Confirmed or BookingStatus.Active) ?? 0) > 0
+            ActiveBookingCount = activeBookingCount,
+            HasActiveBookings = activeBookingCount > 0,
+            Images = images,
+            Property = new OwnerParkingPropertyDetails(
+                property.PropertyId,
+                property.PropertyName,
+                property.PropertyType.ToString(),
+                property.Address,
+                property.Description,
+                property.Latitude,
+                property.Longitude,
+                new OwnerParkingStationDetails(
+                    property.NearestStationId,
+                    property.Station?.StationName,
+                    property.DistanceToStation,
+                    property.TimeToStation)),
+            Configuration = new OwnerParkingListingConfiguration(
+                parkingSpot.Description,
+                parkingSpot.IsConfigurationComplete,
+                parkingSpot.ConfiguredAt,
+                GetConfigurationRequirements(parkingSpot),
+                new OwnerParkingRates(parkingSpot.DailyRate, parkingSpot.MonthlyRate),
+                new OwnerParkingAmenities(
+                    parkingSpot.HasEvCharging,
+                    parkingSpot.EvChargingSpeed,
+                    parkingSpot.IsCovered,
+                    parkingSpot.IsHandicapAccessible,
+                    parkingSpot.HasCctv),
+                new OwnerParkingAvailability("Asia/Kuala_Lumpur", rules)),
+            Bollard = parkingSpot.IoTDevice is { } device
+                ? new OwnerParkingBollard(device.Esp32Serial, device.DeviceStatus.ToString(), device.IsAssigned)
+                : null
         };
     }
 

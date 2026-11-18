@@ -276,6 +276,7 @@ public class OwnerEarningsController : ControllerBase
 
             var bookings = await query
                 .Include(b => b.ParkingSpot)
+                .ThenInclude(spot => spot.Property)
                 .OrderByDescending(b => b.StartDate)
                 .ThenByDescending(b => b.BookingId)
                 .Skip((page - 1) * pageSize)
@@ -358,7 +359,7 @@ public class OwnerEarningsController : ControllerBase
         {
             BookingId = booking.BookingId,
             BookingReference = booking.BookingReference,
-            PropertyName = booking.ParkingSpot?.Property?.PropertyName,
+            PropertyName = booking.ParkingSpot.Property.PropertyName,
             ParkingSpotId = booking.ParkingSpotId,
             ParkingLabel = booking.ParkingSpot?.ParkingLabel,
             StartDate = booking.StartDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),

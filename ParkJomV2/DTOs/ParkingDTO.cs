@@ -210,29 +210,68 @@ public class ConfigParkingResponse
 public class DisplayParkingSpotDTO
 {
     public int ParkingSpotId { get; set; }
-    public int PropertyId { get; set; }
-    public string? PropertyName { get; set; }
-    public string? StationName { get; set; }
-    public string? Address { get; set; }
-    public decimal? DistanceToStation { get; set; }
-    public decimal? TimeToStation { get; set; }
     public int OwnerId { get; set; }
     public string? ParkingLabel { get; set; }
     public string AvailabilityStatus { get; set; } = string.Empty;
     public string VerificationStatus { get; set; } = string.Empty;
-    public decimal? MonthlyRate { get; set; }
-    public decimal? DailyRate { get; set; }
     public bool IsPublished { get; set; }
-    public bool HasEvCharging { get; set; }
-    public string? EvChargingSpeed { get; set; }
-    public bool IsCovered { get; set; }
-    public bool IsHandicapAccessible { get; set; }
-    public bool HasCctv { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public int ActiveBookingCount { get; set; }
     public bool HasActiveBookings { get; set; }
+    public IReadOnlyList<OwnerParkingImageResponse> Images { get; init; } = [];
+    public required OwnerParkingPropertyDetails Property { get; init; }
+    public required OwnerParkingListingConfiguration Configuration { get; init; }
+    public OwnerParkingBollard? Bollard { get; init; }
 }
+
+public sealed record OwnerParkingBollard(string DeviceUuid, string DeviceStatus, bool IsAssigned);
+
+public sealed record OwnerParkingPropertyDetails(
+    int PropertyId,
+    string PropertyName,
+    string PropertyType,
+    string Address,
+    string? Description,
+    decimal Latitude,
+    decimal Longitude,
+    OwnerParkingStationDetails NearestStation);
+
+public sealed record OwnerParkingStationDetails(
+    int StationId,
+    string? StationName,
+    decimal WalkingDistanceKm,
+    decimal WalkingTimeMinutes);
+
+public sealed record OwnerParkingListingConfiguration(
+    string? Description,
+    bool IsConfigurationComplete,
+    DateTime? ConfiguredAt,
+    IReadOnlyList<string> MissingRequirements,
+    OwnerParkingRates Rates,
+    OwnerParkingAmenities Amenities,
+    OwnerParkingAvailability Availability);
+
+public sealed record OwnerParkingRates(decimal? DailyRate, decimal? MonthlyRate);
+
+public sealed record OwnerParkingAmenities(
+    bool HasEvCharging,
+    string? EvChargingSpeed,
+    bool IsCovered,
+    bool IsHandicapAccessible,
+    bool HasCctv);
+
+public sealed record OwnerParkingAvailability(
+    string TimeZone,
+    IReadOnlyList<OwnerParkingScheduleRule> Rules);
+
+public sealed record OwnerParkingScheduleRule(
+    int AvailabilityRuleId,
+    string DayType,
+    DateOnly? FromDate,
+    DateOnly? ToDate,
+    string FromTime,
+    string ToTime);
 
 public class DisplayMyParkingResponse
 {

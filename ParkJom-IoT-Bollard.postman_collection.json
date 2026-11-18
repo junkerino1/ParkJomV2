@@ -9,6 +9,7 @@
     { "key": "baseUrl", "value": "http://localhost:5276", "type": "string" },
     { "key": "bookingId", "value": "13", "type": "string" },
     { "key": "renterToken", "value": "", "type": "string" },
+    { "key": "ownerToken", "value": "", "type": "string" },
     { "key": "adminToken", "value": "", "type": "string" },
     { "key": "challengeId", "value": "", "type": "string" },
     { "key": "nonce", "value": "", "type": "string" },
@@ -77,6 +78,24 @@
           }
         }
       ]
+    },
+    {
+      "name": "List my smart bollards (owner)",
+      "request": {
+        "method": "GET",
+        "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{ownerToken}}", "type": "string" } ] },
+        "description": "Requires a property-owner JWT. Returns only bollards linked to that owner's parking bays.",
+        "url": "{{baseUrl}}/api/iot/owner/devices"
+      }
+    },
+    {
+      "name": "List all smart bollards (admin)",
+      "request": {
+        "method": "GET",
+        "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{adminToken}}", "type": "string" } ] },
+        "description": "Requires an admin JWT. Returns every registered bollard, including unassigned devices.",
+        "url": "{{baseUrl}}/api/iot/admin/devices"
+      }
     },
     {
       "name": "Admin override",

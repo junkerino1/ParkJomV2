@@ -40,6 +40,23 @@ public sealed class IoTOtpResponse
     public DateTime ExpiresAtUtc { get; set; }
 }
 
+public sealed class IoTDeviceListItem
+{
+    public int IoTDeviceId { get; init; }
+    public string DeviceUuid { get; init; } = string.Empty;
+    public string DeviceStatus { get; init; } = string.Empty;
+    public string FirmwareVersion { get; init; } = string.Empty;
+    public bool IsAssigned { get; init; }
+    public int? ParkingSpotId { get; init; }
+    public string? ParkingLabel { get; init; }
+    public int? PropertyId { get; init; }
+    public string? PropertyName { get; init; }
+    public int? OwnerId { get; init; }
+    public DateTime? LastHeartbeatAt { get; init; }
+    public DateTime CreatedAt { get; init; }
+    public DateTime UpdatedAt { get; init; }
+}
+
 public sealed class IoTApiResponse<T>
 {
     public int Code { get; set; }
