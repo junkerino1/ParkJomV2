@@ -142,9 +142,11 @@ public sealed class MqttService : BackgroundService, IMqttService
         }
     }
 
-    public async Task PublishCommandAsync(string deviceUuid, string command, CancellationToken cancellationToken = default)
+    public Task PublishCommandAsync(string deviceUuid, string command, CancellationToken cancellationToken = default)
+        => PublishAsync($"{_topicRoot}/{deviceUuid}/commands", command, cancellationToken);
+
+    private async Task PublishAsync(string topic, string command, CancellationToken cancellationToken)
     {
-        var topic = $"{_topicRoot}/{deviceUuid}/commands";
         if (!_client.IsConnected)
         {
             _logger.LogWarning("Cannot publish MQTT command to {Topic}: broker client is disconnected", topic);
@@ -162,6 +164,10 @@ public sealed class MqttService : BackgroundService, IMqttService
             await _client.PublishAsync(message, cancellationToken);
             _logger.LogInformation("MQTT QoS 1 publication accepted for {Topic}", topic);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "MQTT publication failed for {Topic}", topic);
@@ -169,11 +175,19 @@ public sealed class MqttService : BackgroundService, IMqttService
         }
     }
 
-    public async Task<MqttCommandResult> PublishCommandAndWaitForAckAsync(
+    public Task<MqttCommandResult> PublishCommandAndWaitForAckAsync(
         string deviceUuid,
         int bookingId,
         string command,
         CancellationToken cancellationToken = default)
+        => PublishAndWaitForAckAsync(deviceUuid, bookingId, command, "commands", cancellationToken);
+
+    public Task<MqttCommandResult> RequestStatusScanAsync(
+        string deviceUuid, CancellationToken cancellationToken = default)
+        => PublishAndWaitForAckAsync(deviceUuid, -1, "STATUS", "status", cancellationToken);
+
+    private async Task<MqttCommandResult> PublishAndWaitForAckAsync(
+        string deviceUuid, int bookingId, string command, string topicSuffix, CancellationToken cancellationToken)
     {
         var normalizedCommand = command.Trim().ToUpperInvariant();
         var key = new PendingCommandKey(deviceUuid.Trim().ToUpperInvariant(), bookingId, normalizedCommand);
@@ -187,7 +201,8 @@ public sealed class MqttService : BackgroundService, IMqttService
 
         try
         {
-            await PublishCommandAsync(deviceUuid, $"{normalizedCommand}|{bookingId}|{commandId}", cancellationToken);
+            await PublishAsync($"{_topicRoot}/{deviceUuid}/{topicSuffix}",
+                $"{normalizedCommand}|{bookingId}|{commandId}", cancellationToken);
             try
             {
                 return await completion.Task.WaitAsync(_commandAckTimeout, cancellationToken);
@@ -263,7 +278,8 @@ public sealed class MqttService : BackgroundService, IMqttService
             await db.SaveChangesAsync();
             if (suffix[1] == "ack")
             {
-                CompletePendingCommand(suffix[0], payload);
+                if (!args.ApplicationMessage.Retain)
+                    CompletePendingCommand(suffix[0], payload, receivedAt);
             }
         }
         catch (Exception ex)
@@ -272,7 +288,7 @@ public sealed class MqttService : BackgroundService, IMqttService
         }
     }
 
-    private void CompletePendingCommand(string deviceUuid, string payload)
+    private void CompletePendingCommand(string deviceUuid, string payload, DateTime receivedAt)
     {
         try
         {
@@ -314,7 +330,8 @@ public sealed class MqttService : BackgroundService, IMqttService
                     errorCode,
                     distanceCm,
                     payload,
-                    bollardPosition));
+                    bollardPosition,
+                    new DateTimeOffset(receivedAt)));
             }
         }
         catch (JsonException)
@@ -676,7 +693,7 @@ public sealed class MqttService : BackgroundService, IMqttService
                              rule.StartTime == TimeOnly.MinValue &&
                              rule.EndTime == new TimeOnly(23, 59));
 
-    private static bool TryReadTelemetry(string? payload, out double? distanceCm, out string? bollardPosition)
+    internal static bool TryReadTelemetry(string? payload, out double? distanceCm, out string? bollardPosition)
     {
         distanceCm = null;
         bollardPosition = null;
@@ -686,6 +703,7 @@ public sealed class MqttService : BackgroundService, IMqttService
         {
             using var document = JsonDocument.Parse(payload);
             var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return false;
             if (root.TryGetProperty("distanceCm", out var distanceElement) &&
                 distanceElement.ValueKind == JsonValueKind.Number &&
                 distanceElement.TryGetDouble(out var parsedDistance) &&

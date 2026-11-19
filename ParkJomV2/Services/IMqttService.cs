@@ -9,6 +9,9 @@ public interface IMqttService
         int bookingId,
         string command,
         CancellationToken cancellationToken = default);
+
+    Task<MqttCommandResult> RequestStatusScanAsync(
+        string deviceUuid, CancellationToken cancellationToken = default);
 }
 
 public enum MqttCommandWaitStatus
@@ -29,4 +32,5 @@ public sealed record MqttCommandResult(
     string? ErrorCode = null,
     double? DistanceCm = null,
     string? RawPayload = null,
-    string? BollardPosition = null);
+    string? BollardPosition = null,
+    DateTimeOffset? ReceivedAt = null);

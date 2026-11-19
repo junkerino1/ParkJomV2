@@ -31,6 +31,39 @@ Both endpoints return `200` with `code`, `success`, `message`, and a `data` arra
 
 Requests without valid authentication return `401`. Authenticated callers without the required role receive `403`.
 
+### Heartbeat status
+
+`GET /api/iot/{uuid}/status` requires the device's owner token or an admin token. It returns `deviceUuid`, `heartbeatStatus`, `lastHeartbeatAt`, `checkedAt`, and `offlineAfterSeconds` inside `data`. Timestamps use UTC. An unknown UUID or a device outside the owner's scope returns `404`.
+
+- `lastDistanceScan` contains `distanceCm` and `receivedAt` for the most recent valid sensor telemetry. It is `null` if no valid reading has been recorded.
+- `parkingSpot` contains `parkingSpotId`, `parkingLabel`, `propertyId`, and `propertyName`. It is `null` for an unassigned device.
+
+The heartbeat status is `unknown` if no heartbeat has been recorded, `online` if the last heartbeat is less than 90 seconds old, and `offline` otherwise. Device registration, command acknowledgments, and sensor telemetry do not populate the heartbeat timestamp. Firmware publishing and backend ingestion must be enabled before the status can transition from `unknown`.
+
+### Request a live distance scan
+
+`POST /api/iot/{uuid}/status/scan` requires the assigned owner's token or an admin token. Send no request body. On success, `data` contains `deviceUuid`, `distanceCm`, `receivedAt` (UTC), and `bollardPosition`. The scan reads the sensor without actuating the bollard.
+
+The API publishes `STATUS|-1|<commandId>` to `parkjom/devices/{uuid}/status`. Firmware subscribes to that topic and replies on the existing `ack` topic with the matching command ID. Broker permissions must allow the backend to publish and the device to subscribe to its own status topic. Periodic telemetry still feeds the cached GET endpoint.
+
+| Status | Meaning |
+| --- | --- |
+| 404 | Device missing or outside the owner's inventory |
+| 409 | A scan for this device is already pending on the API instance |
+| 502 | Device replied without a valid reading |
+| 503 | MQTT request could not be published |
+| 504 | No matching reply arrived before the ACK timeout |
+
+### Pair a bollard with a parking bay
+
+`POST /api/iot/bind` requires a property owner token and a six-digit code shown by the device. The owner sends only the bay ID and the code:
+
+```json
+{ "parkingSpotId": 24, "otp": "032581" }
+```
+
+Keep `otp` as a string to preserve leading zeroes. The server resolves the device UUID and returns it in `data.deviceUuid` after binding. Codes expire after five minutes and are consumed on success. An invalid, expired, or ambiguous code returns `400`. A bay outside the owner's inventory returns `404`. An assignment conflict returns `409`. More than five attempts per minute per owner on one API instance can return `429`.
+
 ## 2. Renter unlock flow
 
 ### Step 1 — Request a challenge
