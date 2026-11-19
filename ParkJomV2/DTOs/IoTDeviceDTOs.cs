@@ -10,18 +10,14 @@ public sealed class IoTDeviceUuidRequest
     public string DeviceUuid { get; set; } = string.Empty;
 }
 
-// Owner binding pairs a device UUID and six-digit one-time code with one parking spot.
+// The six-digit code identifies the device to pair with the owner's parking spot.
 public sealed class BindIoTDeviceRequest
 {
-    [Required]
-    [StringLength(36, MinimumLength = 36)]
-    public string DeviceUuid { get; set; } = string.Empty;
-
     [Range(1, int.MaxValue)]
     public int ParkingSpotId { get; set; }
 
     [Required]
-    [RegularExpression("^\\d{6}$")]
+    [RegularExpression("^[0-9]{6}$")]
     public string Otp { get; set; } = string.Empty;
 }
 
@@ -39,6 +35,31 @@ public sealed class IoTOtpResponse
     public string Otp { get; set; } = string.Empty;
     public DateTime ExpiresAtUtc { get; set; }
 }
+
+public sealed record IoTHeartbeatStatusResponse(
+    string DeviceUuid,
+    string HeartbeatStatus,
+    DateTimeOffset? LastHeartbeatAt,
+    DateTimeOffset CheckedAt,
+    int OfflineAfterSeconds,
+    IoTDistanceScanResponse? LastDistanceScan,
+    IoTStatusParkingSpotResponse? ParkingSpot);
+
+public sealed record IoTDistanceScanResponse(double DistanceCm, DateTimeOffset ReceivedAt);
+
+public sealed record IoTLivePositionResponse(string BollardPosition);
+
+public sealed record IoTLiveStatusScanResponse(
+    string DeviceUuid,
+    double DistanceCm,
+    DateTimeOffset ReceivedAt,
+    string? BollardPosition);
+
+public sealed record IoTStatusParkingSpotResponse(
+    int ParkingSpotId,
+    string? ParkingLabel,
+    int PropertyId,
+    string PropertyName);
 
 public sealed class IoTDeviceListItem
 {

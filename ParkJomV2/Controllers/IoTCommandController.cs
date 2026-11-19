@@ -244,14 +244,14 @@ public sealed class IoTCommandController : ControllerBase
         => SendAdminCommandAsync(bookingId, "UNLOCK", cancellationToken);
 
     /// <summary>Unlocks a bollard at a parking spot owned by the authenticated property owner.</summary>
-    /// <remarks>The ESP32 performs a fresh HC-SR04 reading and blocks the unlock if an obstacle is within 50 cm. This owner operation is not tied to a renter booking and does not create renter entry history.</remarks>
+    /// <remarks>This owner operation is independent of renter booking check-in and checkout.</remarks>
     /// <response code="200">The device confirmed the bollard unlocked.</response>
     /// <response code="401">The caller is not authenticated.</response>
     /// <response code="403">The caller is not a property owner or does not own the parking spot.</response>
     /// <response code="404">The parking spot was not found.</response>
-    /// <response code="409">The spot has no assigned device, or the device blocked the command because of an obstacle.</response>
+    /// <response code="409">The spot has no assigned device or another command is in progress.</response>
     /// <response code="502">The device reported an execution failure.</response>
-    /// <response code="503">MQTT is unavailable or the distance sensor could not obtain a reading.</response>
+    /// <response code="503">MQTT is unavailable.</response>
     /// <response code="504">No device acknowledgement arrived before timeout.</response>
     /// <param name="parkingSpotId">The parking spot ID that must belong to the signed-in property owner.</param>
     /// <param name="cancellationToken">Cancels the request if the caller disconnects.</param>
@@ -264,8 +264,22 @@ public sealed class IoTCommandController : ControllerBase
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     [HttpPost("~/api/owner/iot/parking-spots/{parkingSpotId:int}/unlock")]
-    public async Task<IActionResult> OwnerUnlockParkingSpot(
+    public Task<IActionResult> OwnerUnlockParkingSpot(
         int parkingSpotId,
+        CancellationToken cancellationToken)
+        => SendOwnerCommandAsync(parkingSpotId, "UNLOCK", cancellationToken);
+
+    /// <summary>Locks the assigned bollard at a parking spot owned by the authenticated property owner.</summary>
+    /// <remarks>The device checks for obstacles before moving. An active renter session prevents locking.</remarks>
+    /// <response code="200">The device confirmed the bollard locked.</response>
+    /// <response code="409">No device is assigned, an active renter session or concurrent command exists, or an obstacle was detected.</response>
+    [HttpPost("~/api/owner/iot/parking-spots/{parkingSpotId:int}/lock")]
+    public Task<IActionResult> OwnerLockParkingSpot(int parkingSpotId, CancellationToken cancellationToken)
+        => SendOwnerCommandAsync(parkingSpotId, "LOCK", cancellationToken);
+
+    private async Task<IActionResult> SendOwnerCommandAsync(
+        int parkingSpotId,
+        string command,
         CancellationToken cancellationToken)
     {
         var owner = await _currentUser.GetCurrentUserAsync();
@@ -280,16 +294,21 @@ public sealed class IoTCommandController : ControllerBase
             return Error(StatusCodes.Status404NotFound, "PARKING_SPOT_NOT_FOUND", "Parking spot was not found.");
         if (spot.OwnerId != owner.UserId)
         {
-            await _accessLogs.LogAsync(owner.UserId, "Owner bollard UNLOCK", false,
-                $"Owner attempted to unlock a spot they do not own. parkingSpotId={parkingSpotId}");
-            return Error(StatusCodes.Status403Forbidden, "PARKING_SPOT_NOT_OWNED", "You can only unlock a bollard assigned to your own parking spot.");
+            await _accessLogs.LogAsync(owner.UserId, $"Owner bollard {command}", false,
+                $"Owner attempted a command for a spot they do not own. parkingSpotId={parkingSpotId}");
+            return Error(StatusCodes.Status403Forbidden, "PARKING_SPOT_NOT_OWNED", "You can only control a bollard assigned to your own parking spot.");
         }
 
         if (spot.IoTDevice is not { IsAssigned: true } device || string.IsNullOrWhiteSpace(device.Esp32Serial))
             return Error(StatusCodes.Status409Conflict, "DEVICE_NOT_ASSIGNED", "No assigned IoT device is available for this parking spot.");
 
+        if (command == "LOCK" && await _db.Bookings.AnyAsync(
+                booking => booking.ParkingSpotId == parkingSpotId && booking.BookingStatus == BookingStatus.Active && booking.ActualExitAt == null,
+                cancellationToken))
+            return Error(StatusCodes.Status409Conflict, "RENTER_SESSION_ACTIVE", "This bollard cannot be locked while a renter is checked in.");
+
         return await SendUnassociatedCommandAsync(
-            device, parkingSpotId, "owner", owner.UserId, "UNLOCK", isAdmin: false, cancellationToken);
+            device, parkingSpotId, "owner", owner.UserId, command, isAdmin: false, cancellationToken);
     }
 
     /// <summary>Unlocks a bollard by parking spot ID as an administrator.</summary>

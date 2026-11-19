@@ -10,6 +10,8 @@
     { "key": "bookingId", "value": "13", "type": "string" },
     { "key": "renterToken", "value": "", "type": "string" },
     { "key": "ownerToken", "value": "", "type": "string" },
+    { "key": "parkingSpotId", "value": "24", "type": "string" },
+    { "key": "bindingOtp", "value": "", "type": "string" },
     { "key": "adminToken", "value": "", "type": "string" },
     { "key": "challengeId", "value": "", "type": "string" },
     { "key": "nonce", "value": "", "type": "string" },
@@ -95,6 +97,57 @@
         "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{adminToken}}", "type": "string" } ] },
         "description": "Requires an admin JWT. Returns every registered bollard, including unassigned devices.",
         "url": "{{baseUrl}}/api/iot/admin/devices"
+      }
+    },
+    {
+      "name": "Get smart bollard heartbeat status (owner or admin)",
+      "request": {
+        "method": "GET",
+        "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{ownerToken}}", "type": "string" } ] },
+        "description": "Returns heartbeat freshness, the last valid distance scan and its receive time, and the assigned parking spot. Enter the registered UUID in deviceUuid. Owners can read their own devices. Replace ownerToken with adminToken to check any registered device.",
+        "url": "{{baseUrl}}/api/iot/{{deviceUuid}}/status"
+      }
+    },
+    {
+      "name": "Request a live bollard distance scan",
+      "request": {
+        "method": "POST",
+        "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{ownerToken}}", "type": "string" } ] },
+        "description": "Requests a fresh HC-SR04 reading without moving the device. Set deviceUuid and use the assigned owner's JWT, or use an admin JWT.",
+        "url": "{{baseUrl}}/api/iot/{{deviceUuid}}/status/scan"
+      }
+    },
+    {
+      "name": "Read owned bollard position",
+      "request": {
+        "method": "POST",
+        "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{ownerToken}}", "type": "string" } ] },
+        "description": "Returns the device-reported LOCKED or UNLOCKED position without moving the bollard. A distance reading is optional.",
+        "url": "{{baseUrl}}/api/iot/{{deviceUuid}}/position/scan"
+      }
+    },
+    {
+      "name": "Lock a bollard by parking spot (owner)",
+      "request": {
+        "method": "POST",
+        "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{ownerToken}}", "type": "string" } ] },
+        "description": "Locks the assigned bollard when the caller owns the bay, no checked-in renter is present, and the device confirms the LOCKED position.",
+        "url": "{{baseUrl}}/api/owner/iot/parking-spots/{{parkingSpotId}}/lock"
+      }
+    },
+    {
+      "name": "Bind smart bollard to an owned parking spot",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "auth": { "type": "bearer", "bearer": [ { "key": "token", "value": "{{ownerToken}}", "type": "string" } ] },
+        "description": "Set parkingSpotId and the six-digit bindingOtp displayed by the bollard. The API resolves the device from the code and consumes the code on success.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"parkingSpotId\": {{parkingSpotId}},\n  \"otp\": \"{{bindingOtp}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{baseUrl}}/api/iot/bind"
       }
     },
     {

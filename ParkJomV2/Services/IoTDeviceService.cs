@@ -14,13 +14,16 @@ public sealed class IoTDeviceService
 {
     private static readonly TimeSpan OtpLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan OtpCooldown = TimeSpan.FromSeconds(30);
+    private const int HeartbeatOfflineAfterSeconds = 90;
 
     private readonly ApplicationDbContext _db;
     private readonly byte[] _otpPepper;
+    private readonly string _mqttTopicRoot;
 
     public IoTDeviceService(ApplicationDbContext db, IConfiguration configuration)
     {
         _db = db;
+        _mqttTopicRoot = (configuration["Mqtt:TopicRoot"] ?? "parkjom/devices").TrimEnd('/');
         var pepper = configuration["IoT:OtpPepper"] ?? configuration["JwtSettings:SecretKey"];
         if (string.IsNullOrWhiteSpace(pepper))
         {
@@ -37,6 +40,125 @@ public sealed class IoTDeviceService
 
     public Task<List<IoTDeviceListItem>> ListAllAsync(CancellationToken cancellationToken)
         => ListDevicesAsync(_db.IoTDevices, cancellationToken);
+
+    public async Task<IoTHeartbeatStatusResponse> GetHeartbeatStatusAsync(
+        string uuid, int? ownerId, CancellationToken cancellationToken)
+    {
+        var device = await StatusDeviceQuery(uuid, ownerId).Select(d => new
+            {
+                d.IoTDeviceId,
+                d.Esp32Serial,
+                d.LastHeartbeatAt,
+                ParkingSpot = d.ParkingSpot == null ? null : new IoTStatusParkingSpotResponse(
+                    d.ParkingSpot.ParkingSpotId,
+                    d.ParkingSpot.ParkingLabel,
+                    d.ParkingSpot.PropertyId,
+                    d.ParkingSpot.Property.PropertyName)
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new IoTDeviceOperationException(StatusCodes.Status404NotFound, "Device not found.");
+
+        var lastScan = await GetLastDistanceScanAsync(device.IoTDeviceId, device.Esp32Serial, cancellationToken);
+        var checkedAt = DateTimeOffset.UtcNow;
+        DateTimeOffset? lastHeartbeatAt = device.LastHeartbeatAt is DateTime lastSeen
+            ? new DateTimeOffset(DateTime.SpecifyKind(lastSeen, DateTimeKind.Utc))
+            : null;
+        var status = lastHeartbeatAt is not DateTimeOffset receivedAt
+            ? "unknown"
+            : checkedAt - receivedAt < TimeSpan.FromSeconds(HeartbeatOfflineAfterSeconds) ? "online" : "offline";
+
+        return new IoTHeartbeatStatusResponse(
+            device.Esp32Serial, status, lastHeartbeatAt, checkedAt, HeartbeatOfflineAfterSeconds,
+            lastScan, device.ParkingSpot);
+    }
+
+    public async Task<IoTLiveStatusScanResponse> RequestLiveStatusScanAsync(
+        string uuid, int? ownerId, IMqttService mqtt, CancellationToken cancellationToken)
+    {
+        var (deviceUuid, response) = await ReadLiveStatusAsync(uuid, ownerId, mqtt, cancellationToken);
+        if (!string.Equals(response.Result, "SUCCESS", StringComparison.OrdinalIgnoreCase) ||
+            response.DistanceCm is not double distance || distance < 0 ||
+            response.ReceivedAt is not DateTimeOffset receivedAt)
+        {
+            throw new IoTDeviceOperationException(StatusCodes.Status502BadGateway, "The bollard did not return a valid distance reading.");
+        }
+
+        return new IoTLiveStatusScanResponse(deviceUuid, distance, receivedAt, response.BollardPosition);
+    }
+
+    public async Task<IoTLivePositionResponse> RequestLivePositionAsync(
+        string uuid, int ownerId, IMqttService mqtt, CancellationToken cancellationToken)
+    {
+        var (_, response) = await ReadLiveStatusAsync(uuid, ownerId, mqtt, cancellationToken);
+        var position = response.BollardPosition?.ToUpperInvariant();
+        if (response.ReceivedAt is null || position is not ("LOCKED" or "UNLOCKED") ||
+            response.Result?.ToUpperInvariant() is not ("SUCCESS" or "SENSOR_READING_UNAVAILABLE"))
+        {
+            throw new IoTDeviceOperationException(StatusCodes.Status502BadGateway, "The bollard did not report its position.");
+        }
+        return new IoTLivePositionResponse(position);
+    }
+
+    private async Task<(string DeviceUuid, MqttCommandResult Response)> ReadLiveStatusAsync(
+        string uuid, int? ownerId, IMqttService mqtt, CancellationToken cancellationToken)
+    {
+        var deviceUuid = await StatusDeviceQuery(uuid, ownerId).Select(device => device.Esp32Serial)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new IoTDeviceOperationException(StatusCodes.Status404NotFound, "Device not found.");
+
+        MqttCommandResult response;
+        try
+        {
+            response = await mqtt.RequestStatusScanAsync(deviceUuid, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new IoTDeviceOperationException(StatusCodes.Status503ServiceUnavailable,
+                "The device status request could not be sent.", ex);
+        }
+
+        if (response.WaitStatus == MqttCommandWaitStatus.Busy)
+            throw new IoTDeviceOperationException(StatusCodes.Status409Conflict, "A status scan is already in progress.");
+
+        if (response.WaitStatus == MqttCommandWaitStatus.TimedOut)
+            throw new IoTDeviceOperationException(StatusCodes.Status504GatewayTimeout, "The bollard did not reply to the status scan.");
+
+        return (deviceUuid, response);
+    }
+
+    private IQueryable<IoTDevice> StatusDeviceQuery(string uuid, int? ownerId)
+    {
+        var normalizedUuid = NormalizeUuid(uuid)
+            ?? throw new IoTDeviceOperationException(StatusCodes.Status400BadRequest, "A valid device UUID is required.");
+
+        var query = _db.IoTDevices.AsNoTracking().Where(d => d.Esp32Serial == normalizedUuid);
+        return ownerId is int id
+            ? query.Where(d => d.ParkingSpot != null && d.ParkingSpot.OwnerId == id)
+            : query;
+    }
+
+    private async Task<IoTDistanceScanResponse?> GetLastDistanceScanAsync(
+        int deviceId, string deviceUuid, CancellationToken cancellationToken)
+    {
+        var topic = $"{_mqttTopicRoot}/{deviceUuid}/telemetry";
+        var readings = _db.IoTStatusLogs.AsNoTracking()
+            .Where(log => log.IoTDeviceId == deviceId && log.Topic == topic)
+            .OrderByDescending(log => log.LoggedAt)
+            .ThenByDescending(log => log.IoTStatusLogId)
+            .Select(log => new { log.Message, log.LoggedAt });
+
+        await foreach (var reading in readings.AsAsyncEnumerable().WithCancellation(cancellationToken))
+        {
+            if (MqttService.TryReadTelemetry(reading.Message, out var distanceCm, out _) &&
+                distanceCm is double distance && distance >= 0)
+            {
+                var receivedAt = new DateTimeOffset(DateTime.SpecifyKind(reading.LoggedAt, DateTimeKind.Utc));
+                return new IoTDistanceScanResponse(distance, receivedAt);
+            }
+        }
+
+        return null;
+    }
 
     private static Task<List<IoTDeviceListItem>> ListDevicesAsync(
         IQueryable<IoTDevice> devices,
@@ -151,8 +273,10 @@ public sealed class IoTDeviceService
                 $"Please wait {remainingSeconds} seconds before requesting another OTP.");
         }
 
-        // A new code atomically replaces the old one, so only one code can be valid per device.
-        var otp = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        // Bind resolves by code alone, so avoid collisions with any currently valid code.
+        // Keep the existing per-device hashes so codes issued before this change can still be used.
+        var activeOtps = await ActiveBindingOtps(now).AsNoTracking().ToListAsync(cancellationToken);
+        var otp = GenerateUniqueOtp(activeOtps);
         var otpRecord = storedOtp ?? new IoTDeviceBindingOtp { IoTDeviceId = device.IoTDeviceId };
         otpRecord.OtpHash = HashOtp(normalizedUuid, otp);
         otpRecord.GeneratedAt = now;
@@ -173,38 +297,36 @@ public sealed class IoTDeviceService
     /// <summary>Validates owner, device, OTP, and spot in one transaction before committing the binding.</summary>
     public async Task<IoTDeviceResponse> BindAsync(BindIoTDeviceRequest request, int userId, CancellationToken cancellationToken)
     {
-        var normalizedUuid = NormalizeUuid(request.DeviceUuid);
-        if (normalizedUuid is null)
-        {
-            throw new IoTDeviceOperationException(StatusCodes.Status400BadRequest, "DeviceUuid must be a valid UUID.");
-        }
-
         await using var transaction = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var userIsOwner = await _db.Users.AnyAsync(
             u => u.UserId == userId && u.UserType == UserType.PropertyOwner,
             cancellationToken);
         if (!userIsOwner)
         {
-            var attemptedDevice = await _db.IoTDevices.SingleOrDefaultAsync(
-                d => d.Esp32Serial == normalizedUuid, cancellationToken);
-            if (attemptedDevice is not null)
-            {
-                IoTDeviceLogWriter.Add(_db, attemptedDevice, "device_binding", "rejected_owner_role", DateTime.UtcNow,
-                    details: $"userId={userId}");
-                await _db.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-            }
             throw new IoTDeviceOperationException(StatusCodes.Status403Forbidden, "Only property owners can bind devices.");
         }
 
-        var device = await _db.IoTDevices
-            .Include(d => d.BindingOtp)
-            .SingleOrDefaultAsync(d => d.Esp32Serial == normalizedUuid, cancellationToken);
-        if (device is null)
+        var parkingSpot = await _db.ParkingSpots.SingleOrDefaultAsync(
+            p => p.ParkingSpotId == request.ParkingSpotId && p.OwnerId == userId &&
+                p.AvailabilityStatus != AvailabilityStatus.Deleted,
+            cancellationToken);
+        if (parkingSpot is null)
         {
-            throw new IoTDeviceOperationException(StatusCodes.Status404NotFound, "Device is not registered.");
+            throw new IoTDeviceOperationException(StatusCodes.Status404NotFound, "Parking spot was not found for this owner.");
         }
 
+        var now = DateTime.UtcNow;
+        var activeOtps = await ActiveBindingOtps(now).ToListAsync(cancellationToken);
+        var matches = activeOtps.Where(candidate =>
+            MatchesOtp(candidate.IoTDevice.Esp32Serial, request.Otp, candidate.OtpHash)).Take(2).ToList();
+        if (matches.Count != 1 || matches[0].ExpiresAt <= DateTime.UtcNow)
+        {
+            throw new IoTDeviceOperationException(StatusCodes.Status400BadRequest,
+                "Pairing code is invalid, expired, or ambiguous. Generate a fresh code on the device and try again.");
+        }
+
+        var otpRecord = matches[0];
+        var device = otpRecord.IoTDevice;
         if (device.IsAssigned || device.ParkingSpotId.HasValue)
         {
             IoTDeviceLogWriter.Add(_db, device, "device_binding", "rejected_already_assigned", DateTime.UtcNow,
@@ -212,29 +334,6 @@ public sealed class IoTDeviceService
             await _db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             throw new IoTDeviceOperationException(StatusCodes.Status409Conflict, "Device is already assigned.");
-        }
-
-        var parkingSpot = await _db.ParkingSpots.SingleOrDefaultAsync(
-            p => p.ParkingSpotId == request.ParkingSpotId && p.OwnerId == userId,
-            cancellationToken);
-        if (parkingSpot is null)
-        {
-            IoTDeviceLogWriter.Add(_db, device, "device_binding", "rejected_parking_spot", DateTime.UtcNow,
-                details: $"userId={userId}; parkingSpotId={request.ParkingSpotId}");
-            await _db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            throw new IoTDeviceOperationException(StatusCodes.Status404NotFound, "Parking spot was not found for this owner.");
-        }
-
-        var otpRecord = device.BindingOtp;
-        var now = DateTime.UtcNow;
-        if (otpRecord is null || otpRecord.ExpiresAt <= now || !MatchesOtp(normalizedUuid, request.Otp, otpRecord.OtpHash))
-        {
-            IoTDeviceLogWriter.Add(_db, device, "device_binding", "rejected_otp", now,
-                details: $"userId={userId}; parkingSpotId={request.ParkingSpotId}; OTP value excluded.");
-            await _db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            throw new IoTDeviceOperationException(StatusCodes.Status400BadRequest, "OTP is invalid or expired.");
         }
 
         // The unique filtered spot index is the final guard against concurrent double assignment.
@@ -257,6 +356,24 @@ public sealed class IoTDeviceService
             throw new IoTDeviceOperationException(StatusCodes.Status409Conflict,
                 "The device or parking spot was assigned by another request. Refresh and try again.", ex);
         }
+    }
+
+    private IQueryable<IoTDeviceBindingOtp> ActiveBindingOtps(DateTime now)
+        => _db.IoTDeviceBindingOtps.Where(record => record.ExpiresAt > now).Include(record => record.IoTDevice);
+
+    private string GenerateUniqueOtp(List<IoTDeviceBindingOtp> activeOtps)
+    {
+        for (var attempt = 0; attempt < 32; attempt++)
+        {
+            var otp = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+            if (!activeOtps.Any(record => MatchesOtp(record.IoTDevice.Esp32Serial, otp, record.OtpHash)))
+            {
+                return otp;
+            }
+        }
+
+        throw new IoTDeviceOperationException(StatusCodes.Status503ServiceUnavailable,
+            "Could not issue a pairing code. Please try again shortly.");
     }
 
     private string HashOtp(string deviceUuid, string otp)

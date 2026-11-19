@@ -66,7 +66,7 @@
 
   <section class="card">
     <h2>Lock the bollard</h2>
-    <p>This action does not ask for GPS or BLE. The API waits for the ESP32 to check three fresh HC-SR04 readings before it returns. A median reading at or below 50 cm blocks locking; too few valid readings also block it as a sensor failure.</p>
+    <p>This action does not ask for GPS or BLE. The ESP32 uses the first valid HC-SR04 reading, with up to three attempts. Locking is blocked if the distance is 50 cm or less, or if all attempts fail.</p>
     <button id="lockNow" class="secondary">Lock bollard (no location check)</button>
   </section>
 
