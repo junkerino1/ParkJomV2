@@ -289,7 +289,7 @@ namespace ParkJomV2.Controllers
                 return BadRequest(PhoneOtpError(StatusCodes.Status400BadRequest, "PropertyManagement accounts can only be created by an administrator."));
             }
 
-            var normalizedPhone = NormalizeMalaysianPhone(request.PhoneNumber);
+            var normalizedPhone = PhoneNumberNormalizer.NormalizeMalaysian(request.PhoneNumber);
             if (normalizedPhone is null)
                 return BadRequest(PhoneOtpError(StatusCodes.Status400BadRequest, "Enter a valid Malaysian mobile number, for example 0123456789 or +60123456789."));
 
@@ -500,15 +500,6 @@ namespace ParkJomV2.Controllers
 
         private bool TryGetAuthenticatedUserId(out int userId)
             => int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out userId);
-
-        private static string? NormalizeMalaysianPhone(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return null;
-            var digits = new string(value.Where(character => character is >= '0' and <= '9').ToArray());
-            if (digits.StartsWith("0", StringComparison.Ordinal)) digits = "60" + digits[1..];
-            if (digits.Length is < 10 or > 12 || !digits.StartsWith("60", StringComparison.Ordinal)) return null;
-            return digits;
-        }
 
         private static string HashPhoneOtp(string pepper, int userId, string phone, string otp)
         {

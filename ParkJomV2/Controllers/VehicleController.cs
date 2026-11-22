@@ -8,6 +8,7 @@ using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using ParkJomV2.Services.Copilot;
 using ParkJomV2.Services.Vision;
+using System.Text.RegularExpressions;
 
 namespace ParkJomV2.Controllers
 {
@@ -15,6 +16,11 @@ namespace ParkJomV2.Controllers
     [ApiController]
     public class VehicleController : ControllerBase
     {
+        // Standard Malaysian plates; special/vanity and diplomatic formats are not covered.
+        private static readonly Regex MalaysianNumberPlateRegex = new(
+            @"^(?:[A-HJ-NP-Z]{1,3})\s?([1-9]\d{0,3})\s?([A-HJ-NP-Z]{0,2})$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
         private readonly ApplicationDbContext _context;
         private readonly CurrentUserService _currentUser;
         private readonly AccessLogService _accessLogService;
@@ -54,6 +60,18 @@ namespace ParkJomV2.Controllers
                     Code = StatusCodes.Status400BadRequest,
                     Success = false,
                     Message = "Invalid request."
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.NumberPlate) ||
+                !MalaysianNumberPlateRegex.IsMatch(request.NumberPlate.Trim()))
+            {
+                await _accessLogService.LogAsync(User, "AddVehicle", false, "Invalid Malaysian number plate");
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Please enter a valid standard Malaysian number plate (e.g. ABC 1234 or W1234A)."
                 });
             }
 
@@ -124,7 +142,7 @@ namespace ParkJomV2.Controllers
         }
 
         /// <summary>
-        /// Modify an existing vehicle owned by the authenticated user.
+        /// Modify a vehicle owned by the authenticated user, or any vehicle as an admin.
         /// </summary>
         [Authorize]
         [HttpPut("modify")]
@@ -143,6 +161,18 @@ namespace ParkJomV2.Controllers
                     Code = StatusCodes.Status400BadRequest,
                     Success = false,
                     Message = "Invalid request."
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.NumberPlate) ||
+                !MalaysianNumberPlateRegex.IsMatch(request.NumberPlate.Trim()))
+            {
+                await _accessLogService.LogAsync(User, "ModifyVehicle", false, "Invalid Malaysian number plate");
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Please enter a valid standard Malaysian number plate (e.g. ABC 1234 or W1234A)."
                 });
             }
 
@@ -173,7 +203,7 @@ namespace ParkJomV2.Controllers
                     });
                 }
 
-                if (vehicle.UserId != user.UserId)
+                if (vehicle.UserId != user.UserId && user.UserType != UserType.Admin)
                 {
                     await _accessLogService.LogAsync(User, "ModifyVehicle", false, $"Not authorized (id={request.VehicleId})");
                     return StatusCode(StatusCodes.Status403Forbidden, new ErrorResponse

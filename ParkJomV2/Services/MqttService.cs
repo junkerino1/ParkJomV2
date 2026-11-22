@@ -223,6 +223,8 @@ public sealed class MqttService : BackgroundService, IMqttService
     {
         try
         {
+            // A retained broker replay is not a new reading or proof that the device is online.
+            if (args.ApplicationMessage.Retain) return;
             var topic = args.ApplicationMessage.Topic;
             var topicPrefix = $"{_topicRoot}/";
             if (!topic.StartsWith(topicPrefix, StringComparison.Ordinal))
@@ -244,7 +246,12 @@ public sealed class MqttService : BackgroundService, IMqttService
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var notifications = scope.ServiceProvider.GetRequiredService<INotificationService>();
             var walletService = scope.ServiceProvider.GetRequiredService<WalletService>();
-            var device = await db.IoTDevices.FirstOrDefaultAsync(d => d.Esp32Serial == suffix[0]);
+            // Serialize ingestion across API instances, not just callbacks in this process.
+            // This prevents repeated MQTT deliveries from duplicating logs or booking side effects.
+            await using var transaction = await db.Database.BeginTransactionAsync();
+            var device = await db.IoTDevices
+                .FromSqlInterpolated($"SELECT * FROM [IoTDevices] WITH (UPDLOCK, HOLDLOCK) WHERE [Esp32Serial] = {suffix[0]}")
+                .SingleOrDefaultAsync();
             if (device is null)
             {
                 _logger.LogWarning("Received MQTT message for unregistered device {DeviceSerial}", suffix[0]);
@@ -252,9 +259,21 @@ public sealed class MqttService : BackgroundService, IMqttService
             }
 
             var receivedAt = DateTime.UtcNow;
-            // Any accepted message on this device's ACK/telemetry topic is current liveness evidence.
-            device.DeviceStatus = DeviceStatus.Online;
-            device.UpdatedAt = receivedAt;
+            var duplicateAt = await IoTInboundLog.FindDuplicateAsync(
+                db, device.IoTDeviceId, topic, payload, suffix[1] == "ack", receivedAt);
+            if (duplicateAt is DateTime originalReceivedAt)
+            {
+                // A different API instance may have saved the ACK; still wake this instance's waiter.
+                if (suffix[1] == "ack") CompletePendingCommand(suffix[0], payload, originalReceivedAt);
+                _logger.LogDebug("Skipped duplicate MQTT delivery for device {DeviceUuid} on {Topic}", suffix[0], topic);
+                return;
+            }
+            if (IoTStatusReading.TryParse(payload, out _))
+            {
+                device.DeviceStatus = DeviceStatus.Online;
+                device.LastHeartbeatAt = receivedAt;
+                device.UpdatedAt = receivedAt;
+            }
             db.IoTStatusLogs.Add(new IoTStatusLog
             {
                 IoTDeviceId = device.IoTDeviceId,
@@ -276,10 +295,10 @@ public sealed class MqttService : BackgroundService, IMqttService
             }
 
             await db.SaveChangesAsync();
+            await transaction.CommitAsync();
             if (suffix[1] == "ack")
             {
-                if (!args.ApplicationMessage.Retain)
-                    CompletePendingCommand(suffix[0], payload, receivedAt);
+                CompletePendingCommand(suffix[0], payload, receivedAt);
             }
         }
         catch (Exception ex)
@@ -380,22 +399,13 @@ public sealed class MqttService : BackgroundService, IMqttService
             return;
         }
 
-        IoTDeviceLogWriter.Add(db, device, "device_ack_received", result ?? "missing_result", receivedAt,
-            bookingId > 0 ? bookingId : null, $"command={command ?? "unknown"}");
-
         if (string.Equals(command, "AUTO_LOCK", StringComparison.OrdinalIgnoreCase))
             _pendingAutoLocks.TryRemove(device.IoTDeviceId, out _);
 
         if (bookingId < 0)
         {
             // Owner/admin commands by spot or device are deliberately unassociated with
-            // renter bookings; acknowledge and log them without recording entry or exit.
-            if (string.Equals(command, "UNLOCK", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(command, "LOCK", StringComparison.OrdinalIgnoreCase))
-            {
-                IoTDeviceLogWriter.Add(db, device, "unassociated_device_command_ack", result ?? "missing_result",
-                    receivedAt, details: $"command={command}; payload={payload}");
-            }
+            // renter bookings; the raw ACK is already logged. Do not record entry or exit.
             return;
         }
 
@@ -434,8 +444,6 @@ public sealed class MqttService : BackgroundService, IMqttService
             booking.CheckedInAt ??= receivedAt;
             booking.BookingStatus = BookingStatus.Active;
             booking.UpdatedAt = receivedAt;
-            IoTDeviceLogWriter.Add(db, device, "unlock_ack_booking_checkin", "completed", receivedAt,
-                bookingId, isFirstEntry ? "First entry confirmed by successful ESP32 ACK." : "Additional entry confirmed by successful ESP32 ACK.");
             IoTDeviceLogWriter.Add(db, device, "parking_entry_confirmed", "success", receivedAt, bookingId,
                 $"vehiclePlate={vehiclePlate}; parkingSpotId={spotId}; firstEntry={isFirstEntry}; eventAtUtc={receivedAt:O}");
         }

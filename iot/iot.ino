@@ -1,4 +1,3 @@
-
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ESP32Servo.h>
@@ -97,7 +96,7 @@ bool bollardUnlocked = false;
 
 unsigned long lastSensorUpdate = 0;
 
-const unsigned long sensorInterval = 300000UL;
+const unsigned long sensorInterval = 60000UL;
 const unsigned long mqttReconnectInterval = 5000;
 const unsigned long wifiReconnectInterval = 10000;
 const unsigned long registrationRetryInitialDelay = 15000;
@@ -612,7 +611,7 @@ void publishAcknowledgement(
 ) {
   const bool isStatus = strcmp(command, "STATUS") == 0;
   char bookingField[25] = "";
-  if (bookingId > 0 || isStatus) {
+  if (bookingId != 0 || isStatus) {
     snprintf(bookingField, sizeof(bookingField), "\"bookingId\":%d,", bookingId);
   }
   char distanceField[22] = "";
