@@ -17,6 +17,6 @@ public sealed class OverstayMonitoringJob
         await using var scope = _scopeFactory.CreateAsyncScope();
         var enforcement = scope.ServiceProvider.GetRequiredService<OverstayEnforcementService>();
         var result = await enforcement.RunScanAsync(triggeredByAdminId: null, cancellationToken);
-        return result.WarningsDispatched + result.PenaltiesDebited;
+        return result.CasesDetectedOrUpdated + result.WarningsDispatched + result.PenaltiesDebited;
     }
 }

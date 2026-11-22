@@ -78,6 +78,7 @@ public sealed class InternalCronController : ControllerBase
     [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status503ServiceUnavailable)]
     [HttpPost("overstay-monitoring")]
+    [HttpPost("overstay-enforcement")]
     public async Task<IActionResult> RunOverstayMonitoring(
         [FromHeader(Name = "X-Cron-Secret")] string? cronSecret,
         CancellationToken cancellationToken)
@@ -270,6 +271,22 @@ public sealed class InternalCronController : ControllerBase
         if (authorizationError is not null) return authorizationError;
         var batchedItems = await _settlementBatchJob.RunOnceAsync(cancellationToken);
         return JobCompleted("settlement-batches", batchedItems);
+    }
+
+    /// <summary>Synchronizes completed bookings into owner wallet escrow balances.</summary>
+    /// <remarks>Suggested schedule: hourly or before twice-weekly settlement batch generation. Requires X-Cron-Secret.</remarks>
+    [ProducesResponseType(typeof(CronJobResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status503ServiceUnavailable)]
+    [HttpPost("settlement-escrow-sync")]
+    public async Task<IActionResult> RunSettlementEscrowSync(
+        [FromHeader(Name = "X-Cron-Secret")] string? cronSecret,
+        CancellationToken cancellationToken)
+    {
+        var authorizationError = ValidateCronSecret(cronSecret);
+        if (authorizationError is not null) return authorizationError;
+        var released = await _settlementBatchJob.SyncEscrowOnlyAsync(cancellationToken);
+        return JobCompleted("settlement-escrow-sync", released);
     }
 
     private IActionResult? ValidateCronSecret(string? suppliedSecret)

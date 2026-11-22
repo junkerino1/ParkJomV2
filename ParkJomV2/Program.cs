@@ -362,7 +362,6 @@ builder.Services.AddScoped<BookingReminderJob>();
 builder.Services.AddScoped<OverstayMonitoringJob>();
 builder.Services.AddSingleton<OverstayWorkerStatusTracker>();
 builder.Services.AddScoped<OverstayEnforcementService>();
-builder.Services.AddHostedService<OverstayEnforcementBackgroundService>();
 builder.Services.AddScoped<SettlementService>();
 builder.Services.AddScoped<SettlementBatchJob>();
 builder.Services.AddScoped<NotificationCleanupJob>();

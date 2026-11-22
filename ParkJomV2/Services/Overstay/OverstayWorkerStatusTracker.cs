@@ -6,9 +6,9 @@ public sealed class OverstayWorkerStatusTracker
 {
     private readonly object _gate = new();
     private bool _enabled = true;
-    private bool _isRunning;
+    private bool _isRunning = true;
     private int _intervalSeconds = 60;
-    private DateTime? _startedAtUtc;
+    private DateTime? _startedAtUtc = DateTime.UtcNow;
     private DateTime? _lastScanStartedAtUtc;
     private DateTime? _lastScanCompletedAtUtc;
     private int _lastScanDetectedCount;

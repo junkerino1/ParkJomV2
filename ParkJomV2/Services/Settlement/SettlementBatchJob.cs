@@ -14,8 +14,20 @@ public sealed class SettlementBatchJob
         _logger = logger;
     }
 
+    public async Task<int> SyncEscrowOnlyAsync(CancellationToken cancellationToken)
+    {
+        var syncResult = await _settlementService.SyncEscrowLedgerAsync(adminUserId: null, cancellationToken);
+        _logger.LogInformation(
+            "Scheduled escrow sync released {Count} booking(s) totaling RM {Amount:F2}.",
+            syncResult.ReleasedBookingsCount,
+            syncResult.ReleasedAmount);
+        return syncResult.ReleasedBookingsCount;
+    }
+
     public async Task<int> RunOnceAsync(CancellationToken cancellationToken)
     {
+        await _settlementService.SyncEscrowLedgerAsync(adminUserId: null, cancellationToken);
+
         try
         {
             var detail = await _settlementService.GenerateBatchAsync(
