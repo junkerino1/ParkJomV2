@@ -724,29 +724,18 @@ public sealed class IoTCommandController : ControllerBase
             .OrderBy(t => t.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        var lockedCases = await _db.OverstayCases
-            .Where(c => c.RenterId == booking.RenterId && c.HardwareLockActive)
+        var settledBookingIds = pending
+            .Where(t => t.BookingId.HasValue)
+            .Select(t => t.BookingId!.Value)
+            .Distinct()
+            .ToList();
+
+        var casesToUpdate = await _db.OverstayCases
+            .Where(c => c.RenterId == booking.RenterId &&
+                        (c.HardwareLockActive ||
+                         (c.PaymentStatus == "PaymentDue" && settledBookingIds.Contains(c.BookingId))))
             .ToListAsync(cancellationToken);
 
-        if (pending.Count == 0 && lockedCases.Count == 0)
-        {
-            await transaction.CommitAsync(cancellationToken);
-            return null;
-        }
-        if (pending.Count == 0 && lockedCases.Any(c => c.CalculatedPenaltyAmount - c.DebitedAmount - c.WaivedAmount > 0m))
-        {
-            var caseDue = lockedCases.Sum(c => Math.Max(0m, c.CalculatedPenaltyAmount - c.DebitedAmount - c.WaivedAmount));
-            await transaction.RollbackAsync(cancellationToken);
-            await LogDeviceActionAsync(device, "overstay_penalty_settlement", "hardware_exit_lock_blocked", booking.BookingId,
-                $"due=RM{caseDue:F2}; lockedCases={lockedCases.Count}");
-            return new ObjectResult(new
-            {
-                success = false,
-                errorCode = "PENALTY_DUE",
-                message = "Unpaid overstay penalties must be paid or released by an administrator before bollard unlock.",
-                data = new { dueAmount = caseDue, walletBalance = renterWallet?.Balance ?? 0m }
-            }) { StatusCode = StatusCodes.Status402PaymentRequired };
-        }
         if (pending.Count == 0)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -756,15 +745,9 @@ public sealed class IoTCommandController : ControllerBase
         if (renterWallet is null || renterWallet.Balance < due)
         {
             await transaction.RollbackAsync(cancellationToken);
-            await LogDeviceActionAsync(device, "overstay_penalty_settlement", "insufficient_balance", booking.BookingId,
+            await LogDeviceActionAsync(device, "overstay_penalty_settlement", "existing_booking_allowed_with_unpaid_penalty", booking.BookingId,
                 $"due=RM{due:F2}; balance=RM{renterWallet?.Balance ?? 0:F2}");
-            return new ObjectResult(new
-            {
-                success = false,
-                errorCode = "PENALTY_DUE",
-                message = "Unpaid overstay penalties must be paid before the next bollard unlock. Please top up your wallet.",
-                data = new { dueAmount = due, walletBalance = renterWallet?.Balance ?? 0m }
-            }) { StatusCode = StatusCodes.Status402PaymentRequired };
+            return null;
         }
 
         var ownerIds = pending.Select(t => t.Booking!.ParkingSpot.OwnerId).Distinct().ToList();
@@ -803,7 +786,7 @@ public sealed class IoTCommandController : ControllerBase
             });
         }
 
-        foreach (var overstayCase in lockedCases)
+        foreach (var overstayCase in casesToUpdate)
         {
             overstayCase.DebitedAmount = Math.Max(0m, overstayCase.CalculatedPenaltyAmount - overstayCase.WaivedAmount);
             overstayCase.PaymentStatus = "Paid";

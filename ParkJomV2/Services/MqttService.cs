@@ -488,7 +488,7 @@ public sealed class MqttService : BackgroundService, IMqttService
                 GracePeriodMinutes = 15,
                 OverstayPenaltyMultiplier = 1.50m,
                 OverstayMaxDailyPenalty = 30.00m,
-                HardwareExitLockEnabled = true
+                HardwareExitLockEnabled = false
             };
 
         var firstDate = DateOnly.FromDateTime((booking.CheckedInAt ?? exitAtUtc).AddHours(8));
@@ -655,8 +655,8 @@ public sealed class MqttService : BackgroundService, IMqttService
             {
                 existingCase.PaymentStatus = "PaymentDue";
                 existingCase.Status = "Penalized";
-                existingCase.HardwareLockActive = config.HardwareExitLockEnabled;
-                existingCase.HardwareLockEngagedAtUtc ??= config.HardwareExitLockEnabled ? now : null;
+                existingCase.HardwareLockActive = false;
+                existingCase.HardwareLockEngagedAtUtc = null;
             }
             existingCase.UpdatedAt = now;
 

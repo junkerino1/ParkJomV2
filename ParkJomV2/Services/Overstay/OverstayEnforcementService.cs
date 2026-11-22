@@ -97,12 +97,12 @@ public sealed class OverstayEnforcementService
             GracePeriodMinutes = config.GracePeriodMinutes,
             PenaltyMultiplier = config.OverstayPenaltyMultiplier,
             MaxDailyPenalty = config.OverstayMaxDailyPenalty,
-            HardwareExitLockEnabled = config.HardwareExitLockEnabled,
+            HardwareExitLockEnabled = false,
             ActiveOverstaysCount = cases.Count(c => openStatuses.Contains(c.Status)),
             WarningsSentCount = cases.Count(c => string.Equals(c.Status, "WarningSent", StringComparison.OrdinalIgnoreCase)),
             PaymentDueCount = cases.Count(c => string.Equals(c.PaymentStatus, "PaymentDue", StringComparison.OrdinalIgnoreCase)),
             DisputedCount = cases.Count(c => string.Equals(c.Status, "Disputed", StringComparison.OrdinalIgnoreCase)),
-            HardwareLockedCount = cases.Count(c => c.HardwareLockActive),
+            HardwareLockedCount = 0,
             WaivedOrResolvedCount = cases.Count(c => closedStatuses.Contains(c.Status)),
             TotalCalculatedPenalties = totalCalculated,
             TotalCollectedPenalties = totalCollected,
@@ -390,6 +390,26 @@ public sealed class OverstayEnforcementService
                     var debited = await DebitUnbilledPenaltyInternalAsync(existing, booking, config, nowUtc, ct);
                     if (debited) penaltiesDebited++;
                 }
+            }
+
+            // Re-attempt debit on any remaining PaymentDue cases whose bookings are no longer active
+            var activeBookingIds = activeBookings.Select(b => b.BookingId).ToHashSet();
+            var pendingPaymentDueCases = await _db.OverstayCases
+                .Include(c => c.Booking)
+                    .ThenInclude(b => b.ParkingSpot)
+                        .ThenInclude(s => s.IoTDevice)
+                .Where(c => c.PaymentStatus == "PaymentDue" &&
+                            c.Status != "Disputed" &&
+                            c.Status != "Waived" &&
+                            c.Status != "Resolved" &&
+                            !activeBookingIds.Contains(c.BookingId) &&
+                            (c.CalculatedPenaltyAmount - c.DebitedAmount - c.WaivedAmount) > 0m)
+                .ToListAsync(ct);
+
+            foreach (var dueCase in pendingPaymentDueCases)
+            {
+                var debited = await DebitUnbilledPenaltyInternalAsync(dueCase, dueCase.Booking, config, nowUtc, ct);
+                if (debited) penaltiesDebited++;
             }
 
             // Auto-resolve cases whose booking exited cleanly and have no remaining due balance
@@ -819,7 +839,7 @@ public sealed class OverstayEnforcementService
                 GracePeriodMinutes = 15,
                 OverstayPenaltyMultiplier = 1.50m,
                 OverstayMaxDailyPenalty = 30.00m,
-                HardwareExitLockEnabled = true,
+                HardwareExitLockEnabled = false,
                 TaxRatePercent = 8.00m
             };
             _db.SystemConfigurations.Add(config);
@@ -834,8 +854,7 @@ public sealed class OverstayEnforcementService
         if (request.OverstayMaxDailyPenalty.HasValue)
             config.OverstayMaxDailyPenalty = Math.Round(request.OverstayMaxDailyPenalty.Value, 2);
 
-        if (request.HardwareExitLockEnabled.HasValue)
-            config.HardwareExitLockEnabled = request.HardwareExitLockEnabled.Value;
+        config.HardwareExitLockEnabled = false;
 
         config.UpdatedAt = DateTime.UtcNow;
         config.UpdatedByUserId = adminUserId;
@@ -844,7 +863,7 @@ public sealed class OverstayEnforcementService
         await _db.Entry(config).Reference(c => c.UpdatedByUser).LoadAsync(ct);
 
         await _accessLogService.LogAsync(adminUserId, "UpdateOverstayPolicy", true,
-            $"Grace={config.GracePeriodMinutes}m; Multiplier={config.OverstayPenaltyMultiplier}x; MaxDaily=RM {config.OverstayMaxDailyPenalty:F2}; ExitLock={config.HardwareExitLockEnabled}");
+            $"Grace={config.GracePeriodMinutes}m; Multiplier={config.OverstayPenaltyMultiplier}x; MaxDaily=RM {config.OverstayMaxDailyPenalty:F2}");
 
         return new SystemConfigDTO
         {
@@ -1081,8 +1100,8 @@ public sealed class OverstayEnforcementService
 
                 overstay.PaymentStatus = "PaymentDue";
                 overstay.Status = "Penalized";
-                overstay.HardwareLockActive = config.HardwareExitLockEnabled;
-                overstay.HardwareLockEngagedAtUtc ??= config.HardwareExitLockEnabled ? nowUtc : null;
+                overstay.HardwareLockActive = false;
+                overstay.HardwareLockEngagedAtUtc = null;
                 overstay.UpdatedAt = nowUtc;
 
                 booking.OverstayHours = Math.Max(booking.OverstayHours, overstay.BillableHours);
@@ -1092,7 +1111,7 @@ public sealed class OverstayEnforcementService
                 if (booking.ParkingSpot.IoTDevice is not null)
                 {
                     IoTDeviceLogWriter.Add(_db, booking.ParkingSpot.IoTDevice, "overstay_penalty_assessed", "payment_due", nowUtc,
-                        booking.BookingId, $"case={overstay.CaseReference}; due=RM {delta:F2}; exitLock={overstay.HardwareLockActive}");
+                        booking.BookingId, $"case={overstay.CaseReference}; due=RM {delta:F2}");
                 }
 
                 await _db.SaveChangesAsync(ct);
@@ -1144,6 +1163,74 @@ public sealed class OverstayEnforcementService
         return debitedNow;
     }
 
+    public async Task<(bool HasUnpaidPenalty, decimal UnpaidAmount)> TrySettleOrGetUnpaidPenaltyBalanceAsync(
+        int renterId,
+        CancellationToken ct = default)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var config = await GetPolicyAsync(ct);
+
+        var openCases = await _db.OverstayCases
+            .Include(c => c.Booking)
+                .ThenInclude(b => b.ParkingSpot)
+                    .ThenInclude(s => s.IoTDevice)
+            .Where(c => c.RenterId == renterId &&
+                        c.Status != "Waived" &&
+                        c.Status != "Resolved" &&
+                        (c.CalculatedPenaltyAmount - c.DebitedAmount - c.WaivedAmount) > 0m)
+            .OrderBy(c => c.WindowDate)
+            .ThenBy(c => c.OverstayCaseId)
+            .ToListAsync(ct);
+
+        var resolvedAny = false;
+        foreach (var openCase in openCases)
+        {
+            if (openCase.Status == "Disputed")
+            {
+                continue;
+            }
+
+            var debited = await DebitUnbilledPenaltyInternalAsync(openCase, openCase.Booking, config, nowUtc, ct);
+            if (debited && openCase.Booking.ActualExitAt != null)
+            {
+                var remainingAfter = Math.Max(0m, openCase.CalculatedPenaltyAmount - openCase.DebitedAmount - openCase.WaivedAmount);
+                if (remainingAfter == 0m)
+                {
+                    openCase.DepartedAtUtc ??= openCase.Booking.ActualExitAt;
+                    openCase.HardwareLockActive = false;
+                    openCase.HardwareLockReleasedAtUtc ??= openCase.Booking.ActualExitAt;
+                    openCase.Status = "Resolved";
+                    openCase.ResolvedAtUtc = nowUtc;
+                    openCase.ResolutionNotes ??= "Auto-resolved upon confirmed vehicle departure and settled penalty.";
+                    openCase.UpdatedAt = nowUtc;
+                    resolvedAny = true;
+                }
+            }
+        }
+
+        if (resolvedAny)
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var pendingTxs = await _db.Transactions
+            .AsNoTracking()
+            .Where(t => t.BookingId != null &&
+                        t.TransactionType == TransactionType.OverstayPenalty &&
+                        t.TransactionStatus == TransactionStatus.Pending &&
+                        t.Amount < 0 &&
+                        t.Booking!.RenterId == renterId)
+            .ToListAsync(ct);
+
+        var unpaidCases = openCases
+            .Where(c => c.Status != "Waived" && c.Status != "Resolved")
+            .Sum(c => Math.Max(0m, c.CalculatedPenaltyAmount - c.DebitedAmount - c.WaivedAmount));
+
+        var unpaidTx = pendingTxs.Sum(t => -t.Amount);
+        var totalUnpaid = Math.Max(unpaidCases, unpaidTx);
+        return (totalUnpaid > 0m, totalUnpaid);
+    }
+
     private Task<OverstayCase?> LoadCaseWithDetailsAsync(int caseId, CancellationToken ct)
         => _db.OverstayCases
             .Include(c => c.Booking)
@@ -1169,7 +1256,7 @@ public sealed class OverstayEnforcementService
                GracePeriodMinutes = 15,
                OverstayPenaltyMultiplier = 1.50m,
                OverstayMaxDailyPenalty = 30.00m,
-               HardwareExitLockEnabled = true,
+               HardwareExitLockEnabled = false,
                TaxRatePercent = 8.00m
            };
 

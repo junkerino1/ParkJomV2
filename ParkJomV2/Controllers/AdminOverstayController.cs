@@ -126,7 +126,7 @@ public sealed class AdminOverstayController : ControllerBase
                 Success = true,
                 Message = updated.PaymentStatus == "Paid"
                     ? $"Penalty debited from renter wallet for {updated.CaseReference}."
-                    : $"Insufficient renter wallet balance; {updated.CaseReference} marked PaymentDue and exit lock engaged.",
+                    : $"Insufficient renter wallet balance; {updated.CaseReference} marked PaymentDue (pending wallet debt recorded).",
                 Data = updated
             });
         }
