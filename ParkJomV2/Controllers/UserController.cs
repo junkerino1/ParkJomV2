@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Linq.Expressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -111,6 +112,7 @@ public class UserController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<UserProfileResponse>> UpdateMyProfile(
         [FromBody] UpdateUserProfileRequest request,
         CancellationToken cancellationToken)
@@ -184,7 +186,36 @@ public class UserController : ControllerBase
                     Message = "Phone number cannot be empty."
                 });
             }
-            if (user.IsProfileComplete && !string.Equals(user.PhoneNumber, trimmedPhone, StringComparison.Ordinal))
+            var normalizedPhone = PhoneNumberNormalizer.NormalizeMalaysian(trimmedPhone);
+            if (normalizedPhone is null)
+            {
+                return BadRequest(new ErrorResponse
+                {
+                    Code = StatusCodes.Status400BadRequest,
+                    Success = false,
+                    Message = "Enter a valid Malaysian mobile number, for example 0123456789 or +60123456789."
+                });
+            }
+
+            var localPhone = "0" + normalizedPhone[2..];
+            var phoneInUse = await _context.Users
+                .Where(other => other.UserId != user.UserId && other.PhoneNumber != null)
+                // Older profile edits may have stored a local or formatted number.
+                .Select(other => other.PhoneNumber!.Trim().Replace("+", "").Replace(" ", "")
+                    .Replace("-", "").Replace("(", "").Replace(")", "").Replace(".", ""))
+                .AnyAsync(phone => phone == normalizedPhone || phone == localPhone, cancellationToken);
+            if (phoneInUse)
+            {
+                return Conflict(new ErrorResponse
+                {
+                    Code = StatusCodes.Status409Conflict,
+                    Success = false,
+                    Message = "This phone number is already linked to another account."
+                });
+            }
+
+            if (user.IsProfileComplete && !string.Equals(
+                PhoneNumberNormalizer.NormalizeMalaysian(user.PhoneNumber), normalizedPhone, StringComparison.Ordinal))
             {
                 return BadRequest(new ErrorResponse
                 {
@@ -193,7 +224,7 @@ public class UserController : ControllerBase
                     Message = "Changing a verified phone number requires phone verification."
                 });
             }
-            user.PhoneNumber = trimmedPhone;
+            user.PhoneNumber = normalizedPhone;
         }
 
         // A profile must not become complete merely because a phone number was entered.
@@ -504,7 +535,7 @@ public class UserController : ControllerBase
     // =========================================================================
 
     /// <summary>
-    /// Admin: List and search all user profiles with filtering and pagination.
+    /// Admin: List and search user profiles with filtering, sorting, and pagination.
     /// </summary>
     [Authorize(Policy = "AdminOnly")]
     [HttpGet("/api/admin/users")]
@@ -517,8 +548,21 @@ public class UserController : ControllerBase
         [FromQuery] bool? isProfileComplete = null,
         [FromQuery, Range(1, 100000)] int page = 1,
         [FromQuery, Range(1, 100)] int pageSize = 20,
+        [FromQuery] string sortBy = "joined",
+        [FromQuery] string sortDirection = "desc",
         CancellationToken cancellationToken = default)
     {
+        var sortKey = sortBy?.Trim().ToLowerInvariant();
+        var direction = sortDirection?.Trim().ToLowerInvariant();
+        if (sortKey is not ("id" or "name" or "email" or "phone" or "role" or "status" or "profile"
+            or "wallet" or "bookings" or "assets" or "tickets" or "joined") || direction is not ("asc" or "desc"))
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "Select a supported user sort field and a direction of asc or desc."
+            });
+
         var query = _context.Users.AsNoTracking().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -551,47 +595,70 @@ public class UserController : ControllerBase
         var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
         var now = DateTime.UtcNow;
 
-        var users = await query
-            .OrderByDescending(u => u.CreatedAt)
+        var profiles = query.Select(u => new UserProfileDTO
+        {
+            UserId = u.UserId,
+            Email = u.Email,
+            FirstName = u.FirstName,
+            LastName = u.LastName,
+            FullName = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
+            PhoneNumber = u.PhoneNumber,
+            ProfilePictureURL = u.ProfilePictureURL,
+            UserType = u.UserType,
+            RoleName = u.UserType.ToString(),
+            IsProfileComplete = u.IsProfileComplete,
+            AccountStatus = u.AccountStatus,
+            CreatedAt = u.CreatedAt,
+            UpdatedAt = u.UpdatedAt,
+            LastLoginAt = u.LastLoginAt,
+            Summary = new UserProfileSummaryDTO
+            {
+                WalletBalance = u.Wallet != null ? u.Wallet.Balance : 0m,
+                WalletOnHold = u.Wallet != null ? u.Wallet.OnHold : 0m,
+                WalletCurrency = "MYR",
+                WalletStatus = u.Wallet != null ? u.Wallet.Status.ToString() : "None",
+                VehicleCount = u.Vehicles.Count(),
+                ActiveBookingsCount = u.Bookings.Count(b =>
+                    (b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Active) &&
+                    b.EndDate >= now),
+                TotalBookingsCount = u.Bookings.Count(),
+                FavoritesCount = u.Favorites.Count(),
+                OwnedParkingSpotsCount = u.OwnedParkingSpots.Count(p => p.AvailabilityStatus != AvailabilityStatus.Deleted),
+                OpenSupportTicketsCount = _context.SupportTickets.Count(t =>
+                    t.CustomerUserId == u.UserId &&
+                    t.Status != SupportTicketStatus.Resolved &&
+                    t.Status != SupportTicketStatus.Closed &&
+                    t.Status != SupportTicketStatus.Cancelled &&
+                    t.Status != SupportTicketStatus.Duplicate)
+            }
+        });
+
+        IOrderedQueryable<UserProfileDTO> OrderBy<TKey>(Expression<Func<UserProfileDTO, TKey>> key) =>
+            direction == "asc" ? profiles.OrderBy(key) : profiles.OrderByDescending(key);
+
+        var sorted = sortKey switch
+        {
+            "id" => OrderBy(u => u.UserId),
+            "name" => OrderBy(u => u.FullName),
+            "email" => OrderBy(u => u.Email),
+            "phone" => OrderBy(u => u.PhoneNumber),
+            "role" => direction == "asc"
+                ? profiles.OrderBy(u => u.UserType).ThenBy(u => u.AccountStatus)
+                : profiles.OrderByDescending(u => u.UserType).ThenByDescending(u => u.AccountStatus),
+            "status" => OrderBy(u => u.AccountStatus),
+            "profile" => OrderBy(u => u.IsProfileComplete),
+            "wallet" => OrderBy(u => u.Summary!.WalletBalance),
+            "bookings" => OrderBy(u => u.Summary!.TotalBookingsCount),
+            "assets" => OrderBy(u => u.UserType == UserType.PropertyOwner
+                ? u.Summary!.OwnedParkingSpotsCount : u.Summary!.VehicleCount),
+            "tickets" => OrderBy(u => u.Summary!.OpenSupportTicketsCount),
+            _ => OrderBy(u => u.CreatedAt)
+        };
+
+        var users = await sorted
+            .ThenBy(u => u.UserId)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(u => new UserProfileDTO
-            {
-                UserId = u.UserId,
-                Email = u.Email,
-                FirstName = u.FirstName,
-                LastName = u.LastName,
-                FullName = ((u.FirstName ?? "") + " " + (u.LastName ?? "")).Trim(),
-                PhoneNumber = u.PhoneNumber,
-                ProfilePictureURL = u.ProfilePictureURL,
-                UserType = u.UserType,
-                RoleName = u.UserType.ToString(),
-                IsProfileComplete = u.IsProfileComplete,
-                AccountStatus = u.AccountStatus,
-                CreatedAt = u.CreatedAt,
-                UpdatedAt = u.UpdatedAt,
-                LastLoginAt = u.LastLoginAt,
-                Summary = new UserProfileSummaryDTO
-                {
-                    WalletBalance = u.Wallet != null ? u.Wallet.Balance : 0m,
-                    WalletOnHold = u.Wallet != null ? u.Wallet.OnHold : 0m,
-                    WalletCurrency = "MYR",
-                    WalletStatus = u.Wallet != null ? u.Wallet.Status.ToString() : "None",
-                    VehicleCount = u.Vehicles.Count(),
-                    ActiveBookingsCount = u.Bookings.Count(b =>
-                        (b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Active) &&
-                        b.EndDate >= now),
-                    TotalBookingsCount = u.Bookings.Count(),
-                    FavoritesCount = u.Favorites.Count(),
-                    OwnedParkingSpotsCount = u.OwnedParkingSpots.Count(p => p.AvailabilityStatus != AvailabilityStatus.Deleted),
-                    OpenSupportTicketsCount = _context.SupportTickets.Count(t =>
-                        t.CustomerUserId == u.UserId &&
-                        t.Status != SupportTicketStatus.Resolved &&
-                        t.Status != SupportTicketStatus.Closed &&
-                        t.Status != SupportTicketStatus.Cancelled &&
-                        t.Status != SupportTicketStatus.Duplicate)
-                }
-            })
             .ToListAsync(cancellationToken);
 
         await _accessLogService.LogAsync(User, "AdminGetAllUsers", true, $"Count={users.Count}, Page={page}");

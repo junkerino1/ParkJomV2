@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 using ParkJomV2.DTOs;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
@@ -30,7 +31,7 @@ public sealed class IoTDeviceController : ControllerBase
 
     /// <summary>Lists bollards linked to parking bays owned by the signed-in property owner.</summary>
     [Authorize(Policy = "PropertyOwnerOnly")]
-    [HttpGet("owner/devices")]
+    [HttpGet("~/api/owner/iot/devices")]
     public async Task<ActionResult<IoTApiResponse<List<IoTDeviceListItem>>>> ListOwnerDevices(
         CancellationToken cancellationToken)
     {
@@ -45,7 +46,7 @@ public sealed class IoTDeviceController : ControllerBase
 
     /// <summary>Lists all registered bollards, including unassigned devices.</summary>
     [Authorize(Policy = "AdminOnly")]
-    [HttpGet("admin/devices")]
+    [HttpGet("~/api/admin/iot/devices")]
     public async Task<ActionResult<IoTApiResponse<List<IoTDeviceListItem>>>> ListAdminDevices(
         CancellationToken cancellationToken)
     {
@@ -53,37 +54,45 @@ public sealed class IoTDeviceController : ControllerBase
         return Ok(DeviceListResponse(devices));
     }
 
-    /// <summary>Returns heartbeat freshness, the last valid distance scan, and the assigned parking spot.</summary>
-    /// <remarks>Status is unknown until the first heartbeat, online for less than 90 seconds after a heartbeat, and offline after that.</remarks>
+    /// <summary>Reads the latest logged distance, lock position, and heartbeat status for exactly one target.</summary>
+    /// <remarks>bookingId requires the booking renter's token and a confirmed/active booking.
+    /// deviceUuid or parkingSpotId requires an admin or the parking spot owner's token.
+    /// Reads stored ACK/telemetry logs only; use POST status/scan for a fresh device reading.</remarks>
     [Authorize]
-    [HttpGet("{uuid}/status")]
+    [HttpGet("status")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<IoTApiResponse<IoTHeartbeatStatusResponse>>> GetDeviceStatus(
-        string uuid, CancellationToken cancellationToken)
+    public Task<ActionResult<IoTApiResponse<IoTStatusResponse>>> GetDeviceStatus(
+        [FromQuery] IoTDeviceTarget target, CancellationToken cancellationToken
+    ) => ReadStatusAsync(target, null, cancellationToken);
+
+    /// <summary>Reads fresh distance and lock position together without moving the bollard.</summary>
+    [Authorize]
+    [HttpPost("{uuid}/status/scan")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public Task<ActionResult<IoTApiResponse<IoTStatusResponse>>> ScanDeviceStatus(
+        string uuid, [FromServices] IMqttService mqtt, CancellationToken cancellationToken)
+        => ReadStatusAsync(new IoTDeviceTarget { DeviceUuid = uuid }, mqtt, cancellationToken);
+
+    private async Task<ActionResult<IoTApiResponse<IoTStatusResponse>>> ReadStatusAsync(
+        IoTDeviceTarget target, IMqttService? mqtt, CancellationToken cancellationToken)
     {
         if (_currentUser.UserId is not int userId)
-        {
             return Unauthorized();
-        }
-
-        var isAdmin = User.HasClaim("UserType", UserType.Admin.ToString());
-        if (!isAdmin && !User.HasClaim("UserType", UserType.PropertyOwner.ToString()))
-        {
+        if (!Enum.TryParse<UserType>(User.FindFirst("UserType")?.Value, out var userType))
             return Forbid();
-        }
-
         try
         {
-            var status = await _devices.GetHeartbeatStatusAsync(uuid, isAdmin ? null : userId, cancellationToken);
-            return Ok(new IoTApiResponse<IoTHeartbeatStatusResponse>
+            var status = mqtt is null
+                ? await _devices.GetStatusAsync(target, userId, userType, cancellationToken)
+                : await _devices.ScanStatusAsync(target, userId, userType, mqtt, cancellationToken);
+            return Ok(new IoTApiResponse<IoTStatusResponse>
             {
                 Code = StatusCodes.Status200OK,
                 Success = true,
-                Message = "Device heartbeat status retrieved.",
+                Message = status.ReceivedAt is null ? "No device reading has been recorded yet."
+                    : mqtt is null ? "Latest logged bollard status retrieved."
+                    : status.SensorStatus == "ok" ? "Live bollard status received."
+                    : "Bollard position received; the distance sensor is unavailable.",
                 Data = status
             });
         }
@@ -93,59 +102,26 @@ public sealed class IoTDeviceController : ControllerBase
         }
     }
 
-    /// <summary>Requests a fresh HC-SR04 distance reading without moving the bollard.</summary>
-    [Authorize]
-    [HttpPost("{uuid}/status/scan")]
+    /// <summary>Searches the bollard fleet with booking, parking, property and owner context.</summary>
+    [Authorize(Policy = "AdminOnly")]
+    [HttpGet("~/api/admin/iot/devices/search")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    [ProducesResponseType(StatusCodes.Status502BadGateway)]
-    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
-    public async Task<ActionResult<IoTApiResponse<IoTLiveStatusScanResponse>>> ScanDeviceStatus(
-        string uuid, [FromServices] IMqttService mqtt, CancellationToken cancellationToken)
+    public async Task<ActionResult<IoTApiResponse<AdminIoTSupportPage>>> SearchSupportDevices(
+        [FromQuery, Required, StringLength(30)] string by,
+        [FromQuery, Required, StringLength(120)] string q,
+        CancellationToken cancellationToken,
+        [FromQuery, Range(1, 10_000)] int page = 1,
+        [FromQuery, Range(1, 50)] int pageSize = 20)
     {
-        if (_currentUser.UserId is not int userId)
-            return Unauthorized();
-
-        var isAdmin = User.HasClaim("UserType", UserType.Admin.ToString());
-        if (!isAdmin && !User.HasClaim("UserType", UserType.PropertyOwner.ToString()))
-            return Forbid();
-
         try
         {
-            var scan = await _devices.RequestLiveStatusScanAsync(uuid, isAdmin ? null : userId, mqtt, cancellationToken);
-            return Ok(new IoTApiResponse<IoTLiveStatusScanResponse>
+            var results = await _devices.SearchForSupportAsync(by, q, page, pageSize, cancellationToken);
+            return Ok(new IoTApiResponse<AdminIoTSupportPage>
             {
                 Code = StatusCodes.Status200OK,
                 Success = true,
-                Message = "Fresh bollard distance received.",
-                Data = scan
-            });
-        }
-        catch (IoTDeviceOperationException ex)
-        {
-            return OperationError(ex);
-        }
-    }
-
-    /// <summary>Reads the reported lock position from an owner's bollard without moving it.</summary>
-    [Authorize(Policy = "PropertyOwnerOnly")]
-    [HttpPost("{uuid}/position/scan")]
-    public async Task<ActionResult<IoTApiResponse<IoTLivePositionResponse>>> ScanDevicePosition(
-        string uuid, [FromServices] IMqttService mqtt, CancellationToken cancellationToken)
-    {
-        if (_currentUser.UserId is not int ownerId)
-            return Unauthorized();
-
-        try
-        {
-            var position = await _devices.RequestLivePositionAsync(uuid, ownerId, mqtt, cancellationToken);
-            return Ok(new IoTApiResponse<IoTLivePositionResponse>
-            {
-                Code = StatusCodes.Status200OK,
-                Success = true,
-                Message = "Bollard position received.",
-                Data = position
+                Message = "Bollard search completed.",
+                Data = results
             });
         }
         catch (IoTDeviceOperationException ex)

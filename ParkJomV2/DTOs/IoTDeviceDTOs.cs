@@ -36,24 +36,39 @@ public sealed class IoTOtpResponse
     public DateTime ExpiresAtUtc { get; set; }
 }
 
-public sealed record IoTHeartbeatStatusResponse(
+/// <summary>Exactly one device selector must be supplied.</summary>
+public sealed class IoTDeviceTarget : IValidatableObject
+{
+    public string? DeviceUuid { get; set; }
+
+    [Range(1, int.MaxValue)]
+    public int? BookingId { get; set; }
+
+    [Range(1, int.MaxValue)]
+    public int? ParkingSpotId { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        var count = (DeviceUuid is not null ? 1 : 0) + (BookingId.HasValue ? 1 : 0) + (ParkingSpotId.HasValue ? 1 : 0);
+        if (count != 1)
+            yield return new ValidationResult("Supply exactly one of deviceUuid, bookingId, or parkingSpotId.");
+        if (DeviceUuid is not null && !Guid.TryParseExact(DeviceUuid, "D", out _))
+            yield return new ValidationResult("deviceUuid must be a valid UUID.", new[] { nameof(DeviceUuid) });
+    }
+}
+
+public sealed record IoTStatusResponse(
     string DeviceUuid,
+    int? BookingId,
     string HeartbeatStatus,
     DateTimeOffset? LastHeartbeatAt,
     DateTimeOffset CheckedAt,
     int OfflineAfterSeconds,
-    IoTDistanceScanResponse? LastDistanceScan,
+    double? DistanceCm,
+    string SensorStatus,
+    string? BollardPosition,
+    DateTimeOffset? ReceivedAt,
     IoTStatusParkingSpotResponse? ParkingSpot);
-
-public sealed record IoTDistanceScanResponse(double DistanceCm, DateTimeOffset ReceivedAt);
-
-public sealed record IoTLivePositionResponse(string BollardPosition);
-
-public sealed record IoTLiveStatusScanResponse(
-    string DeviceUuid,
-    double DistanceCm,
-    DateTimeOffset ReceivedAt,
-    string? BollardPosition);
 
 public sealed record IoTStatusParkingSpotResponse(
     int ParkingSpotId,
