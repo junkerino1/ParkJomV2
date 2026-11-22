@@ -122,26 +122,46 @@ public sealed class CronMaintenanceJob
     }
 
     /// <summary>
-    /// Marks checked-in active bookings completed when their booked period has ended.
+    /// Marks checked-in active bookings completed when their booked period has ended
+    /// and releases held owner escrow balances into available wallet balances.
     /// ActualExitAt remains unset because this job has no physical exit confirmation.
     /// </summary>
     public async Task<int> CompleteExpiredBookingsAsync(CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
         var expiredBookings = await _db.Bookings
+            .Include(booking => booking.ParkingSpot)
             .Where(booking => booking.BookingStatus == BookingStatus.Active &&
                               booking.EndDate <= now &&
                               booking.ActualExitAt == null)
             .ToListAsync(cancellationToken);
 
-        foreach (var booking in expiredBookings)
-        {
-            booking.BookingStatus = BookingStatus.Completed;
-            booking.UpdatedAt = now;
-        }
-
         if (expiredBookings.Count > 0)
+        {
+            var ownerIds = expiredBookings.Select(b => b.ParkingSpot.OwnerId).Distinct().ToList();
+            var ownerWallets = await _db.Wallets
+                .Where(w => ownerIds.Contains(w.UserId) && w.Status == WalletStatus.Active)
+                .ToDictionaryAsync(w => w.UserId, cancellationToken);
+
+            foreach (var booking in expiredBookings)
+            {
+                booking.BookingStatus = BookingStatus.Completed;
+                booking.UpdatedAt = now;
+
+                if (booking.OwnerPayoutAmount > 0 &&
+                    booking.PayoutReleasedAt == null &&
+                    ownerWallets.TryGetValue(booking.ParkingSpot.OwnerId, out var ownerWallet) &&
+                    ownerWallet.OnHold >= booking.OwnerPayoutAmount)
+                {
+                    ownerWallet.Balance += booking.OwnerPayoutAmount;
+                    ownerWallet.OnHold -= booking.OwnerPayoutAmount;
+                    ownerWallet.UpdatedAt = now;
+                    booking.PayoutReleasedAt = now;
+                }
+            }
+
             await _db.SaveChangesAsync(cancellationToken);
+        }
 
         _logger.LogInformation("Marked {Count} expired active bookings as completed.", expiredBookings.Count);
         return expiredBookings.Count;

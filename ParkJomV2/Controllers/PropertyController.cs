@@ -81,10 +81,10 @@ namespace ParkJomV2.Controllers
                 });
             }
 
-            // Auto-calculate distance and time from station to property via OSRM
+            // Auto-calculate distance and time from property to station via OSRM
             var (distKm, timeMin) = await _osrmService.GetWalkingDistanceAsync(
-                (double)station.Latitude, (double)station.Longitude,
-                (double)request.Latitude, (double)request.Longitude);
+                (double)request.Latitude, (double)request.Longitude,
+                (double)station.Latitude, (double)station.Longitude);
 
             var property = new Property
             {

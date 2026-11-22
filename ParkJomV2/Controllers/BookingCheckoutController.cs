@@ -8,6 +8,7 @@ using ParkJomV2.Models;
 using ParkJomV2.Models.Constants;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
+using ParkJomV2.Services.Overstay;
 
 namespace ParkJomV2.Controllers;
 
@@ -21,6 +22,7 @@ public class BookingCheckoutController : ControllerBase
     private readonly AccessLogService _accessLogService;
     private readonly TransactionService _transactionService;
     private readonly WalletService _walletService;
+    private readonly OverstayEnforcementService _overstayService;
     private readonly ILogger<BookingCheckoutController> _logger;
 
     public BookingCheckoutController(
@@ -29,6 +31,7 @@ public class BookingCheckoutController : ControllerBase
         AccessLogService accessLogService,
         TransactionService transactionService,
         WalletService walletService,
+        OverstayEnforcementService overstayService,
         ILogger<BookingCheckoutController> logger)
     {
         _context = context;
@@ -36,6 +39,7 @@ public class BookingCheckoutController : ControllerBase
         _accessLogService = accessLogService;
         _transactionService = transactionService;
         _walletService = walletService;
+        _overstayService = overstayService;
         _logger = logger;
     }
 
@@ -203,6 +207,16 @@ public class BookingCheckoutController : ControllerBase
         if (user == null)
         {
             return StatusCode(StatusCodes.Status403Forbidden, Error(StatusCodes.Status403Forbidden, "Authenticated user not found."));
+        }
+
+        var (hasUnpaidPenalty, unpaidAmount) = await _overstayService.TrySettleOrGetUnpaidPenaltyBalanceAsync(user.UserId, cancellationToken);
+        if (hasUnpaidPenalty)
+        {
+            await _accessLogService.LogAsync(User, "CreateBookingQuote", false,
+                $"Blocked due to unpaid overstay penalty RM {unpaidAmount:F2}");
+            return StatusCode(StatusCodes.Status402PaymentRequired,
+                Error(StatusCodes.Status402PaymentRequired,
+                    $"You have unpaid overstay penalties of RM {unpaidAmount:F2}. Please top up your wallet to settle your outstanding overstay penalty before booking a new parking spot."));
         }
 
         if (spotId <= 0)

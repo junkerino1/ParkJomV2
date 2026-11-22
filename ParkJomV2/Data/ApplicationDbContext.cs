@@ -36,6 +36,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<AccessLog> AccessLogs => Set<AccessLog>();
     public DbSet<SystemConfiguration> SystemConfigurations => Set<SystemConfiguration>();
     public DbSet<OwnerPayoutAccount> OwnerPayoutAccounts => Set<OwnerPayoutAccount>();
+    public DbSet<SettlementBatch> SettlementBatches => Set<SettlementBatch>();
+    public DbSet<SettlementBatchItem> SettlementBatchItems => Set<SettlementBatchItem>();
+    public DbSet<OverstayCase> OverstayCases => Set<OverstayCase>();
     public DbSet<RevokedToken> RevokedTokens => Set<RevokedToken>();
 
     public DbSet<Availability> Availabilities => Set<Availability>();
@@ -698,6 +701,9 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.CommissionRate).HasPrecision(5, 2);
+            entity.Property(e => e.OverstayPenaltyMultiplier).HasPrecision(5, 2);
+            entity.Property(e => e.OverstayMaxDailyPenalty).HasPrecision(10, 2);
+            entity.Property(e => e.TaxRatePercent).HasPrecision(5, 2);
             entity.HasOne(e => e.UpdatedByUser)
                 .WithMany()
                 .HasForeignKey(e => e.UpdatedByUserId)
@@ -708,6 +714,10 @@ public class ApplicationDbContext : DbContext
                 Id = 1,
                 CommissionRate = 10.00m,
                 GracePeriodMinutes = 15,
+                OverstayPenaltyMultiplier = 1.50m,
+                OverstayMaxDailyPenalty = 30.00m,
+                HardwareExitLockEnabled = true,
+                TaxRatePercent = 8.00m,
                 UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                 UpdatedByUserId = null
             });
@@ -827,6 +837,81 @@ public class ApplicationDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(s => s.WalletTransactionId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // =========================
+        // Financial Settlement & Overstay Enforcement
+        // =========================
+        modelBuilder.Entity<SettlementBatch>(entity =>
+        {
+            entity.HasKey(b => b.SettlementBatchId);
+            entity.HasIndex(b => b.BatchReference).IsUnique();
+            entity.HasIndex(b => b.Status);
+            entity.HasOne(b => b.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(b => b.CreatedByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<SettlementBatchItem>(entity =>
+        {
+            entity.HasKey(i => i.SettlementBatchItemId);
+            entity.HasIndex(i => i.TransactionId);
+            entity.HasIndex(i => i.Status);
+            entity.HasOne(i => i.SettlementBatch)
+                .WithMany(b => b.Items)
+                .HasForeignKey(i => i.SettlementBatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(i => i.Transaction)
+                .WithMany()
+                .HasForeignKey(i => i.TransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(i => i.OwnerUser)
+                .WithMany()
+                .HasForeignKey(i => i.OwnerUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<OverstayCase>(entity =>
+        {
+            entity.HasKey(o => o.OverstayCaseId);
+            entity.HasIndex(o => o.CaseReference).IsUnique();
+            entity.HasIndex(o => new { o.BookingId, o.WindowDate }).IsUnique();
+            entity.HasIndex(o => o.Status);
+            entity.HasIndex(o => o.HardwareLockActive);
+
+            entity.HasOne(o => o.Booking)
+                .WithMany()
+                .HasForeignKey(o => o.BookingId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(o => o.Renter)
+                .WithMany()
+                .HasForeignKey(o => o.RenterId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(o => o.ParkingSpot)
+                .WithMany()
+                .HasForeignKey(o => o.ParkingSpotId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(o => o.IoTDevice)
+                .WithMany()
+                .HasForeignKey(o => o.IoTDeviceId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(o => o.PenaltyTransaction)
+                .WithMany()
+                .HasForeignKey(o => o.PenaltyTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(o => o.HardwareLockReleasedByUser)
+                .WithMany()
+                .HasForeignKey(o => o.HardwareLockReleasedByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(o => o.DisputeInvestigation)
+                .WithMany()
+                .HasForeignKey(o => o.DisputeInvestigationId)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(o => o.ResolvedByUser)
+                .WithMany()
+                .HasForeignKey(o => o.ResolvedByUserId)
+                .OnDelete(DeleteBehavior.NoAction);
         });
     }
 }

@@ -248,7 +248,8 @@ public class OwnerPayoutController : ControllerBase
                 -request.Amount,
                 PaymentMethod.Wallet,
                 refNumber,
-                now);
+                now,
+                TransactionStatus.Pending);
 
             await _context.SaveChangesAsync();
             await dbTransaction.CommitAsync();

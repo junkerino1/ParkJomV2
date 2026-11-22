@@ -15,6 +15,8 @@ using ParkJomV2.Services.Copilot;
 using ParkJomV2.Services.Notifications;
 using ParkJomV2.Services.Notifications.Channels;
 using ParkJomV2.Services.Notifications.Workers;
+using ParkJomV2.Services.Overstay;
+using ParkJomV2.Services.Settlement;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using System.Security.Claims;
@@ -372,6 +374,10 @@ builder.Services.AddSingleton<NotificationDispatchWorker>();
 builder.Services.AddHostedService(services => services.GetRequiredService<NotificationDispatchWorker>());
 builder.Services.AddScoped<BookingReminderJob>();
 builder.Services.AddScoped<OverstayMonitoringJob>();
+builder.Services.AddSingleton<OverstayWorkerStatusTracker>();
+builder.Services.AddScoped<OverstayEnforcementService>();
+builder.Services.AddScoped<SettlementService>();
+builder.Services.AddScoped<SettlementBatchJob>();
 builder.Services.AddScoped<NotificationCleanupJob>();
 builder.Services.AddScoped<CronMaintenanceJob>();
 
@@ -489,7 +495,7 @@ builder.Services.AddSwaggerGen(options =>
                 => "11. Property Management",
 
             // 12. System Jobs & Webhooks
-            "InternalCron" or "Sms360Webhook"
+            "InternalCron" or "Sms360Webhook" or "BankClearingWebhook"
                 => "12. System Jobs & Webhooks",
 
             _ => $"99. Other Endpoints ({controller})"
@@ -580,14 +586,14 @@ using (var scope = app.Services.CreateScope())
             pv128.UpdatedAt = DateTime.UtcNow;
         }
 
-        // Recalculate realistic pedestrian walking times (12.5 min/km = 80 m/min)
+        // Recalculate realistic pedestrian walking times (12.5 min/km = 80 m/min + 45s station entrance buffer)
         var allProps = await db.Properties.ToListAsync();
         foreach (var p in allProps)
         {
             var distKm = (double)p.DistanceToStation;
             if (distKm > 0)
             {
-                var walkMin = (decimal)Math.Round(distKm * 12.5, 1);
+                var walkMin = (decimal)Math.Max(1.0, Math.Round((distKm * 1000.0 / 80.0) + 0.75));
                 if (p.TimeToStation != walkMin)
                 {
                     p.TimeToStation = walkMin;
