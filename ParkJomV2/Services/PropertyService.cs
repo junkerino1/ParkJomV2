@@ -66,10 +66,10 @@ public class PropertyService : IPropertyService
             return null;
         }
 
-        // Calculate walking distance/time via OSRM
+        // Calculate walking distance/time from property to station via OSRM
         var (distKm, timeMin) = await _osrmService.GetWalkingDistanceAsync(
-            (double)station.Latitude, (double)station.Longitude,
-            (double)latitude, (double)longitude);
+            (double)latitude, (double)longitude,
+            (double)station.Latitude, (double)station.Longitude);
 
         var resolvedName = !string.IsNullOrWhiteSpace(best.PropertyName)
             ? best.PropertyName

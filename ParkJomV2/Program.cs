@@ -566,14 +566,14 @@ using (var scope = app.Services.CreateScope())
             pv128.UpdatedAt = DateTime.UtcNow;
         }
 
-        // Recalculate realistic pedestrian walking times (12.5 min/km = 80 m/min)
+        // Recalculate realistic pedestrian walking times (12.5 min/km = 80 m/min + 45s station entrance buffer)
         var allProps = await db.Properties.ToListAsync();
         foreach (var p in allProps)
         {
             var distKm = (double)p.DistanceToStation;
             if (distKm > 0)
             {
-                var walkMin = (decimal)Math.Round(distKm * 12.5, 1);
+                var walkMin = (decimal)Math.Max(1.0, Math.Round((distKm * 1000.0 / 80.0) + 0.75));
                 if (p.TimeToStation != walkMin)
                 {
                     p.TimeToStation = walkMin;
