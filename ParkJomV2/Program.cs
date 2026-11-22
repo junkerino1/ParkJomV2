@@ -15,6 +15,8 @@ using ParkJomV2.Services.Copilot;
 using ParkJomV2.Services.Notifications;
 using ParkJomV2.Services.Notifications.Channels;
 using ParkJomV2.Services.Notifications.Workers;
+using ParkJomV2.Services.Overstay;
+using ParkJomV2.Services.Settlement;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
 using System.Security.Claims;
@@ -358,6 +360,11 @@ builder.Services.AddSingleton<NotificationDispatchWorker>();
 builder.Services.AddHostedService(services => services.GetRequiredService<NotificationDispatchWorker>());
 builder.Services.AddScoped<BookingReminderJob>();
 builder.Services.AddScoped<OverstayMonitoringJob>();
+builder.Services.AddSingleton<OverstayWorkerStatusTracker>();
+builder.Services.AddScoped<OverstayEnforcementService>();
+builder.Services.AddHostedService<OverstayEnforcementBackgroundService>();
+builder.Services.AddScoped<SettlementService>();
+builder.Services.AddScoped<SettlementBatchJob>();
 builder.Services.AddScoped<NotificationCleanupJob>();
 builder.Services.AddScoped<CronMaintenanceJob>();
 
@@ -475,7 +482,7 @@ builder.Services.AddSwaggerGen(options =>
                 => "11. Property Management",
 
             // 12. System Jobs & Webhooks
-            "InternalCron" or "Sms360Webhook"
+            "InternalCron" or "Sms360Webhook" or "BankClearingWebhook"
                 => "12. System Jobs & Webhooks",
 
             _ => $"99. Other Endpoints ({controller})"

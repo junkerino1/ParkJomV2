@@ -107,7 +107,9 @@ public class OwnerEarningsController : ControllerBase
             {
                 var withdrawn = await _context.Transactions
                     .AsNoTracking()
-                    .Where(t => t.WalletId == wallet.WalletId && t.TransactionType == TransactionType.Withdrawal)
+                    .Where(t => t.WalletId == wallet.WalletId
+                             && t.TransactionType == TransactionType.Withdrawal
+                             && t.TransactionStatus != TransactionStatus.Failed)
                     .SumAsync(t => (decimal?)t.Amount) ?? 0m;
                 paidEarnings = Math.Abs(withdrawn);
             }

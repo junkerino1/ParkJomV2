@@ -49,6 +49,10 @@ public class AdminSystemConfigController : ControllerBase
                     Id = 1,
                     CommissionRate = 10.00m,
                     GracePeriodMinutes = 15,
+                    OverstayPenaltyMultiplier = 1.50m,
+                    OverstayMaxDailyPenalty = 30.00m,
+                    HardwareExitLockEnabled = true,
+                    TaxRatePercent = 8.00m,
                     UpdatedAt = DateTime.UtcNow,
                     UpdatedByUserId = null
                 };
@@ -60,6 +64,10 @@ public class AdminSystemConfigController : ControllerBase
             {
                 CommissionRate = config.CommissionRate,
                 GracePeriodMinutes = config.GracePeriodMinutes,
+                OverstayPenaltyMultiplier = config.OverstayPenaltyMultiplier,
+                OverstayMaxDailyPenalty = config.OverstayMaxDailyPenalty,
+                HardwareExitLockEnabled = config.HardwareExitLockEnabled,
+                TaxRatePercent = config.TaxRatePercent,
                 UpdatedAt = config.UpdatedAt,
                 UpdatedByUserId = config.UpdatedByUserId,
                 UpdatedByName = config.UpdatedByUser != null
@@ -96,7 +104,12 @@ public class AdminSystemConfigController : ControllerBase
     [ProducesResponseType(typeof(SystemConfigResponse), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<SystemConfigResponse>> UpdateSystemConfig([FromBody] UpdateSystemConfigRequest request)
     {
-        if (request.CommissionRate == null && request.GracePeriodMinutes == null)
+        if (request.CommissionRate == null
+            && request.GracePeriodMinutes == null
+            && request.OverstayPenaltyMultiplier == null
+            && request.OverstayMaxDailyPenalty == null
+            && request.HardwareExitLockEnabled == null
+            && request.TaxRatePercent == null)
         {
             return BadRequest(new SystemConfigResponse
             {
@@ -126,6 +139,36 @@ public class AdminSystemConfigController : ControllerBase
             });
         }
 
+        if (request.OverstayPenaltyMultiplier.HasValue && (request.OverstayPenaltyMultiplier.Value < 1.0m || request.OverstayPenaltyMultiplier.Value > 5.0m))
+        {
+            return BadRequest(new SystemConfigResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "Overstay penalty multiplier must be between 1.0x and 5.0x."
+            });
+        }
+
+        if (request.OverstayMaxDailyPenalty.HasValue && (request.OverstayMaxDailyPenalty.Value < 0m || request.OverstayMaxDailyPenalty.Value > 500m))
+        {
+            return BadRequest(new SystemConfigResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "Maximum daily overstay penalty must be between RM 0 and RM 500."
+            });
+        }
+
+        if (request.TaxRatePercent.HasValue && (request.TaxRatePercent.Value < 0m || request.TaxRatePercent.Value > 30m))
+        {
+            return BadRequest(new SystemConfigResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "Tax rate percent must be between 0% and 30%."
+            });
+        }
+
         try
         {
             var config = await _context.SystemConfigurations
@@ -138,7 +181,11 @@ public class AdminSystemConfigController : ControllerBase
                 {
                     Id = 1,
                     CommissionRate = 10.00m,
-                    GracePeriodMinutes = 15
+                    GracePeriodMinutes = 15,
+                    OverstayPenaltyMultiplier = 1.50m,
+                    OverstayMaxDailyPenalty = 30.00m,
+                    HardwareExitLockEnabled = true,
+                    TaxRatePercent = 8.00m
                 };
                 _context.SystemConfigurations.Add(config);
             }
@@ -151,6 +198,26 @@ public class AdminSystemConfigController : ControllerBase
             if (request.GracePeriodMinutes.HasValue)
             {
                 config.GracePeriodMinutes = request.GracePeriodMinutes.Value;
+            }
+
+            if (request.OverstayPenaltyMultiplier.HasValue)
+            {
+                config.OverstayPenaltyMultiplier = Math.Round(request.OverstayPenaltyMultiplier.Value, 2);
+            }
+
+            if (request.OverstayMaxDailyPenalty.HasValue)
+            {
+                config.OverstayMaxDailyPenalty = Math.Round(request.OverstayMaxDailyPenalty.Value, 2);
+            }
+
+            if (request.HardwareExitLockEnabled.HasValue)
+            {
+                config.HardwareExitLockEnabled = request.HardwareExitLockEnabled.Value;
+            }
+
+            if (request.TaxRatePercent.HasValue)
+            {
+                config.TaxRatePercent = Math.Round(request.TaxRatePercent.Value, 2);
             }
 
             config.UpdatedAt = DateTime.UtcNow;
@@ -170,12 +237,16 @@ public class AdminSystemConfigController : ControllerBase
                 User,
                 "UpdateSystemConfig",
                 true,
-                $"CommissionRate={config.CommissionRate}%, GracePeriod={config.GracePeriodMinutes}m");
+                $"CommissionRate={config.CommissionRate}%, GracePeriod={config.GracePeriodMinutes}m, Multiplier={config.OverstayPenaltyMultiplier}x, Tax={config.TaxRatePercent}%");
 
             var dto = new SystemConfigDTO
             {
                 CommissionRate = config.CommissionRate,
                 GracePeriodMinutes = config.GracePeriodMinutes,
+                OverstayPenaltyMultiplier = config.OverstayPenaltyMultiplier,
+                OverstayMaxDailyPenalty = config.OverstayMaxDailyPenalty,
+                HardwareExitLockEnabled = config.HardwareExitLockEnabled,
+                TaxRatePercent = config.TaxRatePercent,
                 UpdatedAt = config.UpdatedAt,
                 UpdatedByUserId = config.UpdatedByUserId,
                 UpdatedByName = config.UpdatedByUser != null

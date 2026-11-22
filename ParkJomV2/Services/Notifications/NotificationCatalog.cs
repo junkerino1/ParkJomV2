@@ -120,15 +120,56 @@ public static class NotificationCatalog
             Type = "booking.overstay_warning",
             Category = NotificationCategory.Booking,
             DefaultPriority = NotificationPriority.High,
-            DefaultChannels = new() { NotificationChannel.InApp, NotificationChannel.WebPush },
+            DefaultChannels = new() { NotificationChannel.InApp, NotificationChannel.WebPush, NotificationChannel.Email },
             Formatter = data =>
             {
                 var spotName = GetString(data, "spotName", "your parking spot");
                 var windowEnd = GetString(data, "windowEnd", "the scheduled closing time");
+                var graceMinutes = GetInt(data, "graceMinutes", 15);
+                var hourlyTariff = GetString(data, "hourlyTariff", "RM 5.00");
+                var maxPenalty = GetString(data, "maxPenalty", "RM 30.00");
                 var bookingId = GetString(data, "bookingId", "");
                 return (
                     Title: "Parking time exceeded",
-                    Body: $"Today's parking window at {spotName} ended at {windowEnd}. The 15-minute grace period has passed; overstay fees are RM5 per started hour, up to RM30 for this daily window. Please leave now.",
+                    Body: $"Your parking window at {spotName} ended at {windowEnd}. The {graceMinutes}-minute grace period has passed; overstay fees are {hourlyTariff} per started hour (capped at {maxPenalty} daily). Please exit immediately.",
+                    DefaultActionUrl: !string.IsNullOrEmpty(bookingId) ? $"/commuter/bookings/{bookingId}" : "/commuter/bookings"
+                );
+            }
+        });
+
+        Register(new NotificationDefinition
+        {
+            Type = "booking.overstay_waived",
+            Category = NotificationCategory.Booking,
+            DefaultPriority = NotificationPriority.Normal,
+            DefaultChannels = new() { NotificationChannel.InApp, NotificationChannel.Email, NotificationChannel.WebPush },
+            Formatter = data =>
+            {
+                var waivedAmount = GetString(data, "waivedAmount", "RM 0.00");
+                var reason = GetString(data, "reason", "Administrator review");
+                var bookingId = GetString(data, "bookingId", "");
+                return (
+                    Title: "Overstay Penalty Waived",
+                    Body: $"An overstay penalty waiver of {waivedAmount} has been approved ({reason}).",
+                    DefaultActionUrl: !string.IsNullOrEmpty(bookingId) ? $"/commuter/bookings/{bookingId}" : "/commuter/wallet"
+                );
+            }
+        });
+
+        Register(new NotificationDefinition
+        {
+            Type = "booking.overstay_released",
+            Category = NotificationCategory.Booking,
+            DefaultPriority = NotificationPriority.High,
+            DefaultChannels = new() { NotificationChannel.InApp, NotificationChannel.WebPush },
+            Formatter = data =>
+            {
+                var spotName = GetString(data, "spotName", "your parking spot");
+                var reason = GetString(data, "reason", "Operator security release");
+                var bookingId = GetString(data, "bookingId", "");
+                return (
+                    Title: "Hardware Exit Lock Released",
+                    Body: $"The exit lock at {spotName} has been released by operations ({reason}). You may exit safely.",
                     DefaultActionUrl: !string.IsNullOrEmpty(bookingId) ? $"/commuter/bookings/{bookingId}" : "/commuter/bookings"
                 );
             }

@@ -17,6 +17,7 @@ public class AdminDashboardStatsDTO
     public int OpenDisputesCount { get; set; }
     public int ActiveOverstaysCount { get; set; }
     public int OpenTicketsCount { get; set; }
+    public int PendingWithdrawalsCount { get; set; }
 }
 
 public class AdminDashboardBookingCountsDTO

@@ -63,8 +63,22 @@ public class AdminDashboardController : ControllerBase
                 .CountAsync(t => t.Status != SupportTicketStatus.Resolved
                               && t.Status != SupportTicketStatus.Closed);
 
-            var activeOverstaysCount = await _context.Bookings
-                .CountAsync(b => b.BookingStatus == BookingStatus.Active && b.EndDate < now);
+            var openOverstayBookingIds = await _context.OverstayCases
+                .Where(c => c.Status != "Resolved" && c.Status != "Waived" && c.Status != "Released")
+                .Select(c => c.BookingId)
+                .Distinct()
+                .ToListAsync();
+
+            var activeExpiredUnrecordedCount = await _context.Bookings
+                .CountAsync(b => b.BookingStatus == BookingStatus.Active &&
+                                 b.EndDate < now &&
+                                 !openOverstayBookingIds.Contains(b.BookingId));
+
+            var activeOverstaysCount = openOverstayBookingIds.Count + activeExpiredUnrecordedCount;
+
+            var pendingWithdrawalsCount = await _context.Transactions
+                .CountAsync(t => t.TransactionType == TransactionType.Withdrawal &&
+                                 t.TransactionStatus == TransactionStatus.Pending);
 
             // 4. Booking Counts
             var bookingStatusGroups = await _context.Bookings
@@ -116,7 +130,8 @@ public class AdminDashboardController : ControllerBase
                 PendingListingsCount = pendingListingsCount,
                 OpenDisputesCount = openDisputesCount,
                 ActiveOverstaysCount = activeOverstaysCount,
-                OpenTicketsCount = openTicketsCount
+                OpenTicketsCount = openTicketsCount,
+                PendingWithdrawalsCount = pendingWithdrawalsCount
             };
 
             // 6. Weekly trend (past 7 days)

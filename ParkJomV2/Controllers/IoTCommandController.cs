@@ -723,6 +723,30 @@ public sealed class IoTCommandController : ControllerBase
                 .ThenInclude(b => b.ParkingSpot)
             .OrderBy(t => t.CreatedAt)
             .ToListAsync(cancellationToken);
+
+        var lockedCases = await _db.OverstayCases
+            .Where(c => c.RenterId == booking.RenterId && c.HardwareLockActive)
+            .ToListAsync(cancellationToken);
+
+        if (pending.Count == 0 && lockedCases.Count == 0)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+        if (pending.Count == 0 && lockedCases.Any(c => c.CalculatedPenaltyAmount - c.DebitedAmount - c.WaivedAmount > 0m))
+        {
+            var caseDue = lockedCases.Sum(c => Math.Max(0m, c.CalculatedPenaltyAmount - c.DebitedAmount - c.WaivedAmount));
+            await transaction.RollbackAsync(cancellationToken);
+            await LogDeviceActionAsync(device, "overstay_penalty_settlement", "hardware_exit_lock_blocked", booking.BookingId,
+                $"due=RM{caseDue:F2}; lockedCases={lockedCases.Count}");
+            return new ObjectResult(new
+            {
+                success = false,
+                errorCode = "PENALTY_DUE",
+                message = "Unpaid overstay penalties must be paid or released by an administrator before bollard unlock.",
+                data = new { dueAmount = caseDue, walletBalance = renterWallet?.Balance ?? 0m }
+            }) { StatusCode = StatusCodes.Status402PaymentRequired };
+        }
         if (pending.Count == 0)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -777,6 +801,18 @@ public sealed class IoTCommandController : ControllerBase
                 CreatedAt = now,
                 UpdatedAt = now
             });
+        }
+
+        foreach (var overstayCase in lockedCases)
+        {
+            overstayCase.DebitedAmount = Math.Max(0m, overstayCase.CalculatedPenaltyAmount - overstayCase.WaivedAmount);
+            overstayCase.PaymentStatus = "Paid";
+            overstayCase.HardwareLockActive = false;
+            overstayCase.HardwareLockReleasedAtUtc = now;
+            overstayCase.LedgerDebitedAtUtc = now;
+            overstayCase.Status = overstayCase.Status == "Disputed" ? "Disputed" : "Resolved";
+            overstayCase.ResolvedAtUtc ??= now;
+            overstayCase.UpdatedAt = now;
         }
 
         IoTDeviceLogWriter.Add(_db, device, "overstay_penalty_settlement", "completed", now, booking.BookingId,
