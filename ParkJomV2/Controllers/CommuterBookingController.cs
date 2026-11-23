@@ -8,6 +8,7 @@ using ParkJomV2.Models.Constants;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using ParkJomV2.Services.Notifications;
+using ParkJomV2.Services.Overstay;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 
@@ -25,6 +26,7 @@ public class CommuterBookingsController : ControllerBase
     private readonly TransactionService _transactionService;
     private readonly WalletService _walletService;
     private readonly INotificationService _notificationService;
+    private readonly OverstayEnforcementService _overstayService;
     private readonly ILogger<CommuterBookingsController> _logger;
 
     public CommuterBookingsController(
@@ -34,6 +36,7 @@ public class CommuterBookingsController : ControllerBase
         TransactionService transactionService,
         WalletService walletService,
         INotificationService notificationService,
+        OverstayEnforcementService overstayService,
         ILogger<CommuterBookingsController> logger)
     {
         _context = context;
@@ -42,6 +45,7 @@ public class CommuterBookingsController : ControllerBase
         _transactionService = transactionService;
         _walletService = walletService;
         _notificationService = notificationService;
+        _overstayService = overstayService;
         _logger = logger;
     }
 
@@ -452,6 +456,16 @@ public class CommuterBookingsController : ControllerBase
         if (existing != null)
         {
             return ExistingBookingResult(existing, request);
+        }
+
+        var (hasUnpaidPenalty, unpaidAmount) = await _overstayService.TrySettleOrGetUnpaidPenaltyBalanceAsync(userId, cancellationToken);
+        if (hasUnpaidPenalty)
+        {
+            await _accessLogService.LogAsync(User, "ConfirmBooking", false,
+                $"Blocked due to unpaid overstay penalty RM {unpaidAmount:F2}");
+            return StatusCode(StatusCodes.Status402PaymentRequired,
+                Error(StatusCodes.Status402PaymentRequired,
+                    $"You have unpaid overstay penalties of RM {unpaidAmount:F2}. Please top up your wallet to settle your outstanding overstay penalty before booking a new parking spot."));
         }
 
         await using var transaction = await _context.Database.BeginTransactionAsync(

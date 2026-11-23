@@ -201,30 +201,38 @@ public class ParkingSearchController : ControllerBase
                 .Take(pageSize)
                 .ToList();
 
-            var result = pagedSpots.Select(item => new ParkingSearchResultDTO
+            var result = pagedSpots.Select(item =>
             {
-                ParkingSpotId = item.Spot.ParkingSpotId,
-                ParkingLabel = item.Spot.ParkingLabel,
-                PropertyId = item.Spot.PropertyId,
-                PropertyName = item.Spot.Property?.PropertyName,
-                Address = item.Spot.Property?.Address,
-                Latitude = item.Spot.Property?.Latitude ?? 0,
-                Longitude = item.Spot.Property?.Longitude ?? 0,
-                StationName = item.Spot.Property?.Station?.StationName,
-                DistanceToStation = (decimal)Math.Round(item.DistanceKm, 2),
-                TimeToStationInMinutes = (decimal)Math.Round(item.TimeMinutes, 1),
-                AvailabilityStatus = item.Spot.AvailabilityStatus.ToString(),
-                MonthlyRate = item.Spot.MonthlyRate,
-                DailyRate = item.Spot.DailyRate,
-                HasEvCharging = item.Spot.HasEvCharging,
-                EvChargingSpeed = item.Spot.EvChargingSpeed,
-                IsCovered = item.Spot.IsCovered,
-                IsHandicapAccessible = item.Spot.IsHandicapAccessible,
-                HasCctv = item.Spot.HasCctv,
-                PrimaryImageUrl = item.Spot.ParkingSpotImages
-                    .Where(psi => psi.IsPrimary)
-                    .Select(psi => psi.MediaFile?.SecureUrl)
-                    .FirstOrDefault()
+                var propDistKm = (double)(item.Spot.Property?.DistanceToStation ?? 0m);
+                var propWalkMin = item.Spot.Property?.TimeToStation is > 0
+                    ? Math.Round((double)item.Spot.Property.TimeToStation)
+                    : (propDistKm > 0 ? Math.Max(1.0, Math.Round(propDistKm * 12.5 + 0.75)) : Math.Round(item.TimeMinutes));
+
+                return new ParkingSearchResultDTO
+                {
+                    ParkingSpotId = item.Spot.ParkingSpotId,
+                    ParkingLabel = item.Spot.ParkingLabel,
+                    PropertyId = item.Spot.PropertyId,
+                    PropertyName = item.Spot.Property?.PropertyName,
+                    Address = item.Spot.Property?.Address,
+                    Latitude = item.Spot.Property?.Latitude ?? 0,
+                    Longitude = item.Spot.Property?.Longitude ?? 0,
+                    StationName = item.Spot.Property?.Station?.StationName,
+                    DistanceToStation = propDistKm > 0 ? (decimal)Math.Round(propDistKm, 2) : (decimal)Math.Round(item.DistanceKm, 2),
+                    TimeToStationInMinutes = (decimal)propWalkMin,
+                    AvailabilityStatus = item.Spot.AvailabilityStatus.ToString(),
+                    MonthlyRate = item.Spot.MonthlyRate,
+                    DailyRate = item.Spot.DailyRate,
+                    HasEvCharging = item.Spot.HasEvCharging,
+                    EvChargingSpeed = item.Spot.EvChargingSpeed,
+                    IsCovered = item.Spot.IsCovered,
+                    IsHandicapAccessible = item.Spot.IsHandicapAccessible,
+                    HasCctv = item.Spot.HasCctv,
+                    PrimaryImageUrl = item.Spot.ParkingSpotImages
+                        .Where(psi => psi.IsPrimary)
+                        .Select(psi => psi.MediaFile?.SecureUrl)
+                        .FirstOrDefault()
+                };
             }).ToList();
 
             return Ok(new SearchParkingResponse
@@ -345,15 +353,15 @@ public class ParkingSearchController : ControllerBase
                 .Take(pageSize)
                 .ToListAsync();
 
-            // Calculate OSRM walking distances from station to property for each result
+            // Calculate OSRM walking distances from property to station for each result
             var osrmTasks = spots.Select(async ps =>
             {
                 var station = ps.Property?.Station;
                 if (station != null)
                 {
                     var (distKm, timeMin) = await _osrmService.GetWalkingDistanceAsync(
-                        (double)station.Latitude, (double)station.Longitude,
-                        (double)(ps.Property?.Latitude ?? 0), (double)(ps.Property?.Longitude ?? 0));
+                        (double)(ps.Property?.Latitude ?? 0), (double)(ps.Property?.Longitude ?? 0),
+                        (double)station.Latitude, (double)station.Longitude);
                     return (DistanceKm: distKm, TimeMinutes: timeMin);
                 }
                 return (DistanceKm: (double?)null, TimeMinutes: (double?)null);
@@ -361,30 +369,39 @@ public class ParkingSearchController : ControllerBase
 
             var osrmResults = await Task.WhenAll(osrmTasks);
 
-            var result = spots.Select((ps, idx) => new ParkingSearchResultDTO
+            var result = spots.Select((ps, idx) =>
             {
-                ParkingSpotId = ps.ParkingSpotId,
-                ParkingLabel = ps.ParkingLabel,
-                PropertyId = ps.PropertyId,
-                PropertyName = ps.Property?.PropertyName,
-                Address = ps.Property?.Address,
-                Latitude = ps.Property?.Latitude ?? 0,
-                Longitude = ps.Property?.Longitude ?? 0,
-                StationName = ps.Property?.Station?.StationName,
-                DistanceToStation = (decimal)(osrmResults[idx].DistanceKm ?? (double)(ps.Property?.DistanceToStation ?? 0)),
-                TimeToStationInMinutes = (decimal)(osrmResults[idx].TimeMinutes ?? 0),
-                AvailabilityStatus = ps.AvailabilityStatus.ToString(),
-                MonthlyRate = ps.MonthlyRate,
-                DailyRate = ps.DailyRate,
-                HasEvCharging = ps.HasEvCharging,
-                EvChargingSpeed = ps.EvChargingSpeed,
-                IsCovered = ps.IsCovered,
-                IsHandicapAccessible = ps.IsHandicapAccessible,
-                HasCctv = ps.HasCctv,
-                PrimaryImageUrl = ps.ParkingSpotImages
-                    .Where(psi => psi.IsPrimary)
-                    .Select(psi => psi.MediaFile?.SecureUrl)
-                    .FirstOrDefault()
+                var distKm = osrmResults[idx].DistanceKm ?? (double)(ps.Property?.DistanceToStation ?? 0);
+                var timeMin = osrmResults[idx].TimeMinutes
+                    ?? (ps.Property?.TimeToStation is > 0
+                        ? (double)Math.Round(ps.Property.TimeToStation)
+                        : (distKm > 0 ? Math.Max(1.0, Math.Round(distKm * 12.5 + 0.75)) : 0));
+
+                return new ParkingSearchResultDTO
+                {
+                    ParkingSpotId = ps.ParkingSpotId,
+                    ParkingLabel = ps.ParkingLabel,
+                    PropertyId = ps.PropertyId,
+                    PropertyName = ps.Property?.PropertyName,
+                    Address = ps.Property?.Address,
+                    Latitude = ps.Property?.Latitude ?? 0,
+                    Longitude = ps.Property?.Longitude ?? 0,
+                    StationName = ps.Property?.Station?.StationName,
+                    DistanceToStation = (decimal)Math.Round(distKm, 2),
+                    TimeToStationInMinutes = (decimal)Math.Round(timeMin),
+                    AvailabilityStatus = ps.AvailabilityStatus.ToString(),
+                    MonthlyRate = ps.MonthlyRate,
+                    DailyRate = ps.DailyRate,
+                    HasEvCharging = ps.HasEvCharging,
+                    EvChargingSpeed = ps.EvChargingSpeed,
+                    IsCovered = ps.IsCovered,
+                    IsHandicapAccessible = ps.IsHandicapAccessible,
+                    HasCctv = ps.HasCctv,
+                    PrimaryImageUrl = ps.ParkingSpotImages
+                        .Where(psi => psi.IsPrimary)
+                        .Select(psi => psi.MediaFile?.SecureUrl)
+                        .FirstOrDefault()
+                };
             }).ToList();
 
             _logger.LogInformation("Filter returned {Count} results (total {TotalCount})", result.Count, totalCount);
