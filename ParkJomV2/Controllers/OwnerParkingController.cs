@@ -155,7 +155,7 @@ public class OwnerParkingController : ControllerBase
             {
                 PropertyId = property.PropertyId,
                 OwnerId = owner.UserId,
-                ParkingLabel = $"{request.BayNumber}/{request.Level}",
+                ParkingLabel = request.BayNumber.Trim(),
                 AvailabilityStatus = AvailabilityStatus.Inactive,
                 IsPublished = false,
                 IsConfigurationComplete = false,

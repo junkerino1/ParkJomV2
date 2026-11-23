@@ -24,6 +24,7 @@ public sealed class MqttService : BackgroundService, IMqttService
     private readonly int _port;
     private readonly string _clientId;
     private readonly string _topicRoot;
+    private readonly string _publicParkingTopicRoot;
     private readonly string? _username;
     private readonly string? _password;
     private readonly bool _useTls;
@@ -43,6 +44,7 @@ public sealed class MqttService : BackgroundService, IMqttService
         _port = int.TryParse(configuration["Mqtt:Broker:Port"], out var port) ? port : 1883;
         _clientId = configuration["Mqtt:ClientId"] ?? "parkjom-backend";
         _topicRoot = (configuration["Mqtt:TopicRoot"] ?? "parkjom/devices").TrimEnd('/');
+        _publicParkingTopicRoot = (configuration["Mqtt:PublicParkingTopicRoot"] ?? "parkjom/parking").TrimEnd('/');
         _username = configuration["Mqtt:Broker:Username"];
         _password = configuration["Mqtt:Broker:Password"];
         _useTls = bool.TryParse(configuration["Mqtt:Broker:UseTls"], out var useTls) && useTls;
@@ -108,6 +110,9 @@ public sealed class MqttService : BackgroundService, IMqttService
             .WithTopicFilter(filter => filter
                 .WithTopic($"{_topicRoot}/+/telemetry")
                 .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
+            .WithTopicFilter(filter => filter
+                .WithTopic($"{_publicParkingTopicRoot}/+/occupancy")
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce))
             .Build();
 
         while (!stoppingToken.IsCancellationRequested)
@@ -118,7 +123,7 @@ public sealed class MqttService : BackgroundService, IMqttService
                 {
                     await _client.ConnectAsync(options, stoppingToken);
                     await _client.SubscribeAsync(subscription, stoppingToken);
-                    _logger.LogInformation("Connected to MQTT broker {Host}:{Port} (TLS: {TlsEnabled}) and subscribed to device ACK and telemetry topics", _host, _port, _useTls);
+                    _logger.LogInformation("Connected to MQTT broker {Host}:{Port} (TLS: {TlsEnabled}); subscribed to device ACK, telemetry, and public parking occupancy", _host, _port, _useTls);
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
@@ -223,6 +228,11 @@ public sealed class MqttService : BackgroundService, IMqttService
     {
         try
         {
+            if (args.ApplicationMessage.Topic.StartsWith($"{_publicParkingTopicRoot}/", StringComparison.Ordinal))
+            {
+                await HandlePublicParkingOccupancyAsync(args);
+                return;
+            }
             // A retained broker replay is not a new reading or proof that the device is online.
             if (args.ApplicationMessage.Retain) return;
             var topic = args.ApplicationMessage.Topic;
@@ -304,6 +314,33 @@ public sealed class MqttService : BackgroundService, IMqttService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to process an inbound MQTT message");
+        }
+    }
+
+    private async Task HandlePublicParkingOccupancyAsync(MqttApplicationMessageReceivedEventArgs args)
+    {
+        var suffix = args.ApplicationMessage.Topic[(_publicParkingTopicRoot.Length + 1)..].Split('/');
+        if (suffix.Length != 2 || suffix[1] != "occupancy" ||
+            !Guid.TryParseExact(suffix[0], "D", out var deviceUuid) || args.ApplicationMessage.PayloadSegment.Count > 1024)
+        {
+            _logger.LogWarning("Ignored invalid public parking occupancy topic or payload size");
+            return;
+        }
+        try
+        {
+            var payload = Encoding.UTF8.GetString(args.ApplicationMessage.PayloadSegment.ToArray());
+            var reading = PublicParkingOccupancyReading.Parse(payload, DateTimeOffset.UtcNow);
+            if (!string.Equals(deviceUuid.ToString("D"), reading.IotDeviceUuid, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Topic UUID and payload iotDeviceUuid must match.");
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var occupancy = scope.ServiceProvider.GetRequiredService<PublicParkingOccupancyService>();
+            await occupancy.RecordAsync(reading);
+            // Retained snapshots are safe: the stored observation timestamp rejects older/equal reports.
+            // Routine heartbeats update the snapshot instead of adding noisy status-log rows.
+        }
+        catch (Exception ex) when (ex is ArgumentException or JsonException or InvalidOperationException)
+        {
+            _logger.LogWarning("Ignored occupancy report from device {DeviceUuid}: {Reason}", deviceUuid, ex.Message);
         }
     }
 

@@ -7,6 +7,7 @@ using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services;
 using System.Globalization;
+using System.ComponentModel.DataAnnotations;
 
 namespace ParkJomV2.Controllers;
 
@@ -30,6 +31,92 @@ public class OwnerBookingsController : ControllerBase
         _currentUser = currentUser;
         _accessLogService = accessLogService;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Checks an owner's parking spot for Confirmed, Active, or Completed bookings on a Malaysia calendar date.
+    /// </summary>
+    /// <remarks>
+    /// Supply parking_spot_id and date in YYYY-MM-DD format. Booking end dates are exclusive at midnight.
+    /// Returns hasRenter=false and an empty data array when no booking covers the date.
+    /// This checks reservation dates, not physical occupancy or check-in status.
+    /// </remarks>
+    [Authorize(Policy = "PropertyOwnerOnly")]
+    [HttpGet("by-date")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [ProducesResponseType(typeof(OwnerBookingDayResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<OwnerBookingDayResponse>> GetOwnerBookingsByDate(
+        [FromQuery(Name = "parking_spot_id"), Range(1, int.MaxValue)] int parkingSpotId,
+        [FromQuery, Required] string? date,
+        CancellationToken cancellationToken)
+    {
+        if (parkingSpotId <= 0 || !DateOnly.TryParseExact(date?.Trim(), "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var selectedDate))
+        {
+            return BadRequest(new ErrorResponse
+            {
+                Code = StatusCodes.Status400BadRequest,
+                Success = false,
+                Message = "parking_spot_id must be greater than zero and date must use YYYY-MM-DD format."
+            });
+        }
+
+        try
+        {
+            var user = await _currentUser.GetCurrentUserAsync(cancellationToken);
+            if (user is null)
+                return Unauthorized(new ErrorResponse { Code = 401, Success = false, Message = "Authenticated user not found." });
+            if (user.UserType != UserType.PropertyOwner)
+                return StatusCode(403, new ErrorResponse { Code = 403, Success = false, Message = "Only property owners can check renters for their parking spots." });
+
+            var ownerId = await _context.ParkingSpots.AsNoTracking()
+                .Where(spot => spot.ParkingSpotId == parkingSpotId)
+                .Select(spot => (int?)spot.OwnerId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!ownerId.HasValue)
+                return NotFound(new ErrorResponse { Code = 404, Success = false, Message = "Parking spot not found." });
+            if (ownerId.Value != user.UserId)
+                return StatusCode(403, new ErrorResponse { Code = 403, Success = false, Message = "You are not authorized to view bookings for this parking spot." });
+
+            // Stored booking dates are Malaysia calendar values; do not shift them to UTC.
+            var dayStart = selectedDate.ToDateTime(TimeOnly.MinValue);
+            var dayEnd = selectedDate.ToDateTime(TimeOnly.MaxValue);
+            var bookings = await _context.Bookings.AsNoTracking()
+                .Where(booking => booking.ParkingSpotId == parkingSpotId && booking.ParkingSpot.OwnerId == user.UserId &&
+                    booking.StartDate <= dayEnd && booking.EndDate > dayStart &&
+                    (booking.BookingStatus == BookingStatus.Confirmed ||
+                     booking.BookingStatus == BookingStatus.Active ||
+                     booking.BookingStatus == BookingStatus.Completed))
+                .Include(booking => booking.ParkingSpot)
+                .Include(booking => booking.Renter)
+                .Include(booking => booking.Vehicle)
+                .OrderBy(booking => booking.StartDate).ThenBy(booking => booking.BookingId)
+                .ToListAsync(cancellationToken);
+            var data = bookings.Select(MapOwnerBookingSummary).ToList();
+
+            await _accessLogService.LogAsync(User, "GetOwnerBookingsByDate", true,
+                $"ParkingSpotId={parkingSpotId}; Date={selectedDate:yyyy-MM-dd}; Count={data.Count}");
+
+            return Ok(new OwnerBookingDayResponse
+            {
+                Code = StatusCodes.Status200OK,
+                Success = true,
+                Message = data.Count > 0 ? "Renter bookings found for the selected date." : "No renter booking found for the selected date.",
+                ParkingSpotId = parkingSpotId,
+                Date = selectedDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Data = data
+            });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Error checking owner bookings for spot {ParkingSpotId} on {Date}", parkingSpotId, date);
+            return StatusCode(500, new ErrorResponse { Code = 500, Success = false, Message = "An error occurred while checking the parking spot's bookings." });
+        }
     }
 
     /// <summary>

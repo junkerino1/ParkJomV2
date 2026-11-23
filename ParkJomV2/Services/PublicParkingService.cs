@@ -59,8 +59,7 @@ public class PublicParkingService
 
     private static PublicParkingLotDto MapLotDto(PublicParkingLot l, DateTime now)
     {
-        var occupied = l.Sessions.Count;
-        var available = Math.Max(0, l.TotalCapacity - occupied);
+        var occupancy = PublicParkingOccupancy.Summarize(l, new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc)));
         return new PublicParkingLotDto
         {
             PublicParkingLotId = l.PublicParkingLotId,
@@ -72,8 +71,10 @@ public class PublicParkingService
             Latitude = l.Latitude,
             Longitude = l.Longitude,
             TotalCapacity = l.TotalCapacity,
-            OccupiedSpaces = occupied,
-            AvailableSpaces = available,
+            OccupiedSpaces = occupancy.OccupiedSpaces,
+            AvailableSpaces = occupancy.AvailableSpaces,
+            OccupancyStatus = occupancy.Status,
+            OccupancyUpdatedAt = occupancy.UpdatedAt,
             OperatingType = l.OperatingType,
             OpeningTime = l.OpeningTime,
             ClosingTime = l.ClosingTime,
@@ -105,11 +106,7 @@ public class PublicParkingService
         var now = DateTime.UtcNow;
         var query = _context.PublicParkingLots
             .AsNoTracking()
-            .Include(l => l.Owner)
-            .Include(l => l.Sessions.Where(s =>
-                s.Status == PublicParkingSessionStatus.Parked ||
-                s.Status == PublicParkingSessionStatus.PaymentPending ||
-                s.Status == PublicParkingSessionStatus.Paid));
+            .Include(l => l.Owner);
 
         var lots = await (includeAll
             ? query.OrderByDescending(l => l.CreatedAt).ToListAsync(ct)
@@ -126,10 +123,6 @@ public class PublicParkingService
         var lots = await _context.PublicParkingLots
             .AsNoTracking()
             .Include(l => l.Owner)
-            .Include(l => l.Sessions.Where(s =>
-                s.Status == PublicParkingSessionStatus.Parked ||
-                s.Status == PublicParkingSessionStatus.PaymentPending ||
-                s.Status == PublicParkingSessionStatus.Paid))
             .Where(l => l.OwnerId == ownerId)
             .OrderByDescending(l => l.CreatedAt)
             .ToListAsync(ct);
@@ -143,10 +136,6 @@ public class PublicParkingService
         var lot = await _context.PublicParkingLots
             .AsNoTracking()
             .Include(l => l.Owner)
-            .Include(l => l.Sessions.Where(s =>
-                s.Status == PublicParkingSessionStatus.Parked ||
-                s.Status == PublicParkingSessionStatus.PaymentPending ||
-                s.Status == PublicParkingSessionStatus.Paid))
             .FirstOrDefaultAsync(l => l.PublicParkingLotId == lotId, ct);
 
         if (lot == null) return null;
@@ -207,11 +196,11 @@ public class PublicParkingService
             lot.IsIotConnected = true;
             if (!string.IsNullOrWhiteSpace(req.IotDeviceUuid))
             {
-                lot.IotDeviceUuid = req.IotDeviceUuid.Trim();
+                PublicParkingOccupancy.BindDevice(lot, req.IotDeviceUuid);
             }
             else if (string.IsNullOrWhiteSpace(lot.IotDeviceUuid))
             {
-                lot.IotDeviceUuid = $"IOT-GATE-{lot.PublicParkingLotId:D4}";
+                PublicParkingOccupancy.BindDevice(lot, $"IOT-GATE-{lot.PublicParkingLotId:D4}");
             }
         }
         else if (req.Status == VerificationStatus.Rejected)
@@ -265,7 +254,7 @@ public class PublicParkingService
         if (!string.IsNullOrWhiteSpace(req.FacilityPhotoUrl)) lot.FacilityPhotoUrl = req.FacilityPhotoUrl.Trim();
         if (!string.IsNullOrWhiteSpace(req.EntrancePhotoUrl)) lot.EntrancePhotoUrl = req.EntrancePhotoUrl.Trim();
         if (!string.IsNullOrWhiteSpace(req.VerificationDocumentUrl)) lot.VerificationDocumentUrl = req.VerificationDocumentUrl.Trim();
-        if (!string.IsNullOrWhiteSpace(req.IotDeviceUuid)) lot.IotDeviceUuid = req.IotDeviceUuid.Trim();
+        if (!string.IsNullOrWhiteSpace(req.IotDeviceUuid)) PublicParkingOccupancy.BindDevice(lot, req.IotDeviceUuid);
         lot.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync(ct);

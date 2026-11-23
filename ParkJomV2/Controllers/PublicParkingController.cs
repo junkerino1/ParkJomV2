@@ -73,6 +73,7 @@ public class ParkingController : ControllerBase
                 ParkingSpotId = spot.ParkingSpotId,
                 PropertyId = spot.PropertyId,
                 PropertyName = spot.Property?.PropertyName,
+                Description = spot.Description,
                 Address = spot.Property?.Address,
                 Latitude = spot.Property?.Latitude,
                 Longitude = spot.Property?.Longitude,

@@ -32,6 +32,10 @@ public class PublicParkingLot
     [Required]
     public int TotalCapacity { get; set; }
 
+    // Latest aggregate reported by the bound device; no individual bay/sensor records.
+    public int? SensorOccupiedCount { get; set; }
+    public DateTimeOffset? OccupancyObservedAt { get; set; }
+
     [Required]
     public PublicParkingOperatingType OperatingType { get; set; } = PublicParkingOperatingType.Unlimited24Hours;
 

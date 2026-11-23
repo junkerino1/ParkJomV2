@@ -111,7 +111,7 @@ namespace ParkJomV2.Controllers
                 user = new User
                 {
                     GoogleId = googleUser.Sub,
-                    Email = googleUser.Email,
+                    Email = googleUser.Email ?? "",
                     FirstName = firstName,
                     LastName = lastName,
                     ProfilePictureURL = googleUser.Picture,

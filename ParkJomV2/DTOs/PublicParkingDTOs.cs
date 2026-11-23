@@ -148,9 +148,11 @@ public class PublicParkingLotDto
     public decimal Latitude { get; set; }
     public decimal Longitude { get; set; }
     public int TotalCapacity { get; set; }
-    public int OccupiedSpaces { get; set; }
-    public int AvailableSpaces { get; set; }
-    public bool IsFull => AvailableSpaces <= 0;
+    public int? OccupiedSpaces { get; set; }
+    public int? AvailableSpaces { get; set; }
+    public bool? IsFull => AvailableSpaces.HasValue ? AvailableSpaces.Value <= 0 : null;
+    public string OccupancyStatus { get; set; } = "unknown";
+    public DateTimeOffset? OccupancyUpdatedAt { get; set; }
     public PublicParkingOperatingType OperatingType { get; set; }
     public string? OpeningTime { get; set; }
     public string? ClosingTime { get; set; }

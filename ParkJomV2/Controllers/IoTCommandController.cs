@@ -747,19 +747,25 @@ public sealed class IoTCommandController : ControllerBase
 
     private IActionResult? ValidateBleProof(BleVerification? proof, UnlockChallenge challenge)
     {
+        // check if the proof is null or missing required fields
         if (proof is null || string.IsNullOrWhiteSpace(proof.DeviceUuid) || string.IsNullOrWhiteSpace(proof.ChallengeResponse))
             return Error(StatusCodes.Status400BadRequest, "BLE_DEVICE_NOT_FOUND", "A BLE device UUID and challenge response are required.");
 
+        // check if the proof's device UUID matches the challenge's device UUID
         if (!string.Equals(proof.DeviceUuid, challenge.DeviceUuid, StringComparison.OrdinalIgnoreCase))
             return Error(StatusCodes.Status403Forbidden, "BLE_DEVICE_NOT_FOUND", "The BLE proof came from a different device.");
 
+        // retrieve the device secret from configuration
         var secret = _configuration[$"IoT:DeviceSecrets:{challenge.DeviceUuid}"];
         if (string.IsNullOrWhiteSpace(secret))
             return Error(StatusCodes.Status503ServiceUnavailable, "DEVICE_AUTHENTICATION_FAILED", "Device authentication is not configured on the backend.");
 
+        // 
         byte[] supplied;
-        try { supplied = Convert.FromBase64String(proof.ChallengeResponse); }
-        catch (FormatException)
+        try { 
+            supplied = Convert.FromBase64String(proof.ChallengeResponse); 
+            Console.WriteLine($"Supplied challenge response (base64): {proof.ChallengeResponse}");
+        } catch (FormatException)
         {
             return Error(StatusCodes.Status403Forbidden, "BLE_VERIFICATION_FAILED", "The BLE challenge response is invalid.");
         }
