@@ -46,13 +46,9 @@ public class ParkingRegistrationRequest
     public string NearestStationName { get; set; } = string.Empty;
 
     // ── Parking spot fields ──
-    [Required(ErrorMessage = "Bay number is required")]
+    [Required(ErrorMessage = "Bay is required")]
     [StringLength(50)]
     public string BayNumber { get; set; } = string.Empty;
-
-    [Required(ErrorMessage = "Level is required")]
-    [StringLength(50)]
-    public string Level { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Document type is required")]
     public VerificationDocumentType DocumentType { get; set; }

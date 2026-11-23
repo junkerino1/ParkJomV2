@@ -1,5 +1,18 @@
 namespace ParkJomV2.DTOs;
 
+public class OwnerBookingDayResponse
+{
+    public int Code { get; set; }
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int ParkingSpotId { get; set; }
+    public string Date { get; set; } = string.Empty;
+    public string TimeZone { get; set; } = "Asia/Kuala_Lumpur";
+    public bool HasRenter => Data.Count > 0;
+    public int TotalCount => Data.Count;
+    public List<OwnerBookingSummaryResponse> Data { get; set; } = new();
+}
+
 public class OwnerBookingSummaryResponse
 {
     public int BookingId { get; set; }

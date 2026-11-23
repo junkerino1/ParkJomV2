@@ -24,26 +24,17 @@ const char* password = "Pota+0CHIP";
 // 2. MQTT CONFIGURATION
 // =============================================
 
-// Self-hosted Ubuntu Mosquitto broker; keep aligned with Mqtt:Broker in ASP.NET.
 const char* mqttServer = "dns-my.samsam123.name.my";
 const int mqttPort = 48881;
-
-// Set this to the computer's reachable LAN IP running ASP.NET Core.
-// Use the backend's HTTP profile/port for this local prototype.
 const char* apiBaseUrl = "https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.azurewebsites.net";
 
 // =============================================
 // 3. DEVICE IDENTITY
 // =============================================
 
-// Manually assign a unique UUID to each ESP32.
-// Existing UUID stored in NVS takes priority.
-
-const char* configuredDeviceUuid =
-  "7d9f2c41-8a63-4b72-9e15-6c2a0f84b731";
-
-// Provision a unique random Base64 secret using Serial Monitor command SET_SECRET=<secret>.
-// Keep the matching server value in IoT:DeviceSecrets:<device UUID>; never put it in Flutter.
+// Device UUID command Serial Monitor: SET_UUID=<uuid>.
+// Serial Monitor command SET_SECRET=<secret>.
+// Keep the matching server value in IoT:DeviceSecrets:<device UUID>;
 const char* BLE_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const char* BLE_CHALLENGE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 const char* BLE_PROOF_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
@@ -64,7 +55,6 @@ unsigned long bleChallengeStopAt = 0;
 const unsigned long bleChallengeWindowMs = 30000;
 void stopBleChallenge();
 
-// Dynamic MQTT topics
 String commandTopic;
 String ackTopic;
 String telemetryTopic;
@@ -117,28 +107,30 @@ unsigned long lastButtonDebounceAt = 0;
 // 7. LOAD DEVICE UUID FROM NVS
 // =============================================
 
-void loadDeviceUuid() {
-
-  preferences.begin("parkjom", false);
-
-  // Retrieve previously stored UUID
-  deviceId = preferences.getString("deviceUuid", "");
-
-  // First-time initialization
-  if (deviceId.length() == 0) {
-
-    deviceId = configuredDeviceUuid;
-
-    preferences.putString("deviceUuid", deviceId);
-
-    Serial.println(F("New device UUID saved to NVS."));
-
-  } else {
-
-    Serial.println(F("Existing device UUID loaded from NVS."));
+bool isValidDeviceUuid(const String& value) {
+  if (value.length() != 36) return false;
+  for (unsigned int i = 0; i < 36; i++) {
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (value[i] != '-') return false;
+    } else if (!isxdigit(static_cast<unsigned char>(value[i]))) {
+      return false;
+    }
   }
+  return true;
+}
 
+void loadDeviceUuid() {
+  preferences.begin("parkjom", false);
+  deviceId = preferences.getString("deviceUuid", "");
   preferences.end();
+
+  if (!isValidDeviceUuid(deviceId)) {
+    deviceId = "";
+    Serial.println(F("[DEVICE] UUID not provisioned. Enter SET_UUID=<uuid> in Serial Monitor."));
+    return;
+  }
+  deviceId.toLowerCase();
+  Serial.println(F("Existing device UUID loaded from NVS."));
 
   // Generate MQTT topics dynamically
   commandTopic = "parkjom/devices/" + deviceId + "/commands";
@@ -299,12 +291,45 @@ void stopBleChallenge() {
 }
 
 void handleSecretProvisioning() {
+  constexpr char uuidPrefix[] = "SET_UUID=";
   constexpr char userPrefix[] = "SET_MQTT_USER=";
   constexpr char passwordPrefix[] = "SET_MQTT_PASSWORD=";
   constexpr char secretPrefix[] = "SET_SECRET=";
   if (!Serial.available()) return;
   String line = Serial.readStringUntil('\n');
   line.trim();
+  if (line == "SHOW_UUID") {
+    Serial.print(F("[DEVICE] UUID: "));
+    Serial.println(deviceId.length() > 0 ? deviceId : String("not provisioned"));
+    return;
+  }
+  if (line.startsWith(uuidPrefix)) {
+    String value = line.substring(sizeof(uuidPrefix) - 1);
+    value.trim();
+    if (!isValidDeviceUuid(value)) {
+      Serial.println(F("[DEVICE][ERROR] Expected a UUID in xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx format. Nothing was changed."));
+      return;
+    }
+    value.toLowerCase();
+    if (value == deviceId) {
+      Serial.println(F("[DEVICE] This UUID is already configured."));
+      return;
+    }
+    preferences.begin("parkjom", false);
+    const size_t saved = preferences.putString("deviceUuid", value);
+    preferences.end();
+    if (saved == 0) {
+      Serial.println(F("[DEVICE][ERROR] UUID save failed. Existing identity was preserved."));
+      return;
+    }
+    Serial.print(F("[DEVICE] UUID saved: "));
+    Serial.println(value);
+    Serial.println(F("[DEVICE] Restarting to apply the new UUID to registration, MQTT and BLE."));
+    Serial.flush();
+    delay(100);
+    ESP.restart();
+    return;
+  }
   if (line.startsWith(userPrefix)) {
     const String value = line.substring(sizeof(userPrefix) - 1);
     if (value.length() == 0 || value.length() > 128) {
@@ -881,6 +906,10 @@ void setup() {
 
   // Load persistent device identity
   loadDeviceUuid();
+  if (deviceId.length() == 0) {
+    Serial.println(F("[BOOT] Waiting for SET_UUID=<uuid>. Use 115200 baud with Newline enabled."));
+    return;
+  }
   loadDeviceHmacSecret();
   startBleChallengeService();
 
@@ -933,7 +962,9 @@ void setup() {
 // =============================================
 
 void loop() {
-
+  // Serial provisioning remains available even before an identity has been configured.
+  handleSecretProvisioning();
+  if (deviceId.length() == 0) return;
   const unsigned long now = millis();
   if (bleChallengeActive && (long)(now - bleChallengeStopAt) >= 0) {
     Serial.println(F("[BLE] Challenge timed out after 30 seconds."));
@@ -956,7 +987,6 @@ void loop() {
   }
 
   // Process the physical pairing button and MQTT commands on every loop pass.
-  handleSecretProvisioning();
   checkOtpButton();
   if (client.connected()) {
     client.loop();

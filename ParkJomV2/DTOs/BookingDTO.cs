@@ -63,6 +63,8 @@ public class BookingListResponse
 public class BookingHistoryItemDTO
 {
     public BookingResponseDTO Booking { get; set; } = new();
+    public string? PropertyName { get; set; }
+    public string? VehiclePlate { get; set; }
     public bool CanReview { get; set; }
     public ReviewDTO? Review { get; set; }
 }

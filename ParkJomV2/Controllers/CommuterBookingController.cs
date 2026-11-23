@@ -185,6 +185,7 @@ public class CommuterBookingsController : ControllerBase
 
             var bookings = await bookingsQuery
                 .Include(booking => booking.ParkingSpot)
+                    .ThenInclude(spot => spot.Property)
                 .Include(booking => booking.Vehicle)
                 .Include(booking => booking.Reviews.Where(review => review.ReviewerId == user.UserId))
                     .ThenInclude(review => review.Reviewer)
@@ -1164,6 +1165,8 @@ public class CommuterBookingsController : ControllerBase
         return new BookingHistoryItemDTO
         {
             Booking = MapToBookingResponseDTO(booking),
+            PropertyName = booking.ParkingSpot?.Property?.PropertyName,
+            VehiclePlate = booking.Vehicle?.NumberPlate,
             CanReview = booking.BookingStatus == BookingStatus.Completed && review == null,
             Review = review == null ? null : MapToReviewDTO(review, booking)
         };

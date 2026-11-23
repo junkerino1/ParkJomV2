@@ -129,6 +129,7 @@ public class ParkingSpotDetailDTO
     public int ParkingSpotId { get; set; }
     public int PropertyId { get; set; }
     public string? PropertyName { get; set; }
+    public string? Description { get; set; }
     public string? Address { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
