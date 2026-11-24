@@ -1,3 +1,6 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ESP32Servo.h>
@@ -32,9 +35,9 @@ const char* apiBaseUrl = "https://parkjom-api-gbgcbycbcjghczgu.malaysiawest-01.a
 // 3. DEVICE IDENTITY
 // =============================================
 
-// Device UUID command Serial Monitor: SET_UUID=<uuid>.
-// Serial Monitor command SET_SECRET=<secret>.
-// Keep the matching server value in IoT:DeviceSecrets:<device UUID>;
+// Device UUID command: SET_UUID=<uuid>.
+// The backend automatically creates the BLE secret during first registration.
+// SET_SECRET=<secret> remains available over USB as an emergency recovery command.
 const char* BLE_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const char* BLE_CHALLENGE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 const char* BLE_PROOF_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
@@ -68,8 +71,116 @@ constexpr uint8_t SERVO_PIN = 18;
 constexpr uint8_t TRIG_PIN = 5;
 constexpr uint8_t ECHO_PIN = 19;
 constexpr uint8_t OTP_BUTTON_PIN = 23;
+constexpr uint8_t OLED_SDA_PIN = 21;
+constexpr uint8_t OLED_SCL_PIN = 22;
 
 Servo bollardServo;
+constexpr unsigned long OLED_OTP_VISIBLE_MS = 5UL * 60UL * 1000UL;
+Adafruit_SSD1306 oled(128, 64, &Wire, -1, 100000UL, 100000UL);
+bool oledReady = false;
+bool oledOtpVisible = false;
+unsigned long oledOtpRequestStartedAt = 0;
+
+void oledMessage(const char* title, const char* line1, const char* line2) {
+  oledOtpVisible = false;
+  if (!oledReady) return;
+  oled.clearDisplay();
+  oled.setTextSize(1);
+  oled.setTextColor(SSD1306_WHITE);
+  oled.setTextWrap(false);
+  oled.setCursor(0, 0);
+  oled.print(title);
+  oled.setCursor(0, 24);
+  oled.print(line1);
+  oled.setCursor(0, 44);
+  oled.print(line2);
+  oled.display();
+}
+
+void setupOled() {
+  if (!Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN, 100000UL)) {
+    Serial.println(F("[OLED] I2C initialization failed; continuing without display."));
+    return;
+  }
+  Wire.setTimeOut(25);
+  uint8_t address = 0;
+  // Probe both common addresses. An ACK does not identify the controller.
+  for (uint8_t candidate = 0x3C; candidate <= 0x3D; ++candidate) {
+    Wire.beginTransmission(candidate);
+    if (Wire.endTransmission() == 0) {
+      address = candidate;
+      break;
+    }
+  }
+  if (address == 0) {
+    Serial.println(F("[OLED] No ACK at 0x3C/0x3D; continuing without display."));
+    return;
+  }
+  // Wire is already configured; do not let the driver initialize it again.
+  if (!oled.begin(SSD1306_SWITCHCAPVCC, address, true, false)) {
+    Serial.println(F("[OLED] Display buffer initialization failed; continuing."));
+    return;
+  }
+  oledReady = true;
+  Serial.printf("[OLED] SSD1306 initialized at 0x%02X.\n", address);
+  oledMessage("ParkJom", "Starting...", "Press button for OTP");
+}
+
+void showBindingOtp(const String& otp, unsigned long requestStartedAt) {
+  if (!oledReady) return;
+  oled.clearDisplay();
+  oled.setTextColor(SSD1306_WHITE);
+  oled.setTextWrap(false);
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.print("ParkJom binding OTP");
+  // Default font: six 6-pixel cells at size 3 = 108 pixels, centered.
+  oled.setTextSize(3);
+  oled.setCursor(10, 22);
+  oled.print(otp); // String preserves leading zeros, e.g. 004281.
+  oled.setTextSize(1);
+  oled.setCursor(0, 54);
+  oled.print("Enter in ParkJom");
+  oled.display();
+  oledOtpRequestStartedAt = requestStartedAt;
+  oledOtpVisible = true;
+}
+
+void showBollardState(bool unlocked) {
+  oledOtpVisible = false;
+  if (!oledReady) return;
+  oled.clearDisplay();
+  oled.setTextColor(SSD1306_WHITE);
+  oled.setTextWrap(false);
+  oled.setTextSize(1);
+  oled.setCursor(0, 0);
+  oled.print("Bollard status");
+
+  if (unlocked) {
+    // Eight characters fit comfortably at text size 2.
+    oled.setTextSize(2);
+    oled.setCursor(16, 22);
+    oled.print("UNLOCKED");
+  } else {
+    // Six characters fit at text size 3 and are easier to read at a distance.
+    oled.setTextSize(3);
+    oled.setCursor(10, 20);
+    oled.print("LOCKED");
+  }
+
+  oled.setTextSize(1);
+  oled.setCursor(0, 54);
+  oled.print("Press button for OTP");
+  oled.display();
+}
+
+void updateOledOtp(bool unlocked) {
+  // Local screen timeout only. The backend remains the expiry authority.
+  // Start at request time, before HTTP latency, using wrap-safe subtraction.
+  if (oledOtpVisible && millis() - oledOtpRequestStartedAt >= OLED_OTP_VISIBLE_MS) {
+    showBollardState(unlocked);
+  }
+}
 
 // =============================================
 // 5. NETWORK CLIENTS
@@ -186,7 +297,7 @@ class BleChallengeCallbacks : public NimBLECharacteristicCallbacks {
       return;
     }
     if (deviceHmacSecret.length() < 32) {
-      Serial.println(F("[BLE][ERROR] Device secret is not provisioned. Send SET_SECRET=<base64-secret> over USB Serial."));
+      Serial.println(F("[BLE][ERROR] Device secret is not provisioned. Restart to retry registration; USB SET_SECRET is recovery-only."));
       return;
     }
 
@@ -230,6 +341,16 @@ void loadDeviceHmacSecret() {
   Serial.println(deviceHmacSecret.length() >= 32
     ? "[BLE] Device HMAC secret loaded from NVS."
     : "[BLE][WARNING] No device HMAC secret in NVS; BLE verification will fail until provisioned.");
+}
+
+bool saveDeviceHmacSecret(const String& secret) {
+  if (secret.length() < 32 || secret.length() > 128) return false;
+  preferences.begin("parkjom", false);
+  const size_t saved = preferences.putString(BLE_SECRET_PREF_KEY, secret);
+  preferences.end();
+  if (saved == 0) return false;
+  deviceHmacSecret = secret;
+  return true;
 }
 
 void startBleChallengeService() {
@@ -371,12 +492,9 @@ void handleSecretProvisioning() {
     Serial.println(F("[BLE][PROVISION][ERROR] Secret length must be 32 to 128 characters; value was not saved."));
     return;
   }
-  preferences.begin("parkjom", false);
-  const size_t saved = preferences.putString(BLE_SECRET_PREF_KEY, secret);
-  preferences.end();
+  const bool saved = saveDeviceHmacSecret(secret);
   secret = "";
-  if (saved > 0) {
-    loadDeviceHmacSecret();
+  if (saved) {
     Serial.println(F("[BLE][PROVISION] Device secret saved to NVS. Secret value was not logged."));
   } else {
     Serial.println(F("[BLE][PROVISION][ERROR] NVS save failed."));
@@ -461,6 +579,17 @@ void registerDeviceWithBackend() {
 
   deviceRegistered = statusCode >= 200 && statusCode < 300 && jsonSuccess(responseBody);
   if (deviceRegistered) {
+    String issuedSecret = jsonStringField(responseBody, "deviceSecret");
+    if (issuedSecret.length() > 0) {
+      if (saveDeviceHmacSecret(issuedSecret)) {
+        Serial.println(F("[BLE][PROVISION] Backend-generated device secret saved to NVS."));
+      } else {
+        Serial.println(F("[BLE][PROVISION][ERROR] Backend returned a secret, but it could not be saved to NVS."));
+      }
+      issuedSecret = "";
+    } else if (deviceHmacSecret.length() < 32) {
+      Serial.println(F("[BLE][PROVISION][WARNING] Registration succeeded without a new secret and NVS has no valid secret."));
+    }
     registrationRetryDelay = registrationRetryInitialDelay;
     Serial.println(F("[HTTP][REGISTER] Registration confirmed (new or already registered). No more registration retries needed."));
   } else if ((statusCode >= 300 && statusCode < 400)
@@ -468,8 +597,7 @@ void registerDeviceWithBackend() {
       || (statusCode >= 200 && statusCode < 300)) {
     // Redirects, client errors, and unexpected success bodies will not improve by repeated posting.
     registrationBlocked = true;
-    Serial.print(F("[HTTP][REGISTER][STOPPED] Response: "));
-    Serial.println(responseBody);
+    Serial.println(F("[HTTP][REGISTER][STOPPED] Registration was rejected; response body omitted."));
   } else {
     Serial.print(F("[HTTP][REGISTER][WARNING] Temporary failure. Next retry in "));
     Serial.print(registrationRetryDelay / 1000);
@@ -483,13 +611,17 @@ void registerDeviceWithBackend() {
 
 // Request a short-lived binding code when the physical button is pressed.
 void requestBindingOtp() {
+  const unsigned long otpRequestStartedAt = millis();
+  oledMessage("ParkJom", "Requesting OTP...", "Please wait");
   Serial.println();
   Serial.println(F("[OTP] Physical button press detected."));
   if (WiFi.status() != WL_CONNECTED) {
+    oledMessage("OTP unavailable", "Wi-Fi disconnected", "Press again to retry");
     Serial.println(F("[OTP][ERROR] Cannot request OTP: Wi-Fi is disconnected."));
     return;
   }
   if (!deviceRegistered) {
+    oledMessage("OTP unavailable", "Not registered yet", "Press again later");
     Serial.println(F("[OTP][ERROR] Device is not registered yet; wait for registration retry."));
     return;
   }
@@ -502,6 +634,7 @@ void requestBindingOtp() {
   Serial.println(F("[OTP] Requesting binding code."));
 
   if (!http.begin(url)) {
+    oledMessage("OTP unavailable", "HTTP setup failed", "Press again to retry");
     Serial.println(F("[OTP][ERROR] Could not initialize HTTP client."));
     return;
   }
@@ -520,6 +653,7 @@ void requestBindingOtp() {
   const String otp = jsonStringField(responseBody, "otp");
   const String expiresAtUtc = jsonStringField(responseBody, "expiresAtUtc");
   if (statusCode == 200 && jsonSuccess(responseBody) && otp.length() == 6) {
+    showBindingOtp(otp, otpRequestStartedAt);
     Serial.println(F("[OTP] ========================================"));
     Serial.print(F("[OTP] BINDING CODE: "));
     Serial.println(otp);
@@ -529,6 +663,7 @@ void requestBindingOtp() {
     Serial.println(F("[OTP] Keep this code private; it is valid for five minutes."));
     Serial.println(F("[OTP] ========================================"));
   } else {
+    oledMessage("OTP unavailable", "Request failed", "Press again to retry");
     Serial.print(F("[OTP][ERROR] Invalid OTP response: "));
     Serial.println(responseBody);
   }
@@ -761,6 +896,7 @@ void callback(
     bollardServo.write(90);
 
     bollardUnlocked = true;
+    showBollardState(bollardUnlocked);
 
     result = "SUCCESS";
 
@@ -785,6 +921,7 @@ void callback(
       } else {
         bollardServo.write(0);
         bollardUnlocked = false;
+        showBollardState(bollardUnlocked);
         result = "SUCCESS";
         Serial.println(F("[SERVO] Commanded LOCK position (0 degrees)."));
       }
@@ -903,10 +1040,12 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println(F("[BOOT] ParkJom bollard starting."));
+  setupOled();
 
   // Load persistent device identity
   loadDeviceUuid();
   if (deviceId.length() == 0) {
+    oledMessage("Setup required", "Set UUID via USB", "Serial: 115200 baud");
     Serial.println(F("[BOOT] Waiting for SET_UUID=<uuid>. Use 115200 baud with Newline enabled."));
     return;
   }
@@ -954,6 +1093,7 @@ void setup() {
   lastRegistrationAttempt = millis();
   registerDeviceWithBackend();
 
+  showBollardState(bollardUnlocked);
   Serial.println(F("[BOOT] Setup complete."));
 }
 
@@ -964,6 +1104,7 @@ void setup() {
 void loop() {
   // Serial provisioning remains available even before an identity has been configured.
   handleSecretProvisioning();
+  updateOledOtp(bollardUnlocked);
   if (deviceId.length() == 0) return;
   const unsigned long now = millis();
   if (bleChallengeActive && (long)(now - bleChallengeStopAt) >= 0) {

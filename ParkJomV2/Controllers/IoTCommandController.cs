@@ -414,7 +414,7 @@ public sealed class IoTCommandController : ControllerBase
                 return Error(StatusCodes.Status400BadRequest, "INVALID_CHALLENGE", "The challenge does not belong to this booking, renter, and device.");
             }
 
-            var bleError = ValidateBleProof(request.BleVerification, challenge);
+            var bleError = ValidateBleProof(request.BleVerification, challenge, device.DeviceSecret);
             if (bleError is not null)
             {
                 await LogDeviceActionAsync(device, "ble_proof_verification", "failed", booking.BookingId, $"challengeId={challenge.ChallengeId}; {bleError}");
@@ -764,7 +764,7 @@ public sealed class IoTCommandController : ControllerBase
         return null;
     }
 
-    private IActionResult? ValidateBleProof(BleVerification? proof, UnlockChallenge challenge)
+    private IActionResult? ValidateBleProof(BleVerification? proof, UnlockChallenge challenge, string? deviceSecret)
     {
         // check if the proof is null or missing required fields
         if (proof is null || string.IsNullOrWhiteSpace(proof.DeviceUuid) || string.IsNullOrWhiteSpace(proof.ChallengeResponse))
@@ -774,23 +774,23 @@ public sealed class IoTCommandController : ControllerBase
         if (!string.Equals(proof.DeviceUuid, challenge.DeviceUuid, StringComparison.OrdinalIgnoreCase))
             return Error(StatusCodes.Status403Forbidden, "BLE_DEVICE_NOT_FOUND", "The BLE proof came from a different device.");
 
-        // retrieve the device secret from configuration
-        var secret = _configuration[$"IoT:DeviceSecrets:{challenge.DeviceUuid}"];
-        if (string.IsNullOrWhiteSpace(secret))
-            return Error(StatusCodes.Status503ServiceUnavailable, "DEVICE_AUTHENTICATION_FAILED", "Device authentication is not configured on the backend.");
+        // The secret is generated at registration and retained on the assigned device record.
+        if (string.IsNullOrWhiteSpace(deviceSecret))
+            return Error(StatusCodes.Status503ServiceUnavailable, "DEVICE_AUTHENTICATION_FAILED", "The device has not completed automatic secret provisioning.");
 
         // 
         byte[] supplied;
-        try { 
-            supplied = Convert.FromBase64String(proof.ChallengeResponse); 
-            Console.WriteLine($"Supplied challenge response (base64): {proof.ChallengeResponse}");
-        } catch (FormatException)
+        try
+        {
+            supplied = Convert.FromBase64String(proof.ChallengeResponse);
+        }
+        catch (FormatException)
         {
             return Error(StatusCodes.Status403Forbidden, "BLE_VERIFICATION_FAILED", "The BLE challenge response is invalid.");
         }
 
         var message = challenge.Nonce + challenge.DeviceUuid.ToLowerInvariant() + challenge.ChallengeId;
-        var expected = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(message));
+        var expected = HMACSHA256.HashData(Encoding.UTF8.GetBytes(deviceSecret), Encoding.UTF8.GetBytes(message));
         return supplied.Length == expected.Length && CryptographicOperations.FixedTimeEquals(supplied, expected)
             ? null
             : Error(StatusCodes.Status403Forbidden, "BLE_VERIFICATION_FAILED", "The BLE challenge response could not be verified.");

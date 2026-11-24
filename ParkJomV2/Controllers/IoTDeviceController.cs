@@ -139,7 +139,11 @@ public sealed class IoTDeviceController : ControllerBase
             Data = devices
         };
 
-    /// <summary>Registers a UUID once; repeat requests return the existing device without changing its assignment.</summary>
+    /// <summary>Registers a UUID and returns a generated device secret only when one is first created.</summary>
+    /// <remarks>
+    /// The ESP32 must save data.deviceSecret in NVS immediately. Later registration responses omit the secret
+    /// and preserve the existing parking-spot assignment.
+    /// </remarks>
     [AllowAnonymous]
     [HttpPost("register")]
     public async Task<IActionResult> RegisterDevice(
@@ -148,14 +152,25 @@ public sealed class IoTDeviceController : ControllerBase
     {
         try
         {
-            var (device, created) = await _devices.RegisterAsync(request.DeviceUuid, cancellationToken);
+            var (device, created, issuedSecret) = await _devices.RegisterAsync(request.DeviceUuid, cancellationToken);
             var statusCode = created ? StatusCodes.Status201Created : StatusCodes.Status200OK;
-            return StatusCode(statusCode, new IoTApiResponse<IoTDeviceResponse>
+            return StatusCode(statusCode, new IoTApiResponse<IoTDeviceRegistrationResponse>
             {
                 Code = statusCode,
                 Success = true,
-                Message = created ? "Device registered." : "Device already registered; existing assignment preserved.",
-                Data = device
+                Message = created
+                    ? "Device registered and secret provisioned."
+                    : issuedSecret is not null
+                        ? "Existing device secret provisioned; assignment preserved."
+                        : "Device already registered; existing secret and assignment preserved.",
+                Data = new IoTDeviceRegistrationResponse
+                {
+                    DeviceUuid = device.DeviceUuid,
+                    DeviceStatus = device.DeviceStatus,
+                    IsAssigned = device.IsAssigned,
+                    ParkingSpotId = device.ParkingSpotId,
+                    DeviceSecret = issuedSecret
+                }
             });
         }
         catch (IoTDeviceOperationException ex)
