@@ -284,8 +284,10 @@ public sealed class IoTDeviceService
             })
             .ToListAsync(cancellationToken);
 
-    /// <summary>Registers a UUID as an online, unassigned device without changing an existing record.</summary>
-    public async Task<(IoTDeviceResponse Device, bool Created)> RegisterAsync(string deviceUuid, CancellationToken cancellationToken)
+    /// <summary>Registers a UUID and issues its generated BLE secret once without changing an existing assignment.</summary>
+    public async Task<(IoTDeviceResponse Device, bool Created, string? IssuedSecret)> RegisterAsync(
+        string deviceUuid,
+        CancellationToken cancellationToken)
     {
         var normalizedUuid = NormalizeUuid(deviceUuid);
         if (normalizedUuid is null)
@@ -296,13 +298,24 @@ public sealed class IoTDeviceService
         var existing = await _db.IoTDevices.SingleOrDefaultAsync(d => d.Esp32Serial == normalizedUuid, cancellationToken);
         if (existing is not null)
         {
+            // Existing rows from before this feature receive a secret on their next boot registration.
+            // Once stored, subsequent anonymous registrations must not disclose it again.
+            string? issuedSecret = null;
+            if (string.IsNullOrWhiteSpace(existing.DeviceSecret))
+            {
+                existing.DeviceSecret = GenerateDeviceSecret();
+                issuedSecret = existing.DeviceSecret;
+            }
+
             // A successful boot registration proves the device is currently reachable.
             existing.DeviceStatus = DeviceStatus.Online;
             existing.UpdatedAt = DateTime.UtcNow;
             IoTDeviceLogWriter.Add(_db, existing, "device_registration", "already_registered", existing.UpdatedAt,
-                details: "Boot registration confirmed the existing device is online.");
+                details: issuedSecret is null
+                    ? "Boot registration confirmed the existing device is online."
+                    : "Boot registration confirmed the device and provisioned its database-managed secret.");
             await _db.SaveChangesAsync(cancellationToken);
-            return (ToResponse(existing), false);
+            return (ToResponse(existing), false, issuedSecret);
         }
 
         var now = DateTime.UtcNow;
@@ -310,6 +323,7 @@ public sealed class IoTDeviceService
         {
             Esp32Serial = normalizedUuid,
             FirmwareVersion = "unknown",
+            DeviceSecret = GenerateDeviceSecret(),
             DeviceStatus = DeviceStatus.Online,
             IsAssigned = false,
             ParkingSpotId = null,
@@ -324,7 +338,7 @@ public sealed class IoTDeviceService
             IoTDeviceLogWriter.Add(_db, device, "device_registration", "registered", now,
                 details: "Device UUID registered and marked online.");
             await _db.SaveChangesAsync(cancellationToken);
-            return (ToResponse(device), true);
+            return (ToResponse(device), true, device.DeviceSecret);
         }
         catch (DbUpdateException)
         {
@@ -341,7 +355,7 @@ public sealed class IoTDeviceService
             IoTDeviceLogWriter.Add(_db, winner, "device_registration", "already_registered", winner.UpdatedAt,
                 details: "Concurrent boot registration confirmed the existing device is online.");
             await _db.SaveChangesAsync(cancellationToken);
-            return (ToResponse(winner), false);
+            return (ToResponse(winner), false, null);
         }
     }
 
@@ -499,6 +513,9 @@ public sealed class IoTDeviceService
 
     private static string? NormalizeUuid(string? value)
         => Guid.TryParseExact(value, "D", out var uuid) ? uuid.ToString("D") : null;
+
+    private static string GenerateDeviceSecret()
+        => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
     private static IoTDeviceResponse ToResponse(IoTDevice device) => new()
     {

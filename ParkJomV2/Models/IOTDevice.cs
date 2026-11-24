@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using ParkJomV2.Models.Enums;
 
 namespace ParkJomV2.Models;
@@ -19,6 +20,11 @@ public class IoTDevice
     [Required]
     [StringLength(100)]
     public string FirmwareVersion { get; set; } = string.Empty;
+
+    // Generated once during device registration. Never expose this through inventory APIs.
+    [JsonIgnore]
+    [StringLength(128)]
+    public string? DeviceSecret { get; set; }
 
     [Required]
     public DeviceStatus DeviceStatus { get; set; }

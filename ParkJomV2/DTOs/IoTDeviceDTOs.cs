@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace ParkJomV2.DTOs;
 
@@ -28,6 +29,18 @@ public sealed class IoTDeviceResponse
     public string DeviceStatus { get; set; } = string.Empty;
     public bool IsAssigned { get; set; }
     public int? ParkingSpotId { get; set; }
+}
+
+public sealed class IoTDeviceRegistrationResponse
+{
+    public string DeviceUuid { get; set; } = string.Empty;
+    public string DeviceStatus { get; set; } = string.Empty;
+    public bool IsAssigned { get; set; }
+    public int? ParkingSpotId { get; set; }
+
+    // Returned only when registration creates a secret for this device.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeviceSecret { get; set; }
 }
 
 public sealed class IoTOtpResponse
