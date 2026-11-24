@@ -1,302 +1,99 @@
-# ParkJom V2 — Smart Transit Parking Platform
+# ParkJom
 
-**ParkJom** is a peer-to-peer parking platform for the Klang Valley, Malaysia. It connects condominium/residential parking spot owners with commuters near LRT/MRT stations, secured by IoT smart bollards.
+I built ParkJom to help Klang Valley commuters find parking near LRT and MRT stations before they leave home. Drivers can reserve a private bay and unlock its smart bollard when they arrive, or check the latest availability at a public lot.
 
-> "Secure your LRT parking before you drive."
+**[Live app at parkjom.web.app](https://parkjom.web.app)** · [Frontend source](https://github.com/ChunJIA614/ParkJom-Frontend)
 
----
+This repository contains the backend and the ESP32 firmware.
 
-## Table of Contents
+[Features](#features) · [Architecture](#architecture) · [IoT and security](#iot-and-security) · [Installation](#installation) · [Usage](#usage) · [Contributing](#contributing) · [License](#license)
 
-- [Architecture Overview](#architecture-overview)
-- [Tech Stack](#tech-stack)
-- [What's Done ✅](#whats-done-)
-- [What's Partially Done ⚠️](#whats-partially-done-)
-- [What's Missing / Not Done ❌](#whats-missing--not-done-)
-- [How to Run](#how-to-run)
-- [Project Structure](#project-structure)
+## Features
 
----
+- **Find parking near transit.** Search by station or location, compare parking options and walking routes, and save favorites. The transit copilot can suggest where to park, and congestion forecasts combine typical demand patterns with current parking activity and weather.
+- **Reserve and pay.** Check availability, get a quote, and book a private bay. Drivers can top up their wallet through Stripe, manage registered vehicles, cancel eligible bookings and review a spot after parking.
+- **Manage parking as an owner.** Set prices and available dates, manage listing photos, see who has booked a bay on a given day, and track earnings and withdrawals.
+- **Use public drive-in parking.** Check the latest sensor count, look up a parking session, and pay for it with the ParkJom wallet or Stripe. Owners can manage their lots and review active sessions.
+- **Handle day-to-day operations.** Property managers can review bookings, check plates and inspect access events for their properties. ParkJom sends booking reminders, monitors overstays, and gives support staff tools to handle tickets, incidents and disputes.
 
-## Architecture Overview
+## Architecture
 
-The solution contains **two .NET 9.0 projects** that are complementary:
+I use an ASP.NET Core API to handle bookings, payments and permissions. SQL Server records those transactions along with device readings, so an owner can see the same booking the API checks when a renter asks to unlock.
 
-### 1. `ParkJomV2/` — Main Production API Skeleton
-
-The intended production backend. It has a **complete SQL Server database schema** (16 models + EF Core migrations) but **zero API endpoints**.
-
-| Layer | Status |
-|-------|--------|
-| Database Schema (EF Core) | ✅ All 16 tables migrated |
-| API Controllers | ❌ Only `UserController` exists — empty |
-| Authentication | ❌ None configured |
-| Frontend | ❌ None |
-
-### 2. `ParkJomV2.Web` — Working Web API
-
-A **functional web API** (in `src/ParkJomV2.Web/`) with a complete React SPA frontend (in `frontend/`):
-- `src/ParkJomV2.Web/` — lightweight .NET 9 API (auth + nearby search)
-- `frontend/` — complete React SPA (3 dashboards + landing page)
-
-| Layer | Status |
-|-------|--------|
-| ASP.NET Web API (`src/ParkJomV2.Web/`) | ✅ Auth + Nearby Search API |
-| Auth (Google OAuth + JWT) | ✅ Complete flow |
-| React SPA (`frontend/`) | ✅ 3 dashboards + Landing Page |
-| Database | ⚠️ In-memory mock data only |
-
-**The intended merge path:** The `ParkJomV2.Web` API's in-memory stores are marked with TODOs to be replaced by `ParkJomV2`'s EF Core `DbContext`.
-
----
-
-## Tech Stack
-
-### Backend
-
-| Technology | ParkJomV2 (DB Schema) | ParkJomV2.Web (API) |
-|-----------|------------------------|----------------------|
-| **Framework** | .NET 9.0 Web API | .NET 9.0 Web API |
-| **Database** | SQL Server (EF Core) | In-memory (mock) |
-| **Auth** | — | Google OAuth + JWT Bearer |
-| **ORM** | Entity Framework Core 9 | — |
-| **Port** | 5276 (HTTP) / 7250 (HTTPS) | 5176 (HTTP) / 7227 (HTTPS) |
-
-### Frontend (shared)
-
-| Category | Libraries |
-|----------|-----------|
-| **Core** | React 19, TypeScript 5.8, Vite 6 |
-| **Styling** | TailwindCSS 4 |
-| **Routing** | React Router 7 |
-| **Maps** | Leaflet + react-leaflet |
-| **Animation** | Motion (Framer Motion) |
-| **Charts** | Recharts |
-| **Auth** | @react-oauth/google |
-| **Deploy** | Firebase Hosting |
-
----
-
-## What's Done ✅
-
-### Database Schema (ParkJomV2)
-
-16 fully modeled entities with EF Core relationships and constraints:
-
-| Model | Purpose |
-|-------|---------|
-| **User** | Full user profile with auth fields (RefreshToken, EmailVerifiedAt, LastLoginAt) |
-| **Property** | Condominium/apartment with GPS coords + nearest transit station |
-| **ParkingSpot** | Individual bays linked to property, owner, IoT device, pricing |
-| **Booking** | Full booking lifecycle with unique reference, status tracking |
-| **Vehicle** | User vehicles with number plate |
-| **Wallet** | 1:1 per user with balance + on-hold tracking |
-| **Transaction** | Top-up / Payment / Refund / Withdrawal ledger |
-| **IoTDevice** | ESP32 serial, firmware, heartbeat tracking |
-| **IoTStatusLog** | Device telemetry history |
-| **AccessLog** | Booking access audit trail |
-| **ParkingSpotImage** | Multi-image support with display order |
-| **MediaFile** | Cloudinary-compatible media storage |
-| **ParkingVerificationRequest** | Document-based property verification workflow |
-| **VerificationDocument** | SPA/Utility Bill/IC uploads |
-| **Review** | 1-5 star rating with owner reply |
-| **Favorite** | Saved spots |
-
-11 enums covering all domain states.
-
-### Frontend (ParkJomV2.Web)
-
-- **Landing Page** — Apple-style marketing hero, how-it-works, features, stats, FAQ accordion, footer
-- **Login** — Google OAuth sign-in + 3 demo role buttons (Commuter / Owner / Admin)
-- **Commuter Dashboard** — 5-tab mobile-first UI: Home, Active Booking, Wallet, Profile, Map
-  - Interactive Leaflet map with GTFS rail lines overlay
-  - Station search + Haversine distance filtering
-  - Active booking countdown timer, GPS zone verification
-  - IoT bollard control (QR scan, raise/lower animation)
-  - Wallet top-up, vehicle management, booking history
-  - Parking detail page with OSRM walking distance calculator
-- **Owner Dashboard** — Earnings overview, IoT device monitor
-  - Property onboarding with Nominatim geocoding + nearest station auto-detect
-  - Availability scheduler (per-day-of-week)
-  - Settings panel (bank account, auto-payout)
-  - Support tickets with dispute timeline
-- **Admin Dashboard** — Platform stats, listing governance, IoT health monitor
-  - Financial settlement, overstay enforcement
-  - Support/dispute resolution, system audit log
-  - System configuration (commission %, grace period)
-- **Nearby API** — Haversine-based with 14 simulated spots across 4 LRT/MRT stations
-
-### Project Configuration
-
-- Firebase hosting config (`.firebaserc`, `firebase.json`)
-- Vite build pipeline (outputs to `src/ParkJomV2.Web/wwwroot/`)
-- Service worker for PWA support
-
----
-
-## What's Partially Done ⚠️
-
-| Item | Detail |
-|------|--------|
-| **ParkJomV2 Controllers** (`ParkJomV2/`) | Only `UserController.cs` exists — class body is completely empty |
-| **Auth in ParkJomV2** | Database schema has `RefreshToken`, `PasswordHash`, `EmailVerifiedAt` fields but no auth endpoints or middleware |
-| **ParkJomV2.Web Auth** (`src/ParkJomV2.Web/`) | Uses in-memory `Dictionary<string, ...>` for users — marked `TODO: replace with DbContext.Users` |
-| **Nearby API** | Uses hardcoded anonymous objects — not querying a real database |
-| **JWT Secret Keys** | Hardcoded in source code (`ParkJom_SuperSecret_Key_2026...`) — needs User Secrets / Key Vault |
-| **Notification Model** | Commented out in `ApplicationDbContext.cs` |
-| **READMEs** | Both `ParkJomV2/README.md` and root `README.md` were empty — this file now addresses that |
-| **Google GenAI API Key** (`src/ParkJomV2.Web/`) | `GoogleGenAI:ApiKey` is hardcoded in `Program.cs` with a fallback — not in `appsettings.json` |
-| **Phone Number** | Placeholder `+60 3-XXXX XXXX` on landing page |
-| **GTFS Data** | Conversion script (`convert-gtfs.cjs`) exists but isn't integrated into any pipeline |
-
----
-
-## What's Missing / Not Done ❌
-
-### API Layer (ParkJomV2)
-
-- **All CRUD endpoints** — Users, Properties, ParkingSpots, Bookings, Vehicles, Wallets, Transactions, IoT devices, Reviews, Favorites — **none implemented**
-- **Authentication / Authorization** — No login, register, JWT middleware, role-based access
-- **Swagger / OpenAPI** — No API documentation endpoint
-- **CORS configuration**
-- **Structured logging** (Serilog, Application Insights)
-
-### Production Features
-
-| Feature | Status |
-|---------|--------|
-| Real IoT device integration (ESP32 firmware, MQTT/WebSocket) | ❌ |
-| Payment gateway (FPX, credit/debit card processing) | ❌ |
-| Real-time updates (SignalR for live bollard/booking state) | ❌ |
-| Push notifications (FCM / APNs) | ❌ |
-| Email service (verification, receipts, reminders) | ❌ |
-| SMS / WhatsApp notifications | ❌ |
-| Rate limiting / API security | ❌ |
-| Docker / containerization | ❌ |
-| CI/CD pipeline | ❌ |
-| Unit / integration tests (both projects) | ❌ |
-| Admin user management API | ❌ |
-| GTFS real-time schedule integration | ❌ |
-| Multi-language support (BM, CN, Tamil) | ❌ |
-
-### Other
-
-- **No seeding data** for ParkJomV2's database
-- **No database migration** beyond `InitialCreate`
-- **No error handling middleware** in ParkJomV2
-
----
-
-## How to Run
-
-### Prerequisites
-
-- [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Node.js 20+](https://nodejs.org/)
-- SQL Server (for ParkJomV2) or skip (Testing uses in-memory)
-
-### ParkJomV2.Web (Web API + Frontend)
-
-```bash
-# 1. Start the .NET Web API
-cd src/ParkJomV2.Web
-dotnet run
-
-# 2. In a separate terminal, start the frontend dev server
-cd frontend
-npm install
-npm run dev
+```mermaid
+flowchart LR
+    App["ParkJom app"] <-->|HTTPS| API["ASP.NET Core API"]
+    API <-->|EF Core| DB[("SQL Server")]
+    API <-->|MQTT| Broker["MQTT broker"]
+    Broker <-->|Commands and status| Bollard["ESP32 bollard"]
+    Sensor["ESP32 lot sensor"] -->|Occupancy| Broker
+    App <-->|BLE challenge and response| Bollard
 ```
 
-The API runs on `http://localhost:5176` and the frontend on `http://localhost:3000`.
+| Area | Stack |
+| --- | --- |
+| Backend and storage | C#, .NET 9, ASP.NET Core, Entity Framework Core and SQL Server |
+| Devices | Arduino ESP32 firmware, MQTTnet, PubSubClient, NimBLE, ultrasonic sensors and an SSD1306 OLED |
+| Maps and transit | Nominatim geocoding, OSRM routing, GTFS schedules and GTFS-Realtime vehicle data |
+| Trip assistance | Gemini for the copilot and ML.NET FastTree for congestion forecasts |
+| Payments and media | Stripe for checkout and Cloudinary for photos and documents |
+| Communication | SignalR, WebSockets, Web Push, SMTP and SMS360 |
 
-### ParkJomV2 Main API
+## IoT and security
 
-```bash
+### What the devices do
+
+- **Private bollard.** The ESP32 moves a servo when it receives a lock or unlock command. An ultrasonic check blocks the lock movement if something is in the way or the sensor cannot get a valid reading. The OLED shows the commanded lock state and the six-digit pairing code. Owners can view the last reported status or request a fresh scan. [Smart bollard firmware](iot/smart-bollard/smart-bollard.ino)
+- **Public-lot sensor.** A separate ESP32 reads two ultrasonic sensors and publishes a timestamped occupancy count over MQTT. In a two-space lot, a count of one occupied space leaves one available. The UI can distinguish a fresh reading, a stale reading and an unknown count. [Public parking firmware](iot/public-parking/public-parking.ino)
+
+### How a renter unlocks a bollard
+
+1. **Register and pair the bollard.** The backend generates a random key when the device first registers. The ESP32 saves its copy for future boots. An owner presses the physical button and enters the short-lived code shown on the OLED to link the device to their bay. The backend checks ownership and limits pairing attempts.
+2. **Check the booking and location.** When a renter requests an unlock, the API checks that their booking allows access at that time and that their phone reports a recent GPS reading near the property. It then creates a short-lived challenge for that renter, booking and bollard.
+3. **Verify the Bluetooth response.** The phone passes the challenge to the bollard over BLE. The device uses HMAC-SHA256 and its saved key to calculate a response. The phone relays that response to the API. The shared key stays with the device and backend during this exchange.
+4. **Authorize the movement.** The backend calculates its own response and compares it with the device's response. After a match, it consumes the challenge before sending the unlock command over MQTT. Each challenge expires and can be used only once.
+
+I use Google sign-in, SMS phone verification, revocable JWT sessions, and role and ownership checks. The API verifies Stripe webhook signatures before processing payment events. Initial device registration relies on a device identifier, so first-time registration is intended for controlled setup.
+
+## Installation
+
+You'll need Git, the .NET 9 SDK, a local SQL Server instance with an empty development database, and the EF Core CLI. Install the CLI if needed. [EF Core CLI guide](https://learn.microsoft.com/en-us/ef/core/cli/dotnet)
+
+```powershell
+git clone https://github.com/junkerino1/ParkJomV2.git
 cd ParkJomV2
-
-# Update connection string in appsettings.json, then apply migration
-dotnet ef database update
-
-dotnet run
+dotnet tool install --global dotnet-ef --version 9.0.10
+dotnet restore ParkJomV2/ParkJomV2.csproj
+dotnet dev-certs https --trust
 ```
 
-The API runs on `http://localhost:5276`.
+Set a development connection string and JWT signing key. Replace the two placeholders with your own values. The signing key should contain at least 32 random bytes. These commands store the settings in .NET User Secrets on your workstation.
 
-### Build Frontend for Production
-
-```bash
-cd frontend
-npm run build
-# Output goes to src/ParkJomV2.Web/wwwroot/
-# The .NET server will serve it as static files
+```powershell
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "<your development SQL Server connection string>" --project ParkJomV2
+dotnet user-secrets set "JwtSettings:SecretKey" "<your random development signing key>" --project ParkJomV2
+dotnet ef database update --project ParkJomV2 -- --environment Development
+dotnet run --project ParkJomV2 --launch-profile https
 ```
 
----
+For environment-based configuration, use `ConnectionStrings__DefaultConnection` and `JwtSettings__SecretKey`. Configure Google OAuth and SMS360 to exercise sign-in and phone verification, Stripe test credentials for payments, and a development MQTT broker and ESP32 for hardware flows. Set provider credentials in User Secrets or environment variables.
 
-## Project Structure
+## Usage
 
-```
-ParkJomV2/
-├── .gitignore
-├── ParkJomV2.sln
-├── README.md                        ← You are here
-│
-├── ParkJomV2/                       # Production API Skeleton
-│   ├── Program.cs                   # Minimal — DbContext + controllers only
-│   ├── appsettings.json             # SQL Server connection string
-│   ├── Controllers/
-│   │   └── UserController.cs        # Empty (no endpoints)
-│   ├── Data/
-│   │   └── ApplicationDbContext.cs  # EF Core — 16 DbSets
-│   ├── Models/                      # 16 entity models + 11 enums
-│   ├── Migrations/                  # InitialCreate — full schema
-│   └── Properties/launchSettings.json
-│
-├── data/                             # Shared data files
-│   ├── mrt_lrt_stations.json         # Station GeoJSON
-│   ├── kl_rail_lines.json            # GTFS rail lines
-│   └── kl_rail_stops.json            # GTFS rail stops
-│
-├── frontend/                         # React SPA (Vite + TailwindCSS)
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── tsconfig.json
-│   ├── index.html
-│   ├── public/                       # Static assets (images, icons, data, sw.js)
-│   └── src/
-│       ├── main.tsx
-│       ├── App.tsx
-│       ├── index.css
-│       ├── declarations.d.ts
-│       ├── contexts/AuthContext.tsx
-│       ├── components/               # LandingPage, GoogleLoginButton, DashboardHeader, UI
-│       └── dashboards/
-│           ├── commuter/             # CommuterDashboard, ParkingDetail, CommuterMap
-│           ├── owner/                # OwnerDashboard, PropertyOnboarding, Scheduler, etc.
-│           └── admin/                # AdminDashboard, IoT monitor, Settlement, etc.
-│
-├── src/                              # Backend projects
-│   └── ParkJomV2.Web/                # .NET 9 Web API (Auth + Nearby Search)
-│       ├── ParkJomV2.Web.csproj
-│       ├── Program.cs                # Full middleware: JWT, CORS, static files
-│       ├── appsettings.json
-│       ├── Properties/launchSettings.json
-│       ├── Controllers/
-│       │   └── AuthController.cs     # Google OAuth → JWT
-│       ├── Helpers/
-│       │   └── JwtHelper.cs          # JWT generation
-│       └── Models/
-│           └── GoogleLoginRequestDto.cs
-│
-├── ParkJomV2/                        # DB Schema project (EF Core)
-│   ├── Program.cs                    # DbContext + controllers only
-│   ├── Controllers/UserController.cs # Empty (no endpoints)
-│   ├── Data/ApplicationDbContext.cs  # 16 DbSets
-│   ├── Models/                       # 16 entity models + 11 enums
-│   └── Migrations/                   # InitialCreate — full schema
+**Try the hosted app.** Open ParkJom and start by searching for an LRT or MRT station. Explore nearby parking, then sign in to try booking or paying for a parking session. [Open the live app](https://parkjom.web.app)
+
+**Try the backend locally.** Open Swagger after starting the API. For a quick check with no sign-in, send the request below to list rail routes from the bundled GTFS data. [Local Swagger UI](https://localhost:7250/swagger)
+
+```powershell
+curl.exe --fail https://localhost:7250/api/gtfs/routes
 ```
 
----
+To run the UI locally, follow its setup instructions and point it at `https://localhost:7250`. The API allows local frontend requests from port `3000` by default. [Frontend repository](https://github.com/ChunJIA614/ParkJom-Frontend)
 
-*Built with .NET 9, React 19, and ❤️ for Klang Valley commuters.*
+## Contributing
+
+For a bug report or feature request, open an issue and describe the workflow, what you expected, and what happened. For a code change, open a pull request with a brief description and the checks you ran. [GitHub issues](https://github.com/junkerino1/ParkJomV2/issues)
+
+## License
+
+This repository currently has no published license. Contact the maintainer for permission before reusing, modifying or redistributing the code.
