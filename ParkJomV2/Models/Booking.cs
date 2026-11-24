@@ -75,6 +75,8 @@ public class Booking
     [Column(TypeName = "decimal(10,2)")]
     public decimal OverstayPenaltyAmount { get; set; }
 
+    public DateTime? PayoutReleasedAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

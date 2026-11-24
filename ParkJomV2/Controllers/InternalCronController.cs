@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ParkJomV2.Services.Notifications.Workers;
+using ParkJomV2.Services.Settlement;
 using ParkJomV2.Services.Support.Workers;
 
 namespace ParkJomV2.Controllers;
@@ -21,6 +22,7 @@ public sealed class InternalCronController : ControllerBase
     private readonly IncidentEscalationJob _incidentEscalationJob;
     private readonly NotificationDispatchWorker _notificationDispatchWorker;
     private readonly CronMaintenanceJob _cronMaintenanceJob;
+    private readonly SettlementBatchJob _settlementBatchJob;
 
     public InternalCronController(
         IConfiguration configuration,
@@ -30,7 +32,8 @@ public sealed class InternalCronController : ControllerBase
         SupportSlaJob supportSlaJob,
         IncidentEscalationJob incidentEscalationJob,
         NotificationDispatchWorker notificationDispatchWorker,
-        CronMaintenanceJob cronMaintenanceJob)
+        CronMaintenanceJob cronMaintenanceJob,
+        SettlementBatchJob settlementBatchJob)
     {
         _configuration = configuration;
         _bookingReminderJob = bookingReminderJob;
@@ -40,6 +43,7 @@ public sealed class InternalCronController : ControllerBase
         _incidentEscalationJob = incidentEscalationJob;
         _notificationDispatchWorker = notificationDispatchWorker;
         _cronMaintenanceJob = cronMaintenanceJob;
+        _settlementBatchJob = settlementBatchJob;
     }
 
     /// <summary>Runs one pass of start and end booking reminders.</summary>
@@ -74,6 +78,7 @@ public sealed class InternalCronController : ControllerBase
     [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status503ServiceUnavailable)]
     [HttpPost("overstay-monitoring")]
+    [HttpPost("overstay-enforcement")]
     public async Task<IActionResult> RunOverstayMonitoring(
         [FromHeader(Name = "X-Cron-Secret")] string? cronSecret,
         CancellationToken cancellationToken)
@@ -250,6 +255,38 @@ public sealed class InternalCronController : ControllerBase
         if (authorizationError is not null) return authorizationError;
         var completed = await _cronMaintenanceJob.CompleteExpiredBookingsAsync(cancellationToken);
         return JobCompleted("expired-booking-completion", completed);
+    }
+
+    /// <summary>Generates a scheduled twice-weekly BNM IBG owner payout batch.</summary>
+    /// <remarks>Suggested schedule: Tuesday and Friday at 14:00 Asia/Kuala_Lumpur. Requires X-Cron-Secret.</remarks>
+    [ProducesResponseType(typeof(CronJobResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status503ServiceUnavailable)]
+    [HttpPost("settlement-batches")]
+    public async Task<IActionResult> RunSettlementBatches(
+        [FromHeader(Name = "X-Cron-Secret")] string? cronSecret,
+        CancellationToken cancellationToken)
+    {
+        var authorizationError = ValidateCronSecret(cronSecret);
+        if (authorizationError is not null) return authorizationError;
+        var batchedItems = await _settlementBatchJob.RunOnceAsync(cancellationToken);
+        return JobCompleted("settlement-batches", batchedItems);
+    }
+
+    /// <summary>Synchronizes completed bookings into owner wallet escrow balances.</summary>
+    /// <remarks>Suggested schedule: hourly or before twice-weekly settlement batch generation. Requires X-Cron-Secret.</remarks>
+    [ProducesResponseType(typeof(CronJobResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(CronErrorResponse), StatusCodes.Status503ServiceUnavailable)]
+    [HttpPost("settlement-escrow-sync")]
+    public async Task<IActionResult> RunSettlementEscrowSync(
+        [FromHeader(Name = "X-Cron-Secret")] string? cronSecret,
+        CancellationToken cancellationToken)
+    {
+        var authorizationError = ValidateCronSecret(cronSecret);
+        if (authorizationError is not null) return authorizationError;
+        var released = await _settlementBatchJob.SyncEscrowOnlyAsync(cancellationToken);
+        return JobCompleted("settlement-escrow-sync", released);
     }
 
     private IActionResult? ValidateCronSecret(string? suppliedSecret)

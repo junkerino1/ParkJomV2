@@ -4,6 +4,10 @@ public class SystemConfigDTO
 {
     public decimal CommissionRate { get; set; }
     public int GracePeriodMinutes { get; set; }
+    public decimal OverstayPenaltyMultiplier { get; set; }
+    public decimal OverstayMaxDailyPenalty { get; set; }
+    public bool HardwareExitLockEnabled { get; set; }
+    public decimal TaxRatePercent { get; set; }
     public DateTime UpdatedAt { get; set; }
     public int? UpdatedByUserId { get; set; }
     public string? UpdatedByName { get; set; }
@@ -13,6 +17,10 @@ public class UpdateSystemConfigRequest
 {
     public decimal? CommissionRate { get; set; }
     public int? GracePeriodMinutes { get; set; }
+    public decimal? OverstayPenaltyMultiplier { get; set; }
+    public decimal? OverstayMaxDailyPenalty { get; set; }
+    public bool? HardwareExitLockEnabled { get; set; }
+    public decimal? TaxRatePercent { get; set; }
 }
 
 public class SystemConfigResponse

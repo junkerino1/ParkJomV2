@@ -16,7 +16,13 @@ public sealed class Sms360Service
         _logger = logger;
     }
 
-    public async Task<Sms360SendResult> SendOtpAsync(string phoneNumber, string otp, CancellationToken cancellationToken)
+    public Task<Sms360SendResult> SendOtpAsync(string phoneNumber, string otp, CancellationToken cancellationToken)
+    {
+        var message = $"ParkJom verification code: {otp}. It expires in 5 minutes. Do not share this code.";
+        return SendMessageAsync(phoneNumber, message, cancellationToken);
+    }
+
+    public async Task<Sms360SendResult> SendMessageAsync(string phoneNumber, string message, CancellationToken cancellationToken)
     {
         var appKey = _configuration["Sms360:AppKey"];
         var appSecret = _configuration["Sms360:AppSecret"];
@@ -31,7 +37,6 @@ public sealed class Sms360Service
         if (string.IsNullOrWhiteSpace(endpoint)) endpoint = DefaultEndpoint;
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var endpointUri) || endpointUri.Scheme != Uri.UriSchemeHttps)
             return Sms360SendResult.Failed("SMS360_CONFIGURATION_INVALID", "SMS360:BaseUrl must be a valid HTTPS URL.");
-        var message = $"ParkJom verification code: {otp}. It expires in 5 minutes. Do not share this code.";
 
         try
         {

@@ -32,7 +32,8 @@ public class TransactionService
         decimal amount,
         PaymentMethod paymentMethod,
         string reference,
-        DateTime now)
+        DateTime now,
+        TransactionStatus status = TransactionStatus.Completed)
     {
         var transaction = new Transaction
         {
@@ -42,7 +43,7 @@ public class TransactionService
             TransactionType = type,
             Amount = amount,
             PaymentMethod = paymentMethod,
-            TransactionStatus = TransactionStatus.Completed,
+            TransactionStatus = status,
             ReferenceNumber = reference,
             CreatedAt = now,
             UpdatedAt = now

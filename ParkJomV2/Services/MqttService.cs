@@ -11,6 +11,7 @@ using ParkJomV2.DTOs;
 using ParkJomV2.Models;
 using ParkJomV2.Models.Enums;
 using ParkJomV2.Services.Notifications;
+using ParkJomV2.Services.Overstay;
 
 namespace ParkJomV2.Services;
 
@@ -542,6 +543,16 @@ public sealed class MqttService : BackgroundService, IMqttService
         DateTime exitAtUtc,
         INotificationService notifications)
     {
+        var config = await db.SystemConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == 1)
+            ?? new SystemConfiguration
+            {
+                Id = 1,
+                GracePeriodMinutes = 15,
+                OverstayPenaltyMultiplier = 1.50m,
+                OverstayMaxDailyPenalty = 30.00m,
+                HardwareExitLockEnabled = false
+            };
+
         var firstDate = DateOnly.FromDateTime((booking.CheckedInAt ?? exitAtUtc).AddHours(8));
         var lastDate = DateOnly.FromDateTime(exitAtUtc.AddHours(8));
         for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
@@ -549,61 +560,170 @@ public sealed class MqttService : BackgroundService, IMqttService
             var rules = GetAvailabilityRulesForDate(booking.ParkingSpot.ParkingAvailabilities, date).ToList();
             if (rules.Count == 0 || IsAllDayRental(rules)) continue;
 
+            var minStart = rules.Min(rule => rule.StartTime);
             var dailyClose = rules.Max(rule => rule.EndTime);
-            var graceEndsAtUtc = new DateTimeOffset(date.ToDateTime(dailyClose), TimeSpan.FromHours(8))
-                .AddMinutes(15).UtcDateTime;
+            var windowHours = Math.Max(1m, (decimal)(dailyClose.ToTimeSpan() - minStart.ToTimeSpan()).TotalHours);
+            var scheduledEndAtUtc = new DateTimeOffset(date.ToDateTime(dailyClose), TimeSpan.FromHours(8)).UtcDateTime;
+            var graceEndsAtUtc = scheduledEndAtUtc.AddMinutes(config.GracePeriodMinutes);
             var lateMinutes = (int)Math.Ceiling((exitAtUtc - graceEndsAtUtc).TotalMinutes);
             if (lateMinutes <= 0) continue;
 
-            var billableHours = (lateMinutes + 59) / 60;
-            var penalty = Math.Min(billableHours * 5m, 30m);
+            var tariff = OverstayEnforcementService.CalculateTariff(
+                booking.RatePerDaySnapshot,
+                windowHours,
+                lateMinutes,
+                config.OverstayPenaltyMultiplier,
+                config.OverstayMaxDailyPenalty);
+            var billableHours = tariff.BillableHours;
+            var penalty = tariff.CalculatedPenalty;
             var reference = $"OV-{booking.BookingId}-{date:yyyyMMdd}";
+
+            var existingCase = await db.OverstayCases
+                .FirstOrDefaultAsync(c => c.BookingId == booking.BookingId && c.WindowDate == date);
+
+            if (existingCase is { Status: "Waived" or "Resolved" })
+                continue;
+
             var alreadyRecorded = await db.Transactions.AnyAsync(t =>
                 t.BookingId == booking.BookingId && t.TransactionType == TransactionType.OverstayPenalty &&
+                t.TransactionStatus == TransactionStatus.Completed &&
                 t.ReferenceNumber == reference);
-            if (alreadyRecorded) continue;
+
+            if (alreadyRecorded)
+            {
+                if (existingCase is not null)
+                {
+                    existingCase.DepartedAtUtc = exitAtUtc;
+                    if (existingCase.DebitedAmount >= existingCase.CalculatedPenaltyAmount - existingCase.WaivedAmount)
+                    {
+                        existingCase.HardwareLockActive = false;
+                        existingCase.HardwareLockReleasedAtUtc ??= exitAtUtc;
+                        existingCase.Status = "Resolved";
+                        existingCase.ResolvedAtUtc ??= exitAtUtc;
+                    }
+                    existingCase.UpdatedAt = exitAtUtc;
+                }
+                continue;
+            }
 
             var renterWallet = await db.Wallets.FirstOrDefaultAsync(w =>
                 w.UserId == booking.RenterId && w.Status == WalletStatus.Active);
             var ownerWallet = await db.Wallets.FirstOrDefaultAsync(w =>
                 w.UserId == booking.ParkingSpot.OwnerId && w.Status == WalletStatus.Active);
-            var paid = renterWallet is not null && ownerWallet is not null && renterWallet.Balance >= penalty;
+
+            var alreadyDebited = existingCase?.DebitedAmount ?? 0m;
+            var alreadyWaived = existingCase?.WaivedAmount ?? 0m;
+            var amountToCollect = Math.Max(0m, penalty - alreadyDebited - alreadyWaived);
+            if (amountToCollect == 0m) continue;
+
+            var paid = renterWallet is not null && ownerWallet is not null && renterWallet.Balance >= amountToCollect;
             var now = exitAtUtc;
+
+            var pendingTx = await db.Transactions.FirstOrDefaultAsync(t =>
+                t.BookingId == booking.BookingId &&
+                t.TransactionType == TransactionType.OverstayPenalty &&
+                t.TransactionStatus == TransactionStatus.Pending &&
+                t.Amount < 0 &&
+                t.ReferenceNumber == reference);
 
             if (paid)
             {
-                renterWallet!.Balance -= penalty;
+                renterWallet!.Balance -= amountToCollect;
                 renterWallet.UpdatedAt = now;
-                ownerWallet!.Balance += penalty;
+                ownerWallet!.Balance += amountToCollect;
                 ownerWallet.UpdatedAt = now;
-                db.Transactions.Add(new Transaction
+
+                if (pendingTx is not null)
                 {
-                    WalletId = renterWallet.WalletId, BookingId = booking.BookingId,
-                    TransactionType = TransactionType.OverstayPenalty, Amount = -penalty,
-                    PaymentMethod = PaymentMethod.Wallet, TransactionStatus = TransactionStatus.Completed,
-                    ReferenceNumber = reference, CreatedAt = now, UpdatedAt = now
-                });
+                    pendingTx.Amount = -(alreadyDebited + amountToCollect);
+                    pendingTx.TransactionStatus = TransactionStatus.Completed;
+                    pendingTx.UpdatedAt = now;
+                }
+                else
+                {
+                    db.Transactions.Add(new Transaction
+                    {
+                        WalletId = renterWallet.WalletId, BookingId = booking.BookingId,
+                        TransactionType = TransactionType.OverstayPenalty, Amount = -amountToCollect,
+                        PaymentMethod = PaymentMethod.Wallet, TransactionStatus = TransactionStatus.Completed,
+                        ReferenceNumber = reference, CreatedAt = now, UpdatedAt = now
+                    });
+                }
+
                 db.Transactions.Add(new Transaction
                 {
                     WalletId = ownerWallet.WalletId, BookingId = booking.BookingId,
-                    TransactionType = TransactionType.OverstayPenalty, Amount = penalty,
+                    TransactionType = TransactionType.OverstayPenalty, Amount = amountToCollect,
                     PaymentMethod = PaymentMethod.Wallet, TransactionStatus = TransactionStatus.Completed,
                     ReferenceNumber = reference, CreatedAt = now, UpdatedAt = now
                 });
             }
-            else
+            else if (renterWallet is not null)
             {
-                db.Transactions.Add(new Transaction
+                if (pendingTx is not null)
                 {
-                    WalletId = renterWallet?.WalletId, BookingId = booking.BookingId,
-                    TransactionType = TransactionType.OverstayPenalty, Amount = -penalty,
-                    PaymentMethod = PaymentMethod.Wallet, TransactionStatus = TransactionStatus.Pending,
-                    ReferenceNumber = reference, CreatedAt = now, UpdatedAt = now
-                });
+                    pendingTx.Amount = -amountToCollect;
+                    pendingTx.UpdatedAt = now;
+                }
+                else
+                {
+                    db.Transactions.Add(new Transaction
+                    {
+                        WalletId = renterWallet.WalletId, BookingId = booking.BookingId,
+                        TransactionType = TransactionType.OverstayPenalty, Amount = -amountToCollect,
+                        PaymentMethod = PaymentMethod.Wallet, TransactionStatus = TransactionStatus.Pending,
+                        ReferenceNumber = reference, CreatedAt = now, UpdatedAt = now
+                    });
+                }
             }
 
-            booking.OverstayHours += billableHours;
-            booking.OverstayPenaltyAmount += penalty;
+            if (existingCase is null)
+            {
+                var nextSeq = (await db.OverstayCases.MaxAsync(c => (int?)c.OverstayCaseId) ?? 0) + 1;
+                existingCase = new OverstayCase
+                {
+                    CaseReference = $"OVS-{date:yyyyMMdd}-{nextSeq:D4}",
+                    BookingId = booking.BookingId,
+                    RenterId = booking.RenterId,
+                    ParkingSpotId = booking.ParkingSpotId,
+                    IoTDeviceId = device.IoTDeviceId,
+                    WindowDate = date,
+                    ScheduledEndAtUtc = scheduledEndAtUtc,
+                    GraceEndsAtUtc = graceEndsAtUtc,
+                    DetectedAtUtc = now,
+                    CreatedAt = now
+                };
+                db.OverstayCases.Add(existingCase);
+            }
+
+            existingCase.DepartedAtUtc = now;
+            existingCase.OverstayMinutes = lateMinutes;
+            existingCase.BillableHours = billableHours;
+            existingCase.BaseHourlyRate = tariff.BaseHourlyRate;
+            existingCase.PenaltyMultiplier = config.OverstayPenaltyMultiplier;
+            existingCase.HourlyPenaltyTariff = tariff.HourlyPenaltyTariff;
+            existingCase.CalculatedPenaltyAmount = penalty;
+            if (paid)
+            {
+                existingCase.DebitedAmount += amountToCollect;
+                existingCase.PaymentStatus = "Paid";
+                existingCase.Status = "Resolved";
+                existingCase.LedgerDebitedAtUtc = now;
+                existingCase.HardwareLockActive = false;
+                existingCase.HardwareLockReleasedAtUtc = now;
+                existingCase.ResolvedAtUtc = now;
+            }
+            else
+            {
+                existingCase.PaymentStatus = "PaymentDue";
+                existingCase.Status = "Penalized";
+                existingCase.HardwareLockActive = false;
+                existingCase.HardwareLockEngagedAtUtc = null;
+            }
+            existingCase.UpdatedAt = now;
+
+            booking.OverstayHours = Math.Max(booking.OverstayHours, billableHours);
+            booking.OverstayPenaltyAmount = Math.Max(booking.OverstayPenaltyAmount, penalty);
             booking.UpdatedAt = now;
             IoTDeviceLogWriter.Add(db, device, "overstay_penalty_assessed", paid ? "paid" : "payment_due", now,
                 booking.BookingId,
@@ -617,7 +737,7 @@ public sealed class MqttService : BackgroundService, IMqttService
                     new Dictionary<string, object?>
                     {
                         ["bookingId"] = booking.BookingId,
-                        ["penaltyAmount"] = $"RM {penalty:F2}",
+                        ["penaltyAmount"] = $"RM {amountToCollect:F2}",
                         ["overstayHours"] = billableHours,
                         ["windowDate"] = date.ToString("yyyy-MM-dd")
                     },
@@ -649,6 +769,7 @@ public sealed class MqttService : BackgroundService, IMqttService
         }
 
         walletService.SettleOwnerPayout(ownerWallet, booking.OwnerPayoutAmount, completedAtUtc);
+        booking.PayoutReleasedAt = completedAtUtc;
         IoTDeviceLogWriter.Add(db, device, "owner_payout_settlement", "completed", completedAtUtc,
             booking.BookingId, $"amount=RM{booking.OwnerPayoutAmount:F2}");
     }

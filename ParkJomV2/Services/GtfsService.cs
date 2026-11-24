@@ -346,6 +346,119 @@ public class GtfsService
         return _routeShapes.TryGetValue(normalized, out var normShape) ? normShape : null;
     }
 
+    private static readonly HashSet<string> StationSearchNoiseTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "lrt", "mrt", "monorail", "brt", "ktm", "station", "stn", "stesen",
+        "line", "rapidkl", "near", "closest", "parking", "stop", "the", "at", "to", "in", "for"
+    };
+
+    private static string? DetectCategoryHint(IEnumerable<string> tokens)
+    {
+        foreach (var token in tokens)
+        {
+            if (token.Equals("lrt", StringComparison.OrdinalIgnoreCase)) return "LRT";
+            if (token.Equals("mrt", StringComparison.OrdinalIgnoreCase)) return "MRT";
+            if (token.Equals("monorail", StringComparison.OrdinalIgnoreCase)) return "Monorail";
+            if (token.Equals("brt", StringComparison.OrdinalIgnoreCase)) return "BRT";
+        }
+        return null;
+    }
+
+    private static int ScoreStopSearch(GtfsStopDto stop, string rawSearch)
+    {
+        var trimmed = rawSearch.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return 100;
+
+        var rawTokens = ParkingFuzzySearchService.Tokenize(trimmed);
+        var categoryHint = DetectCategoryHint(rawTokens);
+        var meaningfulTokens = rawTokens
+            .Where(t => !StationSearchNoiseTokens.Contains(t))
+            .ToArray();
+
+        // Direct category-only search (e.g. "lrt")
+        if (meaningfulTokens.Length == 0)
+        {
+            if (categoryHint != null && stop.Category.Equals(categoryHint, StringComparison.OrdinalIgnoreCase))
+                return 70;
+            return 0;
+        }
+
+        var meaningfulCompact = string.Concat(meaningfulTokens.Select(ParkingFuzzySearchService.NormalizeCompact));
+        var stopCompact = ParkingFuzzySearchService.NormalizeCompact(stop.StopName);
+        var stopIdCompact = ParkingFuzzySearchService.NormalizeCompact(stop.StopId);
+        var stopTokens = ParkingFuzzySearchService.Tokenize(stop.StopName);
+        var multilingualValues = stop.MultilingualNames.Values.ToList();
+
+        var score = 0;
+
+        if (stop.StopName.Equals(trimmed, StringComparison.OrdinalIgnoreCase) ||
+            stop.StopId.Equals(trimmed, StringComparison.OrdinalIgnoreCase))
+        {
+            score = 120;
+        }
+        else if (!string.IsNullOrEmpty(meaningfulCompact) &&
+                 (stopCompact == meaningfulCompact || stopIdCompact == meaningfulCompact))
+        {
+            score = 115;
+        }
+        else if (!string.IsNullOrEmpty(meaningfulCompact) && stopCompact.StartsWith(meaningfulCompact, StringComparison.OrdinalIgnoreCase))
+        {
+            score = 105;
+        }
+        else if (!string.IsNullOrEmpty(meaningfulCompact) && stopCompact.Contains(meaningfulCompact, StringComparison.OrdinalIgnoreCase))
+        {
+            score = 95;
+        }
+        else if (stop.StopName.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                 stop.StopId.Contains(trimmed, StringComparison.OrdinalIgnoreCase) ||
+                 multilingualValues.Any(v => v.Contains(trimmed, StringComparison.OrdinalIgnoreCase)))
+        {
+            score = 90;
+        }
+        else
+        {
+            // Match each meaningful token individually across StopName, StopId, compact name, multilingual names, or <=1 typo
+            var totalTokenScore = 0;
+            foreach (var qToken in meaningfulTokens)
+            {
+                var qCompact = ParkingFuzzySearchService.NormalizeCompact(qToken);
+                if (stop.StopId.Equals(qToken, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(qCompact) && stopIdCompact == qCompact))
+                {
+                    totalTokenScore += 90;
+                }
+                else if (stopTokens.Any(st => st.Equals(qToken, StringComparison.OrdinalIgnoreCase)))
+                {
+                    totalTokenScore += stopTokens[0].Equals(qToken, StringComparison.OrdinalIgnoreCase) ? 92 : 84;
+                }
+                else if (stop.StopName.Contains(qToken, StringComparison.OrdinalIgnoreCase) ||
+                         (!string.IsNullOrEmpty(qCompact) && stopCompact.Contains(qCompact, StringComparison.OrdinalIgnoreCase)) ||
+                         multilingualValues.Any(v => v.Contains(qToken, StringComparison.OrdinalIgnoreCase)))
+                {
+                    totalTokenScore += 76;
+                }
+                else if (qToken.Length >= 4 &&
+                         stopTokens.Any(st => st.Length >= 4 && ParkingFuzzySearchService.LevenshteinDistance(qToken, st) <= 1))
+                {
+                    totalTokenScore += 62;
+                }
+                else
+                {
+                    return 0;
+                }
+            }
+
+            score = totalTokenScore / meaningfulTokens.Length;
+        }
+
+        if (score > 0 && categoryHint != null && stop.Category.Equals(categoryHint, StringComparison.OrdinalIgnoreCase))
+        {
+            score += 6;
+        }
+
+        return score;
+    }
+
     public List<GtfsStopDto> GetAllStops(string? line = null, string? search = null, double? lat = null, double? lng = null, double? radiusMeters = null)
     {
         var query = _stops.AsEnumerable();
@@ -356,13 +469,14 @@ public class GtfsService
             query = query.Where(s => s.RouteId.Equals(normalizedLine, StringComparison.OrdinalIgnoreCase));
         }
 
+        List<(GtfsStopDto Stop, int Score)>? scoredMatches = null;
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var term = search.Trim();
-            query = query.Where(s =>
-                s.StopName.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                s.StopId.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                s.MultilingualNames.Values.Any(v => v.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            scoredMatches = query
+                .Select(s => (Stop: s, Score: ScoreStopSearch(s, search)))
+                .Where(x => x.Score > 0)
+                .ToList();
+            query = scoredMatches.Select(x => x.Stop);
         }
 
         if (lat.HasValue && lng.HasValue)
@@ -391,6 +505,15 @@ public class GtfsService
                 })
                 .Where(s => s.DistanceMeters <= radius)
                 .OrderBy(s => s.DistanceMeters)
+                .ToList();
+        }
+
+        if (scoredMatches != null)
+        {
+            return scoredMatches
+                .OrderByDescending(x => x.Score)
+                .ThenBy(x => x.Stop.StopName)
+                .Select(x => x.Stop)
                 .ToList();
         }
 
@@ -523,6 +646,8 @@ public class GtfsService
         var properties = await dbContext.Properties
             .AsNoTracking()
             .Include(p => p.ParkingSpots)
+                .ThenInclude(ps => ps.Owner)
+            .Include(p => p.ParkingSpots)
                 .ThenInclude(ps => ps.ParkingSpotImages)
                     .ThenInclude(psi => psi.MediaFile)
             .Include(p => p.ParkingSpots)
@@ -548,6 +673,9 @@ public class GtfsService
             var availableSpots = prop.ParkingSpots
                 .Where(ps => ps.IsPublished
                           && ps.AvailabilityStatus == AvailabilityStatus.Available
+                          && ps.Owner?.AccountStatus != "Suspended"
+                          && ps.Owner?.AccountStatus != "Deactivated"
+                          && (ps.DailyRate.HasValue || ps.MonthlyRate.HasValue)
                           && ps.VerificationRequests.Any(vr => vr.IsCurrent && vr.VerificationStatus == VerificationStatus.Approved))
                 .ToList();
 
